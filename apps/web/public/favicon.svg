@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Konea">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#7c3aed" />
+      <stop offset="1" stop-color="#2e1065" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#f7f2ff" />
+  <path d="M12 21 32 9l21 12-21 12Z" fill="url(#g)" />
+  <path d="M20 28v12c7 6 17 6 24 0V28l-12 7Z" fill="#3b137b" />
+  <path d="M15 23v20" stroke="#2e1065" stroke-width="3" stroke-linecap="round" />
+  <path d="m15 42-4 8h8Z" fill="#2e1065" />
+  <path d="M25 31v23M25 43l17-16M31 37l13 17" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

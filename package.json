@@ -1,0 +1,35 @@
+{
+  "name": "konea-rebirth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Red social universitaria desarrollada como proyecto Capstone.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names API,WEB --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @konea/api",
+    "dev:web": "npm run dev --workspace @konea/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run format:check",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:generate": "npm run db:generate --workspace @konea/api",
+    "db:migrate": "npm run db:migrate --workspace @konea/api",
+    "db:studio": "npm run db:studio --workspace @konea/api"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=11.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.6"
+  }
+}

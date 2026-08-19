@@ -1,0 +1,336 @@
+.notifications-layout {
+  width: min(100%, 830px);
+  margin: 0 auto;
+}
+
+.notifications-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.notifications-toolbar {
+  min-height: 58px;
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: white;
+  box-shadow: 0 12px 34px rgb(47 29 73 / 5%);
+}
+
+.notifications-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.notifications-tabs button,
+.notifications-read-all {
+  min-height: 37px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--soft-ink);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 710;
+}
+
+.notifications-tabs button.is-active {
+  color: var(--primary);
+  background: #f1ebfb;
+}
+
+.notifications-tabs button span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: white;
+  background: var(--primary);
+  font-size: 0.57rem;
+  text-align: center;
+}
+
+.notifications-read-all {
+  color: var(--primary);
+}
+
+.notifications-read-all:hover:not(:disabled) {
+  background: #f1ebfb;
+}
+
+.notifications-read-all:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.notifications-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 9px;
+}
+
+.notification-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: white;
+  box-shadow: 0 9px 28px rgb(47 29 73 / 4%);
+}
+
+.notification-card--unread {
+  border-color: #d8c8ef;
+  background:
+    linear-gradient(90deg, rgb(103 58 183 / 4%), transparent 42%), white;
+}
+
+.notification-card > button {
+  width: 100%;
+  min-height: 94px;
+  padding: 16px 17px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.notification-card > button:hover:not(:disabled) {
+  background: rgb(103 58 183 / 3%);
+}
+
+.notification-card > button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.notification-card__icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  color: var(--primary);
+  background: #f1ebfb;
+}
+
+.notification-card__icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.notification-card__icon--like {
+  color: #a42c5a;
+  background: #fcecf3;
+}
+
+.notification-card__icon--comment,
+.notification-card__icon--reply,
+.notification-card__icon--message {
+  color: #266ba1;
+  background: #eaf4fb;
+}
+
+.notification-card__icon--task {
+  color: #197653;
+  background: #e8f7f1;
+}
+
+.notification-card__icon--moderation {
+  color: #976314;
+  background: #fff4d7;
+}
+
+.notification-card__content {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 5px;
+}
+
+.notification-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notification-card__title-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-card__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px rgb(103 58 183 / 10%);
+}
+
+.notification-card__body {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.48;
+}
+
+.notification-card time {
+  color: var(--soft-ink);
+  font-size: 0.61rem;
+}
+
+.notification-card__arrow {
+  color: #b2acb8;
+  font-size: 1.3rem;
+}
+
+.notifications-alert {
+  margin: 13px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #f1cbd1;
+  border-radius: 10px;
+  color: #b33b4a;
+  background: #fff0f2;
+  font-size: 0.69rem;
+}
+
+.notifications-loading {
+  min-height: 310px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--soft-ink);
+  font-size: 0.74rem;
+}
+
+.notifications-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ded1f4;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: notifications-spin 700ms linear infinite;
+}
+
+@keyframes notifications-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notifications-empty {
+  min-height: 310px;
+  margin-top: 16px;
+  padding: 36px 25px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px dashed #d9caef;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 68%);
+  text-align: center;
+}
+
+.notifications-empty__icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: var(--primary);
+  background: #f1ebfb;
+}
+
+.notifications-empty__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.notifications-empty h2 {
+  margin: 17px 0 7px;
+  font-size: 1rem;
+}
+
+.notifications-empty p {
+  max-width: 430px;
+  margin: 0 0 17px;
+  color: var(--soft-ink);
+  font-size: 0.73rem;
+  line-height: 1.55;
+}
+
+.notifications-empty button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--primary);
+  background: white;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 730;
+}
+
+@media (max-width: 560px) {
+  .notifications-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .notifications-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .notifications-tabs button {
+    justify-content: center;
+  }
+
+  .notifications-read-all {
+    align-self: center;
+  }
+
+  .notification-card > button {
+    min-height: 102px;
+    padding: 14px;
+    align-items: flex-start;
+  }
+
+  .notification-card__icon {
+    width: 39px;
+    height: 39px;
+  }
+
+  .notification-card__arrow {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notifications-spinner {
+    animation-duration: 1.5s;
+  }
+}

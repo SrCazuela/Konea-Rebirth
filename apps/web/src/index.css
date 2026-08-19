@@ -1,0 +1,51 @@
+:root {
+  --primary: #673ab7;
+  --primary-light: #8b5fda;
+  --ink: #1d1728;
+  --muted: #655e70;
+  --soft-ink: #8e8798;
+  --border: #e9e4ef;
+  --surface: #fbf9fd;
+  --font-display: Inter, Aptos, 'Segoe UI', sans-serif;
+  --font-body: Inter, Aptos, 'Segoe UI', sans-serif;
+
+  color: var(--ink);
+  background: var(--surface);
+  font-family: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--surface);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid rgb(103 58 183 / 32%);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: white;
+  background: var(--primary);
+}
