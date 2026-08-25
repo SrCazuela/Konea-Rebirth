@@ -15,8 +15,13 @@ function readOption(name: string) {
 }
 
 async function main() {
-  if (env.NODE_ENV === 'production') {
-    throw new Error('Este comando está limitado al entorno local.')
+  if (
+    env.NODE_ENV === 'production' &&
+    !process.argv.includes('--confirm-production')
+  ) {
+    throw new Error(
+      'En producción debes agregar --confirm-production de forma explícita.',
+    )
   }
 
   const input = argumentsSchema.parse({
@@ -34,7 +39,7 @@ async function main() {
     throw new Error('No existe una cuenta local con ese correo.')
   }
 
-  console.log(`Rol local actualizado a ${input.role}.`)
+  console.log(`Rol actualizado a ${input.role}.`)
 }
 
 try {

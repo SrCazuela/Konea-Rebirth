@@ -4,7 +4,7 @@ import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
-import { notifications, users } from '../db/schema.js'
+import { connections, notifications, users } from '../db/schema.js'
 
 function testAccount(label: string) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
@@ -47,6 +47,14 @@ describe.sequential('chat, collaboration and QR API', () => {
     firstUserId = first.body.user.id
     secondUserId = second.body.user.id
     thirdUserId = third.body.user.id
+    const pairs = [
+      [firstUserId, secondUserId].sort(),
+      [firstUserId, thirdUserId].sort(),
+    ].map(([userOneId, userTwoId]) => {
+      if (!userOneId || !userTwoId) throw new Error('Invalid test connection')
+      return { userOneId, userTwoId }
+    })
+    await db.insert(connections).values(pairs)
   })
 
   afterAll(async () => {
@@ -121,6 +129,31 @@ describe.sequential('chat, collaboration and QR API', () => {
       .send({ name: 'Capstone Konea' })
     expect(edited.status).toBe(200)
     expect(edited.body.chat.name).toBe('Capstone Konea')
+
+    const transferred = await firstAgent
+      .patch(`/api/v1/chats/${groupChatId}/participants/${secondUserId}`)
+      .send({ role: 'owner' })
+    expect(transferred.status).toBe(200)
+    expect(
+      transferred.body.participants.find(
+        (participant: { id: string }) => participant.id === secondUserId,
+      ).role,
+    ).toBe('owner')
+
+    const restored = await secondAgent
+      .patch(`/api/v1/chats/${groupChatId}/participants/${firstUserId}`)
+      .send({ role: 'owner' })
+    expect(restored.status).toBe(200)
+    expect(
+      restored.body.participants.find(
+        (participant: { id: string }) => participant.id === firstUserId,
+      ).role,
+    ).toBe('owner')
+
+    await firstAgent
+      .patch(`/api/v1/chats/${groupChatId}/participants/${secondUserId}`)
+      .send({ role: 'member' })
+      .expect(200)
   })
 
   it('sends searchable tagged/file messages and tracks unread state', async () => {
@@ -132,10 +165,21 @@ describe.sequential('chat, collaboration and QR API', () => {
       })
     expect(sent.status).toBe(201)
     expect(sent.body.message.tags).toEqual(['important', 'question'])
+    expect(sent.body.message.deliveryStatus).toBe('sent')
+
+    const sentState = await firstAgent.get(
+      `/api/v1/chats/${directChatId}/messages?q=arquitectura`,
+    )
+    expect(sentState.body.messages[0].deliveryStatus).toBe('sent')
 
     const unread = await secondAgent.get('/api/v1/chats/unread-count')
     expect(unread.status).toBe(200)
     expect(unread.body.unreadCount).toBeGreaterThanOrEqual(1)
+
+    const deliveredState = await firstAgent.get(
+      `/api/v1/chats/${directChatId}/messages?q=arquitectura`,
+    )
+    expect(deliveredState.body.messages[0].deliveryStatus).toBe('delivered')
 
     const search = await secondAgent.get(
       `/api/v1/chats/${directChatId}/messages?q=arquitectura&tag=important`,
@@ -171,8 +215,14 @@ describe.sequential('chat, collaboration and QR API', () => {
     const read = await secondAgent.post(`/api/v1/chats/${directChatId}/read`)
     expect(read.status).toBe(200)
     expect(read.body.unreadCount).toBe(0)
+    expect(read.body.notificationsRead).toBeGreaterThan(0)
     const chat = await secondAgent.get(`/api/v1/chats/${directChatId}`)
     expect(chat.body.chat.unreadCount).toBe(0)
+
+    const readState = await firstAgent.get(
+      `/api/v1/chats/${directChatId}/messages?q=arquitectura`,
+    )
+    expect(readState.body.messages[0].deliveryStatus).toBe('read')
 
     const notificationRows = await db
       .select()
@@ -184,6 +234,7 @@ describe.sequential('chat, collaboration and QR API', () => {
         ),
       )
     expect(notificationRows).toHaveLength(1)
+    expect(notificationRows[0]?.readAt).toBeTruthy()
   })
 
   it('paginates messages without exposing them to outsiders', async () => {
@@ -217,6 +268,38 @@ describe.sequential('chat, collaboration and QR API', () => {
     ).toBe(true)
 
     await thirdAgent.get(`/api/v1/chats/${directChatId}/messages`).expect(403)
+  })
+
+  it('aggregates delivery and read receipts across every group recipient', async () => {
+    const content = `Recibos grupales ${randomUUID()}`
+    const sent = await firstAgent
+      .post(`/api/v1/chats/${groupChatId}/messages`)
+      .send({ content })
+    expect(sent.status).toBe(201)
+
+    await secondAgent.get('/api/v1/chats/unread-count').expect(200)
+    const partiallyDelivered = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=${encodeURIComponent(content)}`,
+    )
+    expect(partiallyDelivered.body.messages[0].deliveryStatus).toBe('sent')
+
+    await thirdAgent.get('/api/v1/chats/unread-count').expect(200)
+    const delivered = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=${encodeURIComponent(content)}`,
+    )
+    expect(delivered.body.messages[0].deliveryStatus).toBe('delivered')
+
+    await secondAgent.post(`/api/v1/chats/${groupChatId}/read`).expect(200)
+    const partiallyRead = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=${encodeURIComponent(content)}`,
+    )
+    expect(partiallyRead.body.messages[0].deliveryStatus).toBe('delivered')
+
+    await thirdAgent.post(`/api/v1/chats/${groupChatId}/read`).expect(200)
+    const read = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=${encodeURIComponent(content)}`,
+    )
+    expect(read.body.messages[0].deliveryStatus).toBe('read')
   })
 
   it('creates, assigns and protects chat tasks', async () => {
@@ -291,7 +374,7 @@ describe.sequential('chat, collaboration and QR API', () => {
     await thirdAgent.get(`/api/v1/polls/${poll.id}`).expect(403)
   })
 
-  it('generates short-lived personal QR codes and redeems them idempotently', async () => {
+  it('generates short-lived, single-use personal QR codes', async () => {
     const generated = await thirdAgent.post('/api/v1/qr-codes/personal')
     expect(generated.status).toBe(201)
     expect(generated.body.qrCode.code).toMatch(/^[A-Z0-9]{6}$/)
@@ -310,9 +393,7 @@ describe.sequential('chat, collaboration and QR API', () => {
     const repeated = await firstAgent
       .post('/api/v1/qr-codes/redeem')
       .send({ code: generated.body.qrCode.code })
-    expect(repeated.status).toBe(200)
-    expect(repeated.body.chatId).toBe(redeemed.body.chatId)
-    expect(repeated.body.redemptionRepeated).toBe(true)
+    expect(repeated.status).toBe(409)
 
     const alreadyUsed = await secondAgent
       .post('/api/v1/qr-codes/redeem')
@@ -320,5 +401,42 @@ describe.sequential('chat, collaboration and QR API', () => {
     expect(alreadyUsed.status).toBe(409)
     const current = await thirdAgent.get('/api/v1/qr-codes/current')
     expect(current.body.qrCode).toBeNull()
+  })
+
+  it('revokes report access after a participant leaves a chat', async () => {
+    const fileMessage = await firstAgent
+      .post(`/api/v1/chats/${directChatId}/messages`)
+      .send({
+        type: 'file',
+        content: 'Evidencia adjunta',
+        fileUrl: 'https://files.konea.test/evidence.pdf',
+        fileName: 'evidence.pdf',
+        fileSize: 1_024,
+      })
+    expect(fileMessage.status).toBe(201)
+
+    const evidenceReport = await secondAgent.post('/api/v1/reports').send({
+      resourceType: 'message',
+      resourceId: fileMessage.body.message.id,
+      reason: 'Archivo para revisar',
+    })
+    expect(evidenceReport.status).toBe(201)
+    expect(evidenceReport.body.report.resource).toMatchObject({
+      fileUrl: 'https://files.konea.test/evidence.pdf',
+      fileName: 'evidence.pdf',
+      fileSize: 1_024,
+    })
+
+    await secondAgent
+      .delete(`/api/v1/chats/${directChatId}/participants/${secondUserId}`)
+      .expect(204)
+
+    const report = await secondAgent.post('/api/v1/reports').send({
+      resourceType: 'chat',
+      resourceId: directChatId,
+      reason: 'Chat ya no disponible',
+    })
+    expect(report.status).toBe(404)
+    expect(report.body.error.code).toBe('REPORT_RESOURCE_NOT_FOUND')
   })
 })

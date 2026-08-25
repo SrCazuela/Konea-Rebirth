@@ -22,7 +22,7 @@ import { requireOwnedLocalUpload } from '../services/upload-service.js'
 const createPostSchema = z.strictObject({
   content: z.string().trim().min(1).max(2_000),
   contentType: z.enum(['announcement', 'community']).default('community'),
-  visibility: z.enum(['campus', 'followers', 'public']).default('campus'),
+  visibility: z.enum(['campus', 'connections', 'public']).default('campus'),
   imageUrl: z
     .union([
       z.string().trim().url().max(2_048),

@@ -7,6 +7,35 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
 )
 
 export type PublicUserRole = 'student' | 'professor' | 'moderator' | 'admin'
+export type ConnectionStatus = 'self' | 'none' | 'requested' | 'connected'
+
+export type ProfileEducation = {
+  id: string
+  institution: string
+  program: string
+  startYear: number | null
+  endYear: number | null
+  current: boolean
+}
+
+export type ProfileProject = {
+  id: string
+  title: string
+  description: string
+  url: string | null
+  repositoryUrl: string | null
+  imageUrl: string | null
+  technologies: string[]
+}
+
+export type ProfileAchievement = {
+  id: string
+  title: string
+  issuer: string
+  issuedAt: string | null
+  description: string
+  credentialUrl: string | null
+}
 
 export type PublicUser = {
   id: string
@@ -19,15 +48,17 @@ export type PublicUser = {
   website: string | null
   avatarUrl: string | null
   coverUrl: string | null
-  lastSeenAt: string
+  education: ProfileEducation[]
+  projects: ProfileProject[]
+  achievements: ProfileAchievement[]
   role: PublicUserRole
   createdAt: string
   stats: {
     posts: number
-    followers: number
-    following: number
+    projects: number
+    achievements: number
   }
-  followedByMe: boolean
+  connectionStatus: ConnectionStatus
   isMe: boolean
 }
 
@@ -35,9 +66,7 @@ type ErrorEnvelope = {
   error?: {
     code?: string
     message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
+    details?: { fields?: Record<string, string[] | undefined> }
   }
 }
 
@@ -54,11 +83,8 @@ async function networkRequest<T>(path: string, init?: RequestInit) {
   if (response.status === 401) {
     window.dispatchEvent(new Event('konea:session-expired'))
   }
-
   if (response.status === 204) return undefined as T
-
   const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-
   if (!response.ok) {
     throw new ApiClientError(
       response.status,
@@ -67,15 +93,14 @@ async function networkRequest<T>(path: string, init?: RequestInit) {
       body.error?.details?.fields,
     )
   }
-
   return body
 }
 
-export async function searchUsers(query = '') {
+export async function listConnections(query = '') {
   const search = query.trim()
   const suffix = search ? `?q=${encodeURIComponent(search)}` : ''
   const response = await networkRequest<{ users: PublicUser[] }>(
-    `/users${suffix}`,
+    `/users/connections${suffix}`,
   )
   return response.users
 }
@@ -86,16 +111,25 @@ export async function getPublicUser(userId: string) {
   )
 }
 
-export async function followUser(userId: string) {
-  return networkRequest<{ followed: true; followersCount: number }>(
-    `/users/${encodeURIComponent(userId)}/follow`,
-    { method: 'POST' },
+export async function sendConnectionRequest(userId: string) {
+  return networkRequest<{
+    connectionStatus: 'requested' | 'connected'
+    matched: boolean
+  }>(`/users/${encodeURIComponent(userId)}/connection-request`, {
+    method: 'POST',
+  })
+}
+
+export async function cancelConnectionRequest(userId: string) {
+  return networkRequest<{ connectionStatus: 'none' }>(
+    `/users/${encodeURIComponent(userId)}/connection-request`,
+    { method: 'DELETE' },
   )
 }
 
-export async function unfollowUser(userId: string) {
-  return networkRequest<{ followed: false; followersCount: number }>(
-    `/users/${encodeURIComponent(userId)}/follow`,
+export async function removeConnection(userId: string) {
+  return networkRequest<{ connectionStatus: 'none' }>(
+    `/users/${encodeURIComponent(userId)}/connection`,
     { method: 'DELETE' },
   )
 }

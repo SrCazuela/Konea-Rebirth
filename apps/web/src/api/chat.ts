@@ -18,6 +18,7 @@ export type MessageTag = (typeof messageTags)[number]
 export type ChatType = 'direct' | 'group'
 export type ChatParticipantRole = 'owner' | 'admin' | 'member'
 export type MessageType = 'text' | 'image' | 'file' | 'poll' | 'system'
+export type MessageDeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read'
 export type TaskPriority = 'low' | 'medium' | 'high'
 export type TaskStatus = 'pending' | 'in_progress' | 'completed'
 
@@ -98,6 +99,7 @@ export type ChatMessage = {
   tags: MessageTag[]
   createdAt: string
   updatedAt: string
+  deliveryStatus: MessageDeliveryStatus
   sender: {
     id: string
     username: string
@@ -259,7 +261,7 @@ export async function addChatParticipant(
 export async function updateChatParticipant(
   chatId: string,
   userId: string,
-  role: Exclude<ChatParticipantRole, 'owner'>,
+  role: ChatParticipantRole,
 ) {
   const response = await chatRequest<{ participants: ChatPerson[] }>(
     chatPath(chatId, `/participants/${encodeURIComponent(userId)}`),
@@ -335,10 +337,11 @@ export async function deleteMessage(chatId: string, messageId: string) {
 }
 
 export async function markChatRead(chatId: string) {
-  return chatRequest<{ readAt: string; unreadCount: 0 }>(
-    chatPath(chatId, '/read'),
-    { method: 'POST' },
-  )
+  return chatRequest<{
+    readAt: string
+    unreadCount: 0
+    notificationsRead: number
+  }>(chatPath(chatId, '/read'), { method: 'POST' })
 }
 
 export async function getChatTasks(chatId: string) {

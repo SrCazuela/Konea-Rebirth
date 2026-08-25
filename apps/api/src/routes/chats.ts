@@ -1,5 +1,6 @@
 import {
   and,
+  count,
   desc,
   eq,
   ilike,
@@ -17,7 +18,9 @@ import {
   chatParticipants,
   chatReads,
   chats,
+  messageReceipts,
   messages,
+  notifications,
   pollOptions,
   polls,
   profiles,
@@ -44,6 +47,10 @@ import {
   requireActiveUsers,
   requireChatManager,
 } from '../services/chat-service.js'
+import {
+  requireConnection,
+  requireConnections,
+} from '../services/connection-service.js'
 import { createNotification } from '../services/notification-service.js'
 import { requireOwnedLocalUpload } from '../services/upload-service.js'
 
@@ -101,7 +108,7 @@ const addParticipantSchema = z.strictObject({
   role: z.enum(['member', 'admin']).default('member'),
 })
 const updateParticipantSchema = z.strictObject({
-  role: z.enum(['member', 'admin']),
+  role: z.enum(['member', 'admin', 'owner']),
 })
 const messageTagSchema = z.enum(MESSAGE_TAGS)
 const sendMessageSchema = z
@@ -118,6 +125,7 @@ const sendMessageSchema = z
       .optional(),
     tags: z.array(messageTagSchema).max(MESSAGE_TAGS.length).default([]),
   })
+
   .superRefine((value, context) => {
     if (value.type === 'text' && !value.content) {
       context.addIssue({
@@ -134,6 +142,76 @@ const sendMessageSchema = z
       })
     }
   })
+
+type PersistedDeliveryStatus = 'sent' | 'delivered' | 'read'
+
+async function loadDeliveryStatuses(messageIds: string[]) {
+  if (!messageIds.length) return new Map<string, PersistedDeliveryStatus>()
+
+  const rows = await db
+    .select({
+      messageId: messageReceipts.messageId,
+      recipients: count(),
+      delivered: count(messageReceipts.deliveredAt),
+      read: count(messageReceipts.readAt),
+    })
+    .from(messageReceipts)
+    .where(inArray(messageReceipts.messageId, messageIds))
+    .groupBy(messageReceipts.messageId)
+
+  return new Map(
+    rows.map((row) => {
+      const recipients = Number(row.recipients)
+      const delivered = Number(row.delivered)
+      const read = Number(row.read)
+      const status: PersistedDeliveryStatus =
+        recipients > 0 && read === recipients
+          ? 'read'
+          : recipients > 0 && delivered === recipients
+            ? 'delivered'
+            : 'sent'
+      return [row.messageId, status]
+    }),
+  )
+}
+
+async function markMessagesDelivered(userId: string, chatId?: string) {
+  const chatFilter = chatId ? sql`and ${messages.chatId} = ${chatId}` : sql``
+  await db.execute(sql`
+    insert into ${messageReceipts} (message_id, user_id)
+    select ${messages.id}, ${userId}
+    from ${messages}
+    inner join ${chatParticipants}
+      on ${chatParticipants.chatId} = ${messages.chatId}
+      and ${chatParticipants.userId} = ${userId}
+      and ${chatParticipants.archivedAt} is null
+      and ${messages.createdAt} >= ${chatParticipants.joinedAt}
+    where ${messages.senderId} <> ${userId} ${chatFilter}
+    on conflict do nothing
+  `)
+
+  const conditions = [
+    eq(messageReceipts.userId, userId),
+    isNull(messageReceipts.deliveredAt),
+  ]
+
+  if (chatId) {
+    conditions.push(
+      inArray(
+        messageReceipts.messageId,
+        db
+          .select({ id: messages.id })
+          .from(messages)
+          .where(eq(messages.chatId, chatId)),
+      ),
+    )
+  }
+
+  await db
+    .update(messageReceipts)
+    .set({ deliveredAt: new Date() })
+    .where(and(...conditions))
+}
 const updateMessageSchema = z
   .strictObject({
     content: z.string().trim().min(1).max(4_000).optional(),
@@ -254,11 +332,13 @@ chatsRouter.use(requireAuthentication)
 
 chatsRouter.get('/', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
+  await markMessagesDelivered(currentUser.id)
   response.json({ chats: await listChatsForUser(currentUser.id) })
 })
 
 chatsRouter.get('/unread-count', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
+  await markMessagesDelivered(currentUser.id)
   const userChats = await listChatsForUser(currentUser.id)
   response.json({
     unreadCount: userChats.reduce((total, chat) => total + chat.unreadCount, 0),
@@ -268,6 +348,9 @@ chatsRouter.get('/unread-count', async (_request, response) => {
 chatsRouter.post('/direct', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(directChatSchema, request.body)
+  if (input.userId !== currentUser.id) {
+    await requireConnection(currentUser.id, input.userId)
+  }
   const result = await db.transaction((transaction) =>
     createOrRestoreDirectChat(
       transaction,
@@ -292,6 +375,7 @@ chatsRouter.post('/groups', async (request, response) => {
     currentUser.id,
     ...new Set(input.participantIds.filter((id) => id !== currentUser.id)),
   ]
+  await requireConnections(currentUser.id, participantIds)
   const created = await db.transaction(async (transaction) => {
     await requireActiveUsers(transaction, participantIds)
     const [chat] = await transaction
@@ -408,6 +492,7 @@ chatsRouter.post('/:chatId/participants', async (request, response) => {
       'La persona ya participa en este grupo. Usa la edición de rol.',
     )
   }
+  await requireConnection(currentUser.id, input.userId)
   await db.transaction(async (transaction) => {
     await requireActiveUsers(transaction, [input.userId])
     await transaction
@@ -444,7 +529,7 @@ chatsRouter.patch(
     const chatId = parseId(request.params.chatId)
     const userId = parseId(request.params.userId)
     const input = parseBody(updateParticipantSchema, request.body)
-    await requireChatManager(chatId, currentUser.id)
+    const manager = await requireChatManager(chatId, currentUser.id)
     const target = await getActiveParticipant(chatId, userId)
     if (!target)
       throw new ApiError(
@@ -459,15 +544,67 @@ chatsRouter.patch(
         'No se puede cambiar el rol del propietario.',
       )
     }
-    await db
-      .update(chatParticipants)
-      .set({ role: input.role })
-      .where(
-        and(
-          eq(chatParticipants.chatId, chatId),
-          eq(chatParticipants.userId, userId),
-        ),
-      )
+    if (input.role === 'owner') {
+      if (manager.role !== 'owner') {
+        throw new ApiError(
+          403,
+          'OWNER_TRANSFER_REQUIRED',
+          'Solo el propietario actual puede transferir el grupo.',
+        )
+      }
+
+      await db.transaction(async (transaction) => {
+        await transaction.execute(
+          sql`select 1 from ${chatParticipants} where ${chatParticipants.chatId} = ${chatId} for update`,
+        )
+        const [lockedManager] = await transaction
+          .select({ role: chatParticipants.role })
+          .from(chatParticipants)
+          .where(
+            and(
+              eq(chatParticipants.chatId, chatId),
+              eq(chatParticipants.userId, currentUser.id),
+              isNull(chatParticipants.archivedAt),
+            ),
+          )
+          .limit(1)
+        if (lockedManager?.role !== 'owner') {
+          throw new ApiError(
+            409,
+            'OWNER_TRANSFER_CONFLICT',
+            'La propiedad del grupo cambi\u00f3. Actualiza la conversaci\u00f3n.',
+          )
+        }
+        await transaction
+          .update(chatParticipants)
+          .set({ role: 'admin' })
+          .where(
+            and(
+              eq(chatParticipants.chatId, chatId),
+              eq(chatParticipants.role, 'owner'),
+            ),
+          )
+        await transaction
+          .update(chatParticipants)
+          .set({ role: 'owner' })
+          .where(
+            and(
+              eq(chatParticipants.chatId, chatId),
+              eq(chatParticipants.userId, userId),
+            ),
+          )
+      })
+    } else {
+      await db
+        .update(chatParticipants)
+        .set({ role: input.role })
+        .where(
+          and(
+            eq(chatParticipants.chatId, chatId),
+            eq(chatParticipants.userId, userId),
+          ),
+        )
+    }
     response.json({ participants: await getChatParticipants(chatId) })
   },
 )
@@ -525,6 +662,7 @@ chatsRouter.get('/:chatId/messages', async (request, response) => {
   const chatId = parseId(request.params.chatId)
   const query = parseQuery(messageQuerySchema, request.query)
   await requireActiveParticipant(chatId, currentUser.id)
+  await markMessagesDelivered(currentUser.id, chatId)
 
   const conditions = [eq(messages.chatId, chatId)]
   if (query.before) {
@@ -581,10 +719,14 @@ chatsRouter.get('/:chatId/messages', async (request, response) => {
       .map((message) => message.id),
     currentUser.id,
   )
+  const deliveryByMessage = await loadDeliveryStatuses(
+    page.map((message) => message.id),
+  )
 
   response.json({
     messages: [...page].reverse().map((message) => ({
       ...message,
+      deliveryStatus: deliveryByMessage.get(message.id) ?? 'sent',
       poll: pollByMessage.get(message.id) ?? null,
     })),
     pageInfo: {
@@ -631,6 +773,24 @@ chatsRouter.post('/:chatId/messages', async (request, response) => {
         target: [chatReads.chatId, chatReads.userId],
         set: { lastReadAt: new Date() },
       })
+    const recipients = await transaction
+      .select({ userId: chatParticipants.userId })
+      .from(chatParticipants)
+      .where(
+        and(
+          eq(chatParticipants.chatId, chatId),
+          isNull(chatParticipants.archivedAt),
+          ne(chatParticipants.userId, currentUser.id),
+        ),
+      )
+    if (recipients.length && created[0]) {
+      await transaction.insert(messageReceipts).values(
+        recipients.map(({ userId }) => ({
+          messageId: created[0]!.id,
+          userId,
+        })),
+      )
+    }
     return created
   })
   if (!message) throw new Error('Database did not return the message')
@@ -645,7 +805,9 @@ chatsRouter.post('/:chatId/messages', async (request, response) => {
       (input.type === 'image' ? 'Envió una imagen.' : 'Envió un archivo.'),
     resourceId: message.id,
   })
-  response.status(201).json({ message })
+  response.status(201).json({
+    message: { ...message, deliveryStatus: 'sent' as const },
+  })
 })
 
 chatsRouter.patch('/:chatId/messages/:messageId', async (request, response) => {
@@ -715,14 +877,47 @@ chatsRouter.post('/:chatId/read', async (request, response) => {
   const chatId = parseId(request.params.chatId)
   await requireActiveParticipant(chatId, currentUser.id)
   const readAt = new Date()
-  await db
-    .insert(chatReads)
-    .values({ chatId, userId: currentUser.id, lastReadAt: readAt })
-    .onConflictDoUpdate({
-      target: [chatReads.chatId, chatReads.userId],
-      set: { lastReadAt: readAt },
-    })
-  response.json({ readAt, unreadCount: 0 })
+  const notificationsRead = await db.transaction(async (transaction) => {
+    await transaction
+      .insert(chatReads)
+      .values({ chatId, userId: currentUser.id, lastReadAt: readAt })
+      .onConflictDoUpdate({
+        target: [chatReads.chatId, chatReads.userId],
+        set: { lastReadAt: readAt },
+      })
+    await transaction
+      .update(messageReceipts)
+      .set({ deliveredAt: readAt, readAt })
+      .where(
+        and(
+          eq(messageReceipts.userId, currentUser.id),
+          inArray(
+            messageReceipts.messageId,
+            transaction
+              .select({ id: messages.id })
+              .from(messages)
+              .where(eq(messages.chatId, chatId)),
+          ),
+        ),
+      )
+    return transaction
+      .update(notifications)
+      .set({ readAt })
+      .where(
+        and(
+          eq(notifications.userId, currentUser.id),
+          eq(notifications.type, 'message'),
+          eq(notifications.href, `chat:${chatId}`),
+          isNull(notifications.readAt),
+        ),
+      )
+      .returning({ id: notifications.id })
+  })
+  response.json({
+    readAt,
+    unreadCount: 0,
+    notificationsRead: notificationsRead.length,
+  })
 })
 
 chatsRouter.get('/:chatId/tasks', async (request, response) => {

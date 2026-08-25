@@ -1,7 +1,7 @@
 # Konea Rebirth
 
-Konea es una red social universitaria para conectar personas, compartir vida de
-campus y colaborar en grupos de estudio. **Konea Rebirth** recupera el alcance
+Konea es una red social universitaria para compartir vida de campus y colaborar
+con consentimiento mutuo, minimizando contactos no deseados. **Konea Rebirth** recupera el alcance
 útil del proyecto anterior sobre una base local, portable y verificable, sin
 depender de las conexiones eliminadas de Supabase, Hostinger, Flowise, n8n o
 Groq.
@@ -14,19 +14,21 @@ pruebas automatizadas.
 
 El repositorio implementa estos dominios:
 
-- **Cuentas y perfiles:** registro, inicio/cierre de sesión, perfil académico,
-  avatar, portada, campus, sitio web, presencia reciente y roles.
+- **Cuentas y perfiles:** registro, inicio/cierre de sesión y perfil-portafolio
+  con formación, proyectos, logros, avatar, portada, campus, sitio web y roles.
 - **Comunidad:** feed, publicaciones de comunidad o anuncios, visibilidad de
-  campus/seguidores/pública, imágenes, Me gusta, contador de compartidos,
+  campus/conexiones/pública, imágenes, Me gusta, contador de compartidos,
   comentarios, respuestas, edición y eliminación según permisos.
-- **Personas:** directorio y búsqueda, perfiles públicos, estadísticas,
-  publicaciones, seguidores, seguidos y publicaciones favoritas.
-- **Mensajería:** chats directos idempotentes, grupos, participantes y roles,
+- **Conexiones privadas:** no existe un directorio global. Los perfiles se
+  descubren desde publicaciones, comentarios o QR; dos solicitudes privadas y
+  recíprocas habilitan la conexión sin notificar intentos unilaterales.
+- **Mensajería:** chats directos solo entre conexiones o mediante QR, grupos,
+  participantes y roles,
   mensajes de texto, imágenes y PDF, etiquetas, búsqueda, paginación, edición,
   eliminación y contadores de no leídos.
 - **Colaboración:** tareas asignables por chat, prioridades y estados;
   encuestas de opción única o múltiple; códigos personales de seis caracteres
-  que expiran y abren un chat directo.
+  que expiran, crean una conexión y abren un chat directo.
 - **Actividad y convivencia:** notificaciones, reportes, reglas locales de
   contenido y cola de aprobación de publicaciones para moderación.
 - **DUCO local:** historial privado y orientación determinística basada en las
@@ -110,6 +112,7 @@ por separado con `npm run dev:web` y `npm run dev:api`.
 | `POSTGRES_PORT`          | Puerto publicado por Docker                 | `5432`                    |
 | `DATABASE_URL`           | Conexión usada por API y migraciones        | PostgreSQL local          |
 | `NODE_ENV`               | `development`, `test` o `production`        | `development`             |
+| `API_HOST`               | Interfaz donde escucha Express              | `127.0.0.1`               |
 | `API_PORT`               | Puerto HTTP de Express                      | `3000`                    |
 | `CORS_ORIGIN`            | Orígenes web permitidos, separados por coma | `http://localhost:5173`   |
 | `SESSION_TTL_DAYS`       | Vigencia de una sesión, entre 1 y 30 días   | `7`                       |
@@ -135,8 +138,15 @@ npm run user:role --workspace @konea/api -- --email docente@ejemplo.cl --role pr
 npm run user:role --workspace @konea/api -- --email mod@ejemplo.cl --role moderator
 ```
 
-El comando también admite `student` y `admin`, y se niega a ejecutarse con
-`NODE_ENV=production`. Vuelve a iniciar sesión después de cambiar el rol.
+El comando también admite `student` y `admin`. En producción exige acceso a la
+terminal, las credenciales de base y la confirmación explícita
+`--confirm-production`; esto permite crear el primer administrador sin exponer
+un endpoint público de ascenso. Vuelve a iniciar sesión después de cambiar el
+rol.
+
+```powershell
+npm run user:role --workspace @konea/api -- --email admin@ejemplo.cl --role admin --confirm-production
+```
 
 La configuración predeterminada facilita la demostración:
 
@@ -156,7 +166,9 @@ modos.
 - `npm run db:down` detiene y elimina los contenedores de este Compose, pero
   conserva el volumen mientras no se use expresamente `--volumes`.
 - Imágenes y PDF se guardan en `.local/uploads/`, en este mismo disco `D:`. La
-  carpeta está ignorada por Git y debe respaldarse por separado.
+  carpeta está ignorada por Git y debe respaldarse por separado. PostgreSQL
+  registra al propietario y la API autoriza la lectura según el perfil, post,
+  chat o reporte que referencia cada archivo.
 - Cada migración SQL queda versionada en `apps/api/drizzle/`.
 
 No ejecutes `docker compose down --volumes` si deseas conservar la base local.
@@ -202,7 +214,8 @@ archivos, notificaciones, DUCO y reportes.
 - Los payloads se validan en la API, CORS usa una lista explícita y los logs
   redactan cookies/autorización.
 - Los archivos requieren sesión, tienen máximo 5 MB y se validan por MIME y
-  firma binaria; se admiten JPEG, PNG, WebP, GIF y PDF.
+  firma binaria; se admiten JPEG, PNG, WebP, GIF y PDF. Cada subida pertenece a
+  una cuenta y no puede adjuntarse a contenido de otra cuenta.
 - Chat y notificaciones usan polling, no WebSocket ni notificaciones push.
 - `public` es una visibilidad preparada en el modelo, pero las rutas sociales
   aún requieren sesión: no existe un feed anónimo.

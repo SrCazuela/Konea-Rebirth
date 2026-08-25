@@ -108,6 +108,9 @@ authRouter.post('/register', authWriteLimiter, async (request, response) => {
         coverUrl: null,
         campus: null,
         website: null,
+        education: [],
+        projects: [],
+        achievements: [],
       }
     })
   } catch (error) {
@@ -146,6 +149,9 @@ authRouter.post('/login', authWriteLimiter, async (request, response) => {
       coverUrl: profiles.coverUrl,
       campus: profiles.campus,
       website: profiles.website,
+      education: profiles.education,
+      projects: profiles.projects,
+      achievements: profiles.achievements,
       createdAt: users.createdAt,
     })
     .from(users)

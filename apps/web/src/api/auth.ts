@@ -1,3 +1,9 @@
+import type {
+  ProfileAchievement,
+  ProfileEducation,
+  ProfileProject,
+} from './network'
+
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
   /\/$/,
   '',
@@ -17,6 +23,9 @@ export type KoneaUser = {
   coverUrl: string | null
   campus: string | null
   website: string | null
+  education: ProfileEducation[]
+  projects: ProfileProject[]
+  achievements: ProfileAchievement[]
   createdAt: string
 }
 

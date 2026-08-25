@@ -13,6 +13,7 @@ import {
   messages,
   posts,
   profiles,
+  reports,
   uploadedFiles,
 } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
@@ -276,6 +277,27 @@ async function canAccessUpload(fileName: string, response: Response) {
     chatReference.length > 0
   ) {
     return true
+  }
+
+  if (currentUser.role === 'moderator' || currentUser.role === 'admin') {
+    const [reportedPrivateResource] = await db
+      .select({ id: reports.id })
+      .from(reports)
+      .leftJoin(
+        messages,
+        and(
+          eq(reports.resourceType, 'message'),
+          eq(reports.resourceId, messages.id),
+        ),
+      )
+      .leftJoin(
+        chats,
+        and(eq(reports.resourceType, 'chat'), eq(reports.resourceId, chats.id)),
+      )
+      .where(or(eq(messages.fileUrl, fileUrl), eq(chats.avatarUrl, fileUrl)))
+      .limit(1)
+
+    if (reportedPrivateResource) return true
   }
 
   for (const post of postReferences) {

@@ -5,7 +5,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
   '',
 )
 
-export type PostVisibility = 'campus' | 'followers' | 'public'
+export type PostVisibility = 'campus' | 'connections' | 'public'
 export type PostContentType = 'announcement' | 'community'
 export type ModerationStatus = 'pending' | 'approved' | 'rejected'
 
@@ -55,6 +55,9 @@ export type ProfileUpdate = {
   coverUrl: string | null
   campus: string | null
   website: string | null
+  education: import('./network').ProfileEducation[]
+  projects: import('./network').ProfileProject[]
+  achievements: import('./network').ProfileAchievement[]
 }
 
 type ErrorEnvelope = {
@@ -208,8 +211,16 @@ export async function updateProfile(input: ProfileUpdate) {
   return response.user
 }
 
-export async function getModerationPosts() {
-  const response = await portalRequest<{ posts: Post[] }>('/moderation/posts')
+export async function getModerationPosts(
+  status?: ModerationStatus,
+): Promise<Post[]> {
+  if (!status) {
+    const statuses: ModerationStatus[] = ['pending', 'approved', 'rejected']
+    return (await Promise.all(statuses.map(getModerationPosts))).flat()
+  }
+  const response = await portalRequest<{ posts: Post[] }>(
+    `/moderation/posts?status=${encodeURIComponent(status)}`,
+  )
   return response.posts
 }
 

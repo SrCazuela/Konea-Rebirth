@@ -74,6 +74,9 @@ export async function findUserBySession(token: string) {
       coverUrl: profiles.coverUrl,
       campus: profiles.campus,
       website: profiles.website,
+      education: profiles.education,
+      projects: profiles.projects,
+      achievements: profiles.achievements,
       lastSeenAt: profiles.lastSeenAt,
       createdAt: users.createdAt,
     })

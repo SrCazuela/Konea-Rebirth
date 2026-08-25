@@ -1,8 +1,8 @@
-import { and, desc, eq, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db/client.js'
-import { assistantMessages, tasks } from '../db/schema.js'
+import { assistantMessages, chatParticipants, tasks } from '../db/schema.js'
 import { parseBody } from '../http/validation.js'
 import {
   getAuthenticatedUser,
@@ -107,9 +107,16 @@ async function loadPendingTasks(userId: string) {
       status: tasks.status,
     })
     .from(tasks)
+    .innerJoin(
+      chatParticipants,
+      and(
+        eq(chatParticipants.chatId, tasks.chatId),
+        eq(chatParticipants.userId, userId),
+        isNull(chatParticipants.archivedAt),
+      ),
+    )
     .where(and(eq(tasks.assignedToId, userId), ne(tasks.status, 'completed')))
     .orderBy(sql`${tasks.dueDate} asc nulls last`, desc(tasks.createdAt))
-    .limit(20)
 }
 
 export const ducoRouter = Router()

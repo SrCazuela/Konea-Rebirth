@@ -12,6 +12,7 @@ import {
   requireAuthentication,
 } from '../middleware/authentication.js'
 import { createOrRestoreDirectChat } from '../services/chat-service.js'
+import { createConfirmedConnection } from '../services/connection-service.js'
 import { createNotification } from '../services/notification-service.js'
 
 const redeemSchema = z.strictObject({
@@ -139,20 +140,11 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       )
     }
     if (code.usedAt) {
-      if (code.usedById !== currentUser.id) {
-        throw new ApiError(
-          409,
-          'QR_CODE_ALREADY_USED',
-          'El código QR ya fue utilizado.',
-        )
-      }
-      const chat = await createOrRestoreDirectChat(
-        transaction,
-        currentUser.id,
-        code.ownerId,
-        currentUser.id,
+      throw new ApiError(
+        409,
+        'QR_CODE_ALREADY_USED',
+        'El código QR ya fue utilizado.',
       )
-      return { ...chat, ownerId: code.ownerId, redemptionRepeated: true }
     }
     if (code.expiresAt <= new Date()) {
       throw new ApiError(410, 'QR_CODE_EXPIRED', 'El código QR expiró.')
@@ -177,6 +169,7 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
         )
       }
     }
+    await createConfirmedConnection(transaction, currentUser.id, code.ownerId)
     const chat = await createOrRestoreDirectChat(
       transaction,
       currentUser.id,
@@ -190,9 +183,9 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
     await createNotification({
       userId: result.ownerId,
       actorId: currentUser.id,
-      type: 'message',
-      title: 'Nuevo chat por QR',
-      body: `${currentUser.displayName} utilizó tu código QR.`,
+      type: 'connection',
+      title: 'Nueva conexión por QR',
+      body: `${currentUser.displayName} utilizó tu código QR. Ya pueden conversar.`,
       href: `chat:${result.chatId}`,
       resourceId: result.chatId,
     })

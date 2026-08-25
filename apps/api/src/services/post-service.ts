@@ -1,6 +1,12 @@
-import { and, count, desc, eq, inArray, or, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db/client.js'
-import { comments, follows, postLikes, posts, profiles } from '../db/schema.js'
+import {
+  comments,
+  connections,
+  postLikes,
+  posts,
+  profiles,
+} from '../db/schema.js'
 import type { AuthenticatedUser } from '../middleware/authentication.js'
 
 type RawPost = {
@@ -134,8 +140,14 @@ export async function getLikedPostsByUser(
   return enrichPosts(rows, currentUser)
 }
 
-export async function getModerationPosts(currentUser: AuthenticatedUser) {
-  const rows = await loadPostRows(undefined)
+export async function getModerationPosts(
+  currentUser: AuthenticatedUser,
+  status?: typeof posts.$inferSelect.moderationStatus,
+) {
+  const rows = await loadPostRows(
+    status ? eq(posts.moderationStatus, status) : undefined,
+    100,
+  )
   return enrichPosts(rows, currentUser)
 }
 
@@ -160,11 +172,6 @@ function postAccessCondition(currentUser: AuthenticatedUser) {
     return undefined
   }
 
-  const followedAuthorIds = db
-    .select({ id: follows.followingId })
-    .from(follows)
-    .where(eq(follows.followerId, currentUser.id))
-
   return or(
     eq(posts.authorId, currentUser.id),
     and(
@@ -173,8 +180,12 @@ function postAccessCondition(currentUser: AuthenticatedUser) {
         eq(posts.visibility, 'campus'),
         eq(posts.visibility, 'public'),
         and(
-          eq(posts.visibility, 'followers'),
-          inArray(posts.authorId, followedAuthorIds),
+          eq(posts.visibility, 'connections'),
+          sql`exists (
+            select 1 from ${connections}
+            where (${connections.userOneId} = ${currentUser.id} and ${connections.userTwoId} = ${posts.authorId})
+               or (${connections.userTwoId} = ${currentUser.id} and ${connections.userOneId} = ${posts.authorId})
+          )`,
         ),
       ),
     ),

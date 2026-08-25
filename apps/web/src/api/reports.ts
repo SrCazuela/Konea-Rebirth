@@ -6,11 +6,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
 )
 
 export type ReportResourceType =
-  | 'post'
-  | 'comment'
-  | 'chat'
-  | 'message'
-  | 'user'
+  'post' | 'comment' | 'chat' | 'message' | 'user'
 export type ReportStatus = 'pending' | 'reviewing' | 'resolved' | 'dismissed'
 
 type ReportPerson = {
@@ -48,8 +44,9 @@ type CommentReportResource = {
 
 type ChatReportResource = {
   id: string
-  name: string
+  name: string | null
   type: string
+  avatarUrl: string | null
 }
 
 type MessageReportResource = {
@@ -57,6 +54,9 @@ type MessageReportResource = {
   chatId: string
   content: string
   type: string
+  fileUrl: string | null
+  fileName: string | null
+  fileSize: number | null
   sender: ReportPerson
 }
 
@@ -123,7 +123,16 @@ export async function createReport(input: {
   return response.report
 }
 
-export async function getReports(status?: ReportStatus) {
+export async function getReports(status?: ReportStatus): Promise<Report[]> {
+  if (!status) {
+    const statuses: ReportStatus[] = [
+      'pending',
+      'reviewing',
+      'resolved',
+      'dismissed',
+    ]
+    return (await Promise.all(statuses.map(getReports))).flat()
+  }
   const query = status ? `?status=${encodeURIComponent(status)}` : ''
   const response = await reportsRequest<{ reports: Report[] }>(
     `/reports${query}`,

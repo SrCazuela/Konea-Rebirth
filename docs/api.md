@@ -101,7 +101,7 @@ Roles: `student | professor | moderator | admin`. Estados:
 ```
 
 `contentType`: `announcement | community`; `visibility`:
-`campus | followers | public`; moderación:
+`campus | connections | public`; moderación:
 `pending | approved | rejected`.
 
 ### Comentario
@@ -130,11 +130,11 @@ un comentario del mismo post y las devuelve en orden cronológico.
 ### Persona pública
 
 Incluye `id`, `username`, `displayName`, `bio`, `institution`, `career`,
-`campus`, `website`, `avatarUrl`, `coverUrl`, `lastSeenAt`, `role`, `createdAt`,
-`followedByMe`, `isMe` y:
+`campus`, `website`, `avatarUrl`, `coverUrl`, `role`, `createdAt`, `education`,
+`projects`, `achievements`, `connectionStatus`, `isMe` y:
 
 ```json
-{ "stats": { "posts": 4, "followers": 8, "following": 5 } }
+{ "stats": { "posts": 4, "projects": 2, "achievements": 3 } }
 ```
 
 Nunca incluye correo ni estado/credenciales de la cuenta.
@@ -284,18 +284,17 @@ límite de 20 solicitudes cada 15 minutos por origen.
 - Compartir incrementa un contador; no crea una publicación nueva ni registra
   usuarios únicos.
 
-## Perfil y personas
+## Perfil y conexiones
 
-| Método   | Ruta                       | Entrada               | Respuesta                              |
-| -------- | -------------------------- | --------------------- | -------------------------------------- |
-| `PATCH`  | `/profile`                 | campos de perfil      | `{user}`                               |
-| `GET`    | `/users?q=texto`           | `q` opcional, máx. 80 | `{users: PublicUser[]}`, máx. 50       |
-| `GET`    | `/users/:userId`           | —                     | `{user, posts}`                        |
-| `GET`    | `/users/:userId/followers` | —                     | `{users}`                              |
-| `GET`    | `/users/:userId/following` | —                     | `{users}`                              |
-| `GET`    | `/users/:userId/likes`     | —                     | `{posts}` visibles para quien consulta |
-| `POST`   | `/users/:userId/follow`    | —                     | `{followed:true, followersCount}`      |
-| `DELETE` | `/users/:userId/follow`    | —                     | `{followed:false, followersCount}`     |
+| Método   | Ruta                                | Entrada               | Respuesta                                  |
+| -------- | ----------------------------------- | --------------------- | ------------------------------------------ |
+| `PATCH`  | `/profile`                          | campos de perfil      | `{user}`                                   |
+| `GET`    | `/users/connections?q=texto`        | `q` opcional, máx. 80 | `{users}`, solo conexiones propias         |
+| `GET`    | `/users/:userId`                    | —                     | `{user, posts}`                            |
+| `GET`    | `/users/:userId/likes`              | —                     | `{posts}`, solo el propietario             |
+| `POST`   | `/users/:userId/connection-request` | —                     | `{connectionStatus, matched}`              |
+| `DELETE` | `/users/:userId/connection-request` | —                     | cancela la intención unilateral propia     |
+| `DELETE` | `/users/:userId/connection`         | —                     | elimina conexión y archiva el chat directo |
 
 Todos los campos de `PATCH /profile` son opcionales:
 
@@ -309,13 +308,37 @@ Todos los campos de `PATCH /profile` son opcionales:
   "avatarUrl": "https://cdn.example/avatar.png",
   "coverUrl": null,
   "campus": "Santiago",
-  "website": "https://ana.example"
+  "website": "https://ana.example",
+  "education": [
+    {
+      "id": "uuid",
+      "institution": "DUOC UC",
+      "program": "Ingeniería en Informática",
+      "startYear": 2023,
+      "endYear": null,
+      "current": true
+    }
+  ],
+  "projects": [
+    {
+      "id": "uuid",
+      "title": "Konea",
+      "description": "Plataforma universitaria segura",
+      "url": "https://konea.example",
+      "repositoryUrl": null,
+      "imageUrl": null,
+      "technologies": ["React", "PostgreSQL"]
+    }
+  ],
+  "achievements": []
 }
 ```
 
 Texto vacío se normaliza a `null` en campos opcionales. Avatar, portada y sitio
-web aceptan URL absoluta o `null` en este contrato. El seguimiento es
-idempotente y no permite seguir la propia cuenta.
+web aceptan URL absoluta o `null`. El portafolio admite hasta 6 formaciones, 12
+proyectos y 12 logros. No existe `GET /users`: Konea no expone un directorio
+global. Una intención unilateral es visible solo para su emisor; si aparece la
+intención inversa, la API crea una conexión y notifica a ambos usuarios.
 
 ## Chats y participantes
 
@@ -333,9 +356,13 @@ idempotente y no permite seguir la propia cuenta.
 | `DELETE` | `/chats/:chatId/participants/:userId` | —                                     | `204`; salida propia o retiro por manager |
 
 Para grupos, `name` admite 1–120 caracteres, `participantIds` hasta 99 UUID y
-`avatarUrl` una URL absoluta/ruta local o `null`. Al agregar/cambiar un rol solo
-se admite `member | admin`; el dueño es inmutable. Un dueño con otros
-participantes no puede salir y un chat directo no admite editar miembros.
+`avatarUrl` una URL absoluta/ruta local o `null`. Al agregar se admite
+`member | admin`. Al editar también se admite `owner`: solo el propietario
+actual puede transferir la propiedad y pasa a ser administrador en una
+transacción. Un propietario con otros participantes no puede salir hasta
+transferir el grupo, y un chat directo no admite editar miembros. Crear un chat
+directo, crear un grupo con participantes o añadir un participante exige una
+conexión mutua; el QR es la única vía que crea conexión y chat simultáneamente.
 
 ## Mensajes y lectura
 
@@ -351,6 +378,8 @@ Query de listado:
 
 - `limit`: 1–50, default 20;
 - `before`: fecha/hora ISO con zona, exclusiva;
+- `beforeId`: UUID devuelto junto a `nextBefore`, evita duplicados cuando dos
+  mensajes comparten la misma fecha;
 - `q`: búsqueda en contenido, máximo 100;
 - `tag`: una etiqueta permitida.
 
@@ -361,7 +390,8 @@ La respuesta ordena la página de antiguo a nuevo:
   "messages": [],
   "pageInfo": {
     "hasMore": false,
-    "nextBefore": null
+    "nextBefore": null,
+    "nextBeforeId": null
   }
 }
 ```
@@ -456,8 +486,12 @@ minutos y el canje está limitado a 30 intentos cada 15 minutos por origen.
 ```
 
 Máximo 5 MB; formatos `image/jpeg`, `image/png`, `image/webp`, `image/gif` y
-`application/pdf`. La API valida MIME y firma. Tanto carga como lectura exigen
-sesión.
+`application/pdf`. La API valida MIME, firma y propietario. Tanto carga como
+lectura exigen sesión. El propietario puede previsualizar una subida todavía no
+asociada; las demás cuentas solo pueden descargarla cuando tienen acceso al
+perfil, post o chat que la referencia. Moderación recibe acceso únicamente a
+adjuntos que forman parte de un reporte. PDF no puede usarse como avatar,
+portada ni imagen de publicación.
 
 ## Notificaciones
 
@@ -470,7 +504,7 @@ sesión.
 
 Una notificación contiene `id`, `type`, `title`, `body`, `href`, `resourceId`,
 `readAt`, `createdAt` y `actor` resumido o `null`. Tipos:
-`follow | like | comment | reply | message | task | moderation`.
+`connection | like | comment | reply | message | task | moderation`.
 
 `href` usa referencias internas como `user:<uuid>`, `post:<uuid>`,
 `chat:<uuid>` o `report:<uuid>`; no debe abrirse como URL externa.

@@ -1,4 +1,5 @@
 import {
+  createElement,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -40,6 +41,7 @@ import {
   votePoll,
   type ChatDetail,
   type ChatMessage,
+  type MessageDeliveryStatus,
   type ChatParticipantRole,
   type ChatPerson,
   type ChatPoll,
@@ -50,7 +52,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '../api/chat'
-import { searchUsers, type PublicUser } from '../api/network'
+import { listConnections, type PublicUser } from '../api/network'
 import { createReport } from '../api/reports'
 import './Chat.css'
 import { QrScanner } from './QrScanner'
@@ -60,13 +62,16 @@ export type ChatProps = {
   initialChatId?: string | null
   initialUserId?: string | null
   onUnreadChange?: (count: number) => void
+  onNotificationsRead?: (count: number) => void
   onOpenUser?: (userId: string) => void
+  onChatChange?: (chatId: string | null) => void
 }
 
 type ChatIconName =
   | 'arrow-left'
   | 'attachment'
   | 'check'
+  | 'clock'
   | 'chevron-down'
   | 'close'
   | 'copy'
@@ -157,6 +162,7 @@ function initials(name: string) {
 
 function ChatIcon({ name }: { name: ChatIconName }) {
   const paths: Record<ChatIconName, ReactNode> = {
+    clock: createElement('path', { d: 'M12 7v5l3 2m6-2a9 9 0 1 1-9-9' }),
     'arrow-left': <path d="m15 18-6-6 6-6" />,
     attachment: (
       <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" />
@@ -265,6 +271,38 @@ function ChatIcon({ name }: { name: ChatIconName }) {
     >
       {paths[name]}
     </svg>
+  )
+}
+
+const deliveryLabels: Record<MessageDeliveryStatus, string> = {
+  sending: 'Enviando',
+  sent: 'Enviado',
+  delivered: 'Entregado',
+  read: 'Visto',
+}
+
+function MessageDeliveryIndicator({
+  status,
+}: {
+  status: MessageDeliveryStatus
+}) {
+  const label = deliveryLabels[status]
+
+  return (
+    <span
+      className={`chat-delivery-status chat-delivery-status--${status}`}
+      aria-label={label}
+      title={label}
+    >
+      {status === 'sending' ? (
+        <ChatIcon name="clock" />
+      ) : (
+        <span className="chat-delivery-status__checks" aria-hidden="true">
+          <ChatIcon name="check" />
+          {status !== 'sent' && <ChatIcon name="check" />}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -409,14 +447,6 @@ function PollCard({
     .map((option) => option.id)
   const [selection, setSelection] = useState<string[]>(votedIds)
 
-  useEffect(() => {
-    setSelection(
-      poll.options
-        .filter((option) => option.votedByMe)
-        .map((option) => option.id),
-    )
-  }, [poll.id, poll.options])
-
   const toggle = (optionId: string) => {
     setSelection((current) => {
       if (!poll.allowMultiple) return [optionId]
@@ -496,7 +526,9 @@ export function Chat({
   initialChatId = null,
   initialUserId = null,
   onUnreadChange,
+  onNotificationsRead,
   onOpenUser,
+  onChatChange,
 }: ChatProps) {
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [selectedChatId, setSelectedChatId] = useState<string | null>(
@@ -595,6 +627,17 @@ export function Chat({
     onUnreadChange?.(totalUnread)
   }, [onUnreadChange, totalUnread])
 
+  const reconcileChatRead = useCallback(
+    async (chatId: string) => {
+      const result = await markChatRead(chatId)
+      if (result.notificationsRead > 0) {
+        onNotificationsRead?.(result.notificationsRead)
+      }
+      return result
+    },
+    [onNotificationsRead],
+  )
+
   const filteredChats = useMemo(() => {
     const query = listQuery.trim().toLocaleLowerCase('es')
     if (!query) return chats
@@ -678,7 +721,7 @@ export function Chat({
           setNextBefore(page.pageInfo.nextBefore)
           setNextBeforeId(page.pageInfo.nextBeforeId)
         }
-        await markChatRead(chatId)
+        await reconcileChatRead(chatId)
         if (selectedChatIdRef.current !== chatId) return
         setChats((current) =>
           current.map((chat) =>
@@ -698,7 +741,7 @@ export function Chat({
         }
       }
     },
-    [activeTag, messageQuery, selectedChatId],
+    [activeTag, messageQuery, reconcileChatRead, selectedChatId],
   )
 
   useEffect(() => {
@@ -764,12 +807,13 @@ export function Chat({
         setTaskFormOpen(false)
         setConversationLoading(true)
         setSelectedChatId(result.chat.id)
+        onChatChange?.(result.chat.id)
       })
       .catch((createError: unknown) => {
         handledInitialUserRef.current = null
         setError(readableError(createError, 'No pudimos crear el chat.'))
       })
-  }, [currentUser.id, initialUserId, refreshChats])
+  }, [currentUser.id, initialUserId, onChatChange, refreshChats])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -787,7 +831,7 @@ export function Chat({
     Promise.all([
       getChat(selectedChatId),
       getChatTasks(selectedChatId),
-      markChatRead(selectedChatId),
+      reconcileChatRead(selectedChatId),
     ])
       .then(([chat, loadedTasks]) => {
         if (cancelled) return
@@ -811,7 +855,7 @@ export function Chat({
     return () => {
       cancelled = true
     }
-  }, [selectedChatId])
+  }, [reconcileChatRead, selectedChatId])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void refreshLatestMessages(true), 0)
@@ -848,7 +892,7 @@ export function Chat({
     const timeout = window.setTimeout(
       () => {
         setNewChatLoading(true)
-        searchUsers(newChatQuery)
+        listConnections(newChatQuery)
           .then((people) => {
             if (!cancelled) {
               setNewChatPeople(people.filter((person) => !person.isMe))
@@ -857,7 +901,7 @@ export function Chat({
           .catch((searchError: unknown) => {
             if (!cancelled) {
               setError(
-                readableError(searchError, 'No pudimos buscar personas.'),
+                readableError(searchError, 'No pudimos buscar conexiones.'),
               )
             }
           })
@@ -883,7 +927,7 @@ export function Chat({
         setInfoPeople([])
         return
       }
-      searchUsers(infoQuery)
+      listConnections(infoQuery)
         .then((people) => {
           if (cancelled) return
           const memberIds = new Set(
@@ -976,6 +1020,7 @@ export function Chat({
     setEditingMessageId(null)
     setNotice('')
     setError('')
+    onChatChange?.(chatId)
   }
 
   const closeSelectedChat = () => {
@@ -995,6 +1040,7 @@ export function Chat({
     setNextBefore(null)
     setNextBeforeId(null)
     setUtilityPanel(null)
+    onChatChange?.(null)
   }
 
   const loadOlderMessages = async () => {
@@ -1094,20 +1140,65 @@ export function Chat({
   const sendText = async (event: FormEvent) => {
     event.preventDefault()
     if (!selectedChatId || !composer.trim() || sending) return
+    const chatId = selectedChatId
+    const content = composer.trim()
+    const tags = [...composerTags]
+    const pendingId = `pending:${crypto.randomUUID()}`
+    const pendingAt = new Date().toISOString()
+    const pendingMessage: ChatMessage = {
+      id: pendingId,
+      chatId,
+      content,
+      type: 'text',
+      fileUrl: null,
+      fileName: null,
+      fileSize: null,
+      tags,
+      createdAt: pendingAt,
+      updatedAt: pendingAt,
+      deliveryStatus: 'sending',
+      sender: {
+        id: currentUser.id,
+        username: currentUser.username,
+        displayName: currentUser.displayName,
+        avatarUrl: currentUser.avatarUrl,
+      },
+      poll: null,
+    }
+
     setSending(true)
     setError('')
+    setComposer('')
+    setComposerTags([])
+    setMessages((current) => [...current, pendingMessage])
     try {
-      await sendMessage(selectedChatId, {
-        content: composer.trim(),
+      const { message } = await sendMessage(chatId, {
+        content,
         type: 'text',
-        tags: composerTags,
+        tags,
       })
-      setComposer('')
-      setComposerTags([])
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === pendingId
+            ? {
+                ...message,
+                sender: pendingMessage.sender,
+                poll: null,
+              }
+            : item,
+        ),
+      )
       loadedOlderRef.current = false
       setLoadedOlder(false)
       await Promise.all([refreshLatestMessages(), refreshChats(true)])
     } catch (sendError) {
+      setMessages((current) =>
+        current.filter((message) => message.id !== pendingId),
+      )
+      if (selectedChatIdRef.current === chatId) {
+        setComposer(content)
+        setComposerTags(tags)
+      }
       setError(readableError(sendError, 'No pudimos enviar el mensaje.'))
     } finally {
       setSending(false)
@@ -1354,9 +1445,17 @@ export function Chat({
 
   const changeParticipantRole = async (
     participant: ChatPerson,
-    role: Exclude<ChatParticipantRole, 'owner'>,
+    role: ChatParticipantRole,
   ) => {
     if (!selectedChatId) return
+    if (
+      role === 'owner' &&
+      !window.confirm(
+        `\u00bfTransferir la propiedad del grupo a ${participant.displayName}?`,
+      )
+    ) {
+      return
+    }
     setParticipantBusyId(participant.id)
     try {
       const participants = await updateChatParticipant(
@@ -1364,7 +1463,11 @@ export function Chat({
         participant.id,
         role,
       )
-      setDetail((current) => (current ? { ...current, participants } : current))
+      if (role === 'owner') await refreshDetail(selectedChatId)
+      else
+        setDetail((current) =>
+          current ? { ...current, participants } : current,
+        )
     } catch (roleError) {
       setError(readableError(roleError, 'No pudimos cambiar este rol.'))
     } finally {
@@ -2005,6 +2108,10 @@ export function Chat({
                                       )}
                                     {message.poll && (
                                       <PollCard
+                                        key={`${message.poll.id}:${message.poll.options
+                                          .filter((option) => option.votedByMe)
+                                          .map((option) => option.id)
+                                          .join(',')}`}
                                         poll={message.poll}
                                         busy={busyPollId === message.poll.id}
                                         onVote={(poll, optionIds) =>
@@ -2037,7 +2144,11 @@ export function Chat({
                                     </time>
                                     {message.updatedAt !==
                                       message.createdAt && <span>Editado</span>}
-                                    {own && <ChatIcon name="check" />}
+                                    {own && (
+                                      <MessageDeliveryIndicator
+                                        status={message.deliveryStatus}
+                                      />
+                                    )}
                                   </footer>
                                 )}
                               </div>
@@ -2311,12 +2422,17 @@ export function Chat({
                               onChange={(event) =>
                                 void changeParticipantRole(
                                   participant,
-                                  event.target.value as 'member' | 'admin',
+                                  event.target.value as ChatParticipantRole,
                                 )
                               }
                             >
                               <option value="member">Miembro</option>
                               <option value="admin">Admin</option>
+                              {detail.myRole === 'owner' && (
+                                <option value="owner">
+                                  Transferir propiedad
+                                </option>
+                              )}
                             </select>
                             <button
                               type="button"
@@ -2345,7 +2461,7 @@ export function Chat({
                       type="search"
                       value={infoQuery}
                       onChange={(event) => setInfoQuery(event.target.value)}
-                      placeholder="Buscar por nombre…"
+                      placeholder="Buscar entre mis conexiones…"
                       autoComplete="off"
                     />
                   </div>
@@ -2372,7 +2488,7 @@ export function Chat({
                           </button>
                         ))
                       ) : (
-                        <p>No hay personas disponibles con esa búsqueda.</p>
+                        <p>No hay conexiones disponibles con esa búsqueda.</p>
                       )}
                     </div>
                   )}
@@ -2772,7 +2888,7 @@ export function Chat({
       {showNewChat && (
         <Dialog
           title="Nueva conversación"
-          description="Encuentra personas o reúne a tu equipo en un grupo."
+          description="Conversa directamente o reúne a tus conexiones en un grupo."
           onClose={resetNewChat}
         >
           <div className="chat-dialog-tabs" role="tablist">
@@ -2799,13 +2915,13 @@ export function Chat({
             </button>
           </div>
           <label className="chat-search chat-dialog-search">
-            <span className="chat-sr-only">Buscar personas</span>
+            <span className="chat-sr-only">Buscar conexiones</span>
             <ChatIcon name="search" />
             <input
               type="search"
               value={newChatQuery}
               onChange={(event) => setNewChatQuery(event.target.value)}
-              placeholder="Buscar por nombre, usuario o carrera…"
+              placeholder="Buscar entre mis conexiones…"
               autoComplete="off"
               autoFocus
             />
@@ -2814,7 +2930,7 @@ export function Chat({
             {newChatLoading ? (
               <div className="chat-state chat-state--compact" role="status">
                 <span className="chat-spinner" />
-                <p>Buscando personas…</p>
+                <p>Buscando conexiones…</p>
               </div>
             ) : newChatPeople.length ? (
               newChatPeople.map((person) => {
@@ -2860,7 +2976,7 @@ export function Chat({
               })
             ) : (
               <div className="chat-state chat-state--compact">
-                <p>No encontramos personas disponibles.</p>
+                <p>No encontramos conexiones disponibles.</p>
               </div>
             )}
           </div>

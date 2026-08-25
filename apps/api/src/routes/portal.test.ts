@@ -4,7 +4,7 @@ import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
-import { follows, posts, uploadedFiles, users } from '../db/schema.js'
+import { connections, posts, uploadedFiles, users } from '../db/schema.js'
 
 function testAccount(label: string) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
@@ -179,7 +179,7 @@ describe.sequential('authenticated portal API', () => {
     expect(forbiddenDelete.status).toBe(403)
   })
 
-  it('enforces announcement roles and followers visibility', async () => {
+  it('enforces announcement roles and connections visibility', async () => {
     const forbiddenAnnouncement = await secondAgent.post('/api/v1/posts').send({
       content: 'Anuncio que un estudiante no puede publicar.',
       contentType: 'announcement',
@@ -191,9 +191,9 @@ describe.sequential('authenticated portal API', () => {
     )
 
     const privatePost = await firstAgent.post('/api/v1/posts').send({
-      content: 'Contenido exclusivo para quienes siguen mi perfil.',
+      content: 'Contenido exclusivo para mis conexiones.',
       contentType: 'community',
-      visibility: 'followers',
+      visibility: 'connections',
     })
     expect(privatePost.status).toBe(201)
 
@@ -202,10 +202,9 @@ describe.sequential('authenticated portal API', () => {
       hiddenFeed.body.posts.map((post: { id: string }) => post.id),
     ).not.toContain(privatePost.body.post.id)
 
-    await db.insert(follows).values({
-      followerId: secondUserId,
-      followingId: firstUserId,
-    })
+    const [userOneId, userTwoId] = [secondUserId, firstUserId].sort()
+    if (!userOneId || !userTwoId) throw new Error('Invalid test connection')
+    await db.insert(connections).values({ userOneId, userTwoId })
     const visibleFeed = await secondAgent.get('/api/v1/posts')
     expect(
       visibleFeed.body.posts.map((post: { id: string }) => post.id),
@@ -232,7 +231,9 @@ describe.sequential('authenticated portal API', () => {
 
     expect(pendingPost).toBeDefined()
 
-    const queue = await firstAgent.get('/api/v1/moderation/posts')
+    const queue = await firstAgent.get(
+      '/api/v1/moderation/posts?status=pending',
+    )
     expect(queue.status).toBe(200)
     expect(queue.body.posts.map((post: { id: string }) => post.id)).toContain(
       pendingPost?.id,
@@ -249,13 +250,21 @@ describe.sequential('authenticated portal API', () => {
     expect(approval.status).toBe(200)
     expect(approval.body.post.moderationStatus).toBe('approved')
 
-    const history = await firstAgent.get('/api/v1/moderation/posts')
+    const history = await firstAgent.get(
+      '/api/v1/moderation/posts?status=approved',
+    )
     expect(history.status).toBe(200)
     expect(
       history.body.posts.find(
         (post: { id: string }) => post.id === pendingPost?.id,
       )?.moderationStatus,
     ).toBe('approved')
+
+    const invalidFilter = await firstAgent.get(
+      '/api/v1/moderation/posts?status=unknown',
+    )
+    expect(invalidFilter.status).toBe(400)
+    expect(invalidFilter.body.error.code).toBe('INVALID_MODERATION_STATUS')
 
     const studentFeed = await secondAgent.get('/api/v1/posts')
     expect(

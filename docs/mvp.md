@@ -9,12 +9,12 @@ del lado servidor y PostgreSQL persistente.
 
 La pregunta que responde el MVP es:
 
-> ¿Puede una comunidad universitaria descubrir personas, compartir contenido y
-> coordinar trabajo grupal con identidad, privacidad y moderación verificables?
+> ¿Puede una comunidad universitaria compartir contenido y coordinar trabajo
+> grupal sin exponer a sus estudiantes a contactos directos no consentidos?
 
 ## Actores
 
-- **Estudiante:** publica, sigue personas, conversa y colabora.
+- **Estudiante:** publica, crea conexiones recíprocas, conversa y colabora.
 - **Profesor:** tiene las funciones sociales y puede emitir anuncios.
 - **Moderador:** revisa contenido y reportes sin recibir acceso a secretos o
   contraseñas.
@@ -28,27 +28,29 @@ La pregunta que responde el MVP es:
 
 - Registro con correo, nombre, usuario único y contraseña.
 - Inicio y cierre de sesión revocable mediante cookie `HttpOnly`.
-- Perfil académico editable: nombre, usuario, biografía, institución, carrera,
-  campus, avatar, portada y sitio web.
-- Directorio con búsqueda por nombre, usuario, carrera, institución o campus.
-- Perfil público con actividad reciente, rol, estadísticas y posts visibles.
+- Perfil-portafolio editable: identidad, biografía, institución, carrera,
+  campus, formación histórica, proyectos, logros, avatar, portada y sitio web.
+- No existe un directorio global de estudiantes.
+- Los perfiles se abren desde autores de posts/comentarios, chats o códigos QR.
+- Una solicitud unilateral permanece privada; solo la reciprocidad crea una
+  conexión y genera notificaciones.
 
 ### 2. Comunidad
 
 - Publicaciones de tipo `community` o `announcement`.
 - Anuncios restringidos a `professor`, `moderator` y `admin`.
-- Visibilidad `campus`, `followers` o `public`, aplicada en la API.
+- Visibilidad `campus`, `connections` o `public`, aplicada en la API.
 - Texto de hasta 2.000 caracteres e imagen opcional.
 - Me gusta idempotente, contador de comentarios y contador de compartidos.
 - Comentarios y respuestas anidadas, con edición del autor y eliminación por
   autor/moderación.
 - Eliminación de posts propios y eliminación administrativa.
-- Seguimiento/desseguimiento y notificación al nuevo seguidor.
-- Consulta de seguidores, seguidos y posts favoritos mediante API.
+- Lista privada de conexiones; no hay contadores sociales públicos.
+- Los posts favoritos son actividad privada de su propietario.
 
 ### 3. Mensajería y grupos
 
-- Un único chat directo por pareja de usuarios; recrearlo restaura el existente.
+- Un único chat directo por pareja conectada; crearlo sin conexión se rechaza.
 - Grupos con nombre, avatar y participantes.
 - Roles internos `owner`, `admin` y `member` con validación del lado servidor.
 - Alta, cambio de rol, salida o retiro de participantes según permisos.
@@ -67,12 +69,12 @@ La pregunta que responde el MVP es:
 - Edición y eliminación según creador, persona asignada y rol del grupo.
 - Encuestas con 2 a 6 opciones, voto único o múltiple y resultados acumulados.
 - Códigos personales alfanuméricos de seis caracteres, válidos por cinco
-  minutos, de un solo uso y con límite de intentos; al canjearlos se abre o
-  recupera un chat directo.
+  minutos, de un solo uso y con límite de intentos; al canjearlos se crea una
+  conexión explícita y se abre un chat directo.
 
 ### 5. Actividad, reportes y moderación
 
-- Notificaciones por seguidores, reacciones, comentarios, respuestas,
+- Notificaciones por conexiones recíprocas, reacciones, comentarios, respuestas,
   mensajes, tareas y acciones de moderación.
 - Conteo de no leídas, lectura individual y marcado global.
 - Reportes sobre posts, comentarios, chats, mensajes o usuarios en la API.
@@ -96,7 +98,10 @@ La pregunta que responde el MVP es:
 | -------------------------------------------------- | ---------------------------------------------------------------------- |
 | Usuario sin sesión solicita feed/chat              | `401` y ningún dato social                                             |
 | Estudiante intenta publicar anuncio                | `403`                                                                  |
-| Post solo para seguidores                          | Visible para autor, seguidores y moderación; no para otros estudiantes |
+| Post solo para conexiones                          | Visible para autor, conexiones y moderación; no para otros estudiantes |
+| A solicita conectar con B                          | B no recibe aviso ni conoce el intento                                 |
+| B también solicita conectar con A                  | Se crea conexión y ambos reciben notificación                          |
+| Usuario sin conexión intenta iniciar chat directo  | `403 CONNECTION_REQUIRED`                                              |
 | Segundo Me gusta del mismo usuario                 | No duplica la fila ni el conteo                                        |
 | Usuario ajeno consulta un chat                     | `403`/recurso no expuesto                                              |
 | Integrante normal administra otro miembro          | Operación rechazada                                                    |
@@ -115,8 +120,10 @@ Para una defensa breve conviene preparar tres cuentas: estudiante A, estudiante
 B y moderador; opcionalmente un profesor.
 
 1. Registrar A, completar su perfil y publicar una imagen de comunidad.
-2. Ingresar como B, buscar a A, seguirlo, reaccionar y responder un comentario.
-3. Abrir un chat directo o canjear el código personal de A.
+2. Ingresar como B, abrir el perfil de A desde un comentario y mandar una
+   solicitud de conexión; comprobar que A todavía no recibe notificación.
+3. Hacer que A solicite conectar con B y mostrar la conexión mutua, o canjear
+   el código personal de A para crearla inmediatamente.
 4. Crear un grupo, enviar un PDF etiquetado, asignar una tarea y votar una
    encuesta.
 5. Mostrar cómo aumentan no leídos y notificaciones en la otra sesión.
@@ -160,8 +167,9 @@ red externa.
 - `campus` no crea aislamiento multi-institución; hoy existe una comunidad
   lógica Konea.
 - `public` no implica acceso anónimo porque toda la API social exige sesión.
-- Los archivos locales no tienen antivirus, cuotas por usuario ni limpieza
-  automática de huérfanos.
+- Los archivos locales registran propietario y controlan lectura por recurso,
+  pero no tienen antivirus, cuotas por usuario ni limpieza automática de
+  huérfanos.
 - No hay verificación/recuperación de correo, segundo factor o cierre de todas
   las sesiones.
 - No hay notificaciones push, búsqueda global indexada ni paginación del feed.

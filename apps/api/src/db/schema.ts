@@ -32,7 +32,7 @@ export const userStatus = pgEnum('user_status', [
 
 export const postVisibility = pgEnum('post_visibility', [
   'campus',
-  'followers',
+  'connections',
   'public',
 ])
 
@@ -72,7 +72,7 @@ export const taskStatus = pgEnum('task_status', [
 ])
 
 export const notificationType = pgEnum('notification_type', [
-  'follow',
+  'connection',
   'like',
   'comment',
   'reply',
@@ -80,6 +80,34 @@ export const notificationType = pgEnum('notification_type', [
   'task',
   'moderation',
 ])
+
+export type ProfileEducation = {
+  id: string
+  institution: string
+  program: string
+  startYear: number | null
+  endYear: number | null
+  current: boolean
+}
+
+export type ProfileProject = {
+  id: string
+  title: string
+  description: string
+  url: string | null
+  repositoryUrl: string | null
+  imageUrl: string | null
+  technologies: string[]
+}
+
+export type ProfileAchievement = {
+  id: string
+  title: string
+  issuer: string
+  issuedAt: string | null
+  description: string
+  credentialUrl: string | null
+}
 
 export const assistantMessageRole = pgEnum('assistant_message_role', [
   'user',
@@ -157,6 +185,15 @@ export const profiles = pgTable(
     coverUrl: text('cover_url'),
     campus: varchar('campus', { length: 160 }),
     website: text('website'),
+    education: jsonb('education')
+      .$type<ProfileEducation[]>()
+      .default([])
+      .notNull(),
+    projects: jsonb('projects').$type<ProfileProject[]>().default([]).notNull(),
+    achievements: jsonb('achievements')
+      .$type<ProfileAchievement[]>()
+      .default([])
+      .notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -271,13 +308,38 @@ export const postLikes = pgTable(
   (table) => [primaryKey({ columns: [table.postId, table.userId] })],
 )
 
-export const follows = pgTable(
-  'follows',
+export const connectionIntents = pgTable(
+  'connection_intents',
   {
-    followerId: uuid('follower_id')
+    requesterId: uuid('requester_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    followingId: uuid('following_id')
+    recipientId: uuid('recipient_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.requesterId, table.recipientId] }),
+    index('connection_intents_recipient_index').on(table.recipientId),
+    index('connection_intents_expires_at_index').on(table.expiresAt),
+    check(
+      'connection_intents_cannot_request_self',
+      sql`${table.requesterId} <> ${table.recipientId}`,
+    ),
+  ],
+)
+
+export const connections = pgTable(
+  'connections',
+  {
+    userOneId: uuid('user_one_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    userTwoId: uuid('user_two_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -285,11 +347,11 @@ export const follows = pgTable(
       .notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.followerId, table.followingId] }),
-    index('follows_following_id_index').on(table.followingId),
+    primaryKey({ columns: [table.userOneId, table.userTwoId] }),
+    index('connections_user_two_id_index').on(table.userTwoId),
     check(
-      'follows_cannot_follow_self',
-      sql`${table.followerId} <> ${table.followingId}`,
+      'connections_canonical_pair',
+      sql`${table.userOneId} < ${table.userTwoId}`,
     ),
   ],
 )
@@ -365,6 +427,24 @@ export const messages = pgTable(
   (table) => [
     index('messages_chat_created_at_index').on(table.chatId, table.createdAt),
     index('messages_sender_id_index').on(table.senderId),
+  ],
+)
+
+export const messageReceipts = pgTable(
+  'message_receipts',
+  {
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    readAt: timestamp('read_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId] }),
+    index('message_receipts_user_id_index').on(table.userId),
   ],
 )
 

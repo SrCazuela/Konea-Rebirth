@@ -10,7 +10,12 @@ import {
 import type { KoneaUser } from '../api/auth'
 import { getChatUnreadCount } from '../api/chat'
 import { getUnreadNotificationCount } from '../api/notifications'
-import { getPublicUser } from '../api/network'
+import {
+  getPublicUser,
+  type ProfileAchievement,
+  type ProfileEducation,
+  type ProfileProject,
+} from '../api/network'
 import {
   createComment,
   createPost,
@@ -401,7 +406,7 @@ function visibilityDetails(visibility: PostVisibility) {
     { label: string; icon: Extract<IconName, 'globe' | 'users' | 'lock'> }
   > = {
     campus: { label: 'Comunidad Konea', icon: 'users' },
-    followers: { label: 'Seguidores', icon: 'lock' },
+    connections: { label: 'Conexiones', icon: 'lock' },
     public: { label: 'Público', icon: 'globe' },
   }
   return values[visibility]
@@ -1522,7 +1527,7 @@ function FeedView({ user }: { user: KoneaUser }) {
                     disabled={publishing}
                   >
                     <option value="campus">Comunidad Konea</option>
-                    <option value="followers">Solo seguidores</option>
+                    <option value="connections">Solo conexiones</option>
                     <option value="public">Público</option>
                   </select>
                 </label>
@@ -1766,8 +1771,8 @@ function ProfileView({
   const [activityTab, setActivityTab] = useState<ProfileActivityTab>('posts')
   const [profileStats, setProfileStats] = useState<{
     posts: number
-    followers: number
-    following: number
+    projects: number
+    achievements: number
   } | null>(null)
   const [profilePosts, setProfilePosts] = useState<Post[]>([])
   const [likedPosts, setLikedPosts] = useState<Post[]>([])
@@ -1783,6 +1788,9 @@ function ProfileView({
     coverUrl: user.coverUrl,
     campus: user.campus,
     website: user.website,
+    education: user.education,
+    projects: user.projects,
+    achievements: user.achievements,
   })
 
   const loadActivity = useCallback(async () => {
@@ -1835,8 +1843,10 @@ function ProfileView({
     }
   }, [user.id])
 
-  const setField = (field: keyof ProfileUpdate, value: string | null) =>
-    setForm((current) => ({ ...current, [field]: value }))
+  const setField = <Field extends keyof ProfileUpdate>(
+    field: Field,
+    value: ProfileUpdate[Field],
+  ) => setForm((current) => ({ ...current, [field]: value }))
   const resetForm = (source = user) =>
     setForm({
       username: source.username,
@@ -1848,6 +1858,9 @@ function ProfileView({
       coverUrl: source.coverUrl,
       campus: source.campus,
       website: source.website,
+      education: source.education,
+      projects: source.projects,
+      achievements: source.achievements,
     })
 
   const cancelEditing = () => {
@@ -1855,6 +1868,28 @@ function ProfileView({
     setError('')
     resetForm()
   }
+
+  const updateEducation = (id: string, update: Partial<ProfileEducation>) =>
+    setField(
+      'education',
+      form.education.map((entry) =>
+        entry.id === id ? { ...entry, ...update } : entry,
+      ),
+    )
+  const updateProject = (id: string, update: Partial<ProfileProject>) =>
+    setField(
+      'projects',
+      form.projects.map((entry) =>
+        entry.id === id ? { ...entry, ...update } : entry,
+      ),
+    )
+  const updateAchievement = (id: string, update: Partial<ProfileAchievement>) =>
+    setField(
+      'achievements',
+      form.achievements.map((entry) =>
+        entry.id === id ? { ...entry, ...update } : entry,
+      ),
+    )
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1871,6 +1906,29 @@ function ProfileView({
       coverUrl: form.coverUrl?.trim() || null,
       campus: form.campus?.trim() || null,
       website: form.website?.trim() || null,
+      education: form.education.map((entry) => ({
+        ...entry,
+        institution: entry.institution.trim(),
+        program: entry.program.trim(),
+      })),
+      projects: form.projects.map((entry) => ({
+        ...entry,
+        title: entry.title.trim(),
+        description: entry.description.trim(),
+        url: entry.url?.trim() || null,
+        repositoryUrl: entry.repositoryUrl?.trim() || null,
+        imageUrl: entry.imageUrl?.trim() || null,
+        technologies: entry.technologies
+          .map((technology) => technology.trim())
+          .filter(Boolean),
+      })),
+      achievements: form.achievements.map((entry) => ({
+        ...entry,
+        title: entry.title.trim(),
+        issuer: entry.issuer.trim(),
+        description: entry.description.trim(),
+        credentialUrl: entry.credentialUrl?.trim() || null,
+      })),
     }
     try {
       const updatedUser = await updateProfile(cleaned)
@@ -1985,12 +2043,12 @@ function ProfileView({
                 <dd>Publicaciones</dd>
               </div>
               <div>
-                <dt>{profileStats.followers}</dt>
-                <dd>Seguidores</dd>
+                <dt>{profileStats.projects}</dt>
+                <dd>Proyectos</dd>
               </div>
               <div>
-                <dt>{profileStats.following}</dt>
-                <dd>Siguiendo</dd>
+                <dt>{profileStats.achievements}</dt>
+                <dd>Logros</dd>
               </div>
             </dl>
           )}
@@ -2135,6 +2193,368 @@ function ProfileView({
               />
               <small>{form.bio?.length ?? 0}/280</small>
             </label>
+            <section className="portal-portfolio-editor">
+              <div className="portal-portfolio-editor__heading">
+                <div>
+                  <span className="portal-card-kicker">Portafolio</span>
+                  <h3>Formación académica</h3>
+                </div>
+                <button
+                  className="portal-secondary-button"
+                  type="button"
+                  disabled={form.education.length >= 6 || saving || uploadsBusy}
+                  onClick={() =>
+                    setField('education', [
+                      ...form.education,
+                      {
+                        id: crypto.randomUUID(),
+                        institution: '',
+                        program: '',
+                        startYear: null,
+                        endYear: null,
+                        current: false,
+                      },
+                    ])
+                  }
+                >
+                  Agregar formación
+                </button>
+              </div>
+              {form.education.map((entry) => (
+                <fieldset className="portal-portfolio-entry" key={entry.id}>
+                  <legend>Estudio o título</legend>
+                  <div className="portal-field-grid">
+                    <label>
+                      <span>Institución</span>
+                      <input
+                        value={entry.institution}
+                        onChange={(event) =>
+                          updateEducation(entry.id, {
+                            institution: event.target.value,
+                          })
+                        }
+                        maxLength={160}
+                        placeholder="Ej. DUOC UC"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Carrera, título o programa</span>
+                      <input
+                        value={entry.program}
+                        onChange={(event) =>
+                          updateEducation(entry.id, {
+                            program: event.target.value,
+                          })
+                        }
+                        maxLength={160}
+                        placeholder="Ej. Ingeniería en Informática"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Año de inicio</span>
+                      <input
+                        type="number"
+                        min={1950}
+                        max={2100}
+                        value={entry.startYear ?? ''}
+                        onChange={(event) =>
+                          updateEducation(entry.id, {
+                            startYear: event.target.value
+                              ? Number(event.target.value)
+                              : null,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Año de término</span>
+                      <input
+                        type="number"
+                        min={1950}
+                        max={2100}
+                        value={entry.endYear ?? ''}
+                        disabled={entry.current}
+                        onChange={(event) =>
+                          updateEducation(entry.id, {
+                            endYear: event.target.value
+                              ? Number(event.target.value)
+                              : null,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label className="portal-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={entry.current}
+                      onChange={(event) =>
+                        updateEducation(entry.id, {
+                          current: event.target.checked,
+                          endYear: event.target.checked ? null : entry.endYear,
+                        })
+                      }
+                    />
+                    <span>Actualmente estudio aquí</span>
+                  </label>
+                  <button
+                    className="portal-text-danger"
+                    type="button"
+                    onClick={() =>
+                      setField(
+                        'education',
+                        form.education.filter((item) => item.id !== entry.id),
+                      )
+                    }
+                  >
+                    Quitar formación
+                  </button>
+                </fieldset>
+              ))}
+            </section>
+
+            <section className="portal-portfolio-editor">
+              <div className="portal-portfolio-editor__heading">
+                <div>
+                  <span className="portal-card-kicker">Creaciones</span>
+                  <h3>Proyectos</h3>
+                </div>
+                <button
+                  className="portal-secondary-button"
+                  type="button"
+                  disabled={form.projects.length >= 12 || saving || uploadsBusy}
+                  onClick={() =>
+                    setField('projects', [
+                      ...form.projects,
+                      {
+                        id: crypto.randomUUID(),
+                        title: '',
+                        description: '',
+                        url: null,
+                        repositoryUrl: null,
+                        imageUrl: null,
+                        technologies: [],
+                      },
+                    ])
+                  }
+                >
+                  Agregar proyecto
+                </button>
+              </div>
+              {form.projects.map((entry) => (
+                <fieldset className="portal-portfolio-entry" key={entry.id}>
+                  <legend>Proyecto</legend>
+                  <div className="portal-field-grid">
+                    <label>
+                      <span>Título</span>
+                      <input
+                        value={entry.title}
+                        onChange={(event) =>
+                          updateProject(entry.id, { title: event.target.value })
+                        }
+                        maxLength={120}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Tecnologías, separadas por comas</span>
+                      <input
+                        value={entry.technologies.join(', ')}
+                        onChange={(event) =>
+                          updateProject(entry.id, {
+                            technologies: event.target.value
+                              .split(',')
+                              .slice(0, 12),
+                          })
+                        }
+                        placeholder="React, PostgreSQL, Docker"
+                      />
+                    </label>
+                    <label>
+                      <span>Enlace del proyecto</span>
+                      <input
+                        type="url"
+                        value={entry.url ?? ''}
+                        onChange={(event) =>
+                          updateProject(entry.id, { url: event.target.value })
+                        }
+                        placeholder="https://mi-proyecto.cl"
+                      />
+                    </label>
+                    <label>
+                      <span>Repositorio</span>
+                      <input
+                        type="url"
+                        value={entry.repositoryUrl ?? ''}
+                        onChange={(event) =>
+                          updateProject(entry.id, {
+                            repositoryUrl: event.target.value,
+                          })
+                        }
+                        placeholder="https://github.com/usuario/proyecto"
+                      />
+                    </label>
+                    <label>
+                      <span>Imagen del proyecto</span>
+                      <input
+                        type="url"
+                        value={entry.imageUrl ?? ''}
+                        onChange={(event) =>
+                          updateProject(entry.id, {
+                            imageUrl: event.target.value,
+                          })
+                        }
+                        placeholder="https://…"
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>Descripción</span>
+                    <textarea
+                      value={entry.description}
+                      onChange={(event) =>
+                        updateProject(entry.id, {
+                          description: event.target.value,
+                        })
+                      }
+                      maxLength={1000}
+                      rows={3}
+                      required
+                    />
+                  </label>
+                  <button
+                    className="portal-text-danger"
+                    type="button"
+                    onClick={() =>
+                      setField(
+                        'projects',
+                        form.projects.filter((item) => item.id !== entry.id),
+                      )
+                    }
+                  >
+                    Quitar proyecto
+                  </button>
+                </fieldset>
+              ))}
+            </section>
+
+            <section className="portal-portfolio-editor">
+              <div className="portal-portfolio-editor__heading">
+                <div>
+                  <span className="portal-card-kicker">Trayectoria</span>
+                  <h3>Logros y certificaciones</h3>
+                </div>
+                <button
+                  className="portal-secondary-button"
+                  type="button"
+                  disabled={
+                    form.achievements.length >= 12 || saving || uploadsBusy
+                  }
+                  onClick={() =>
+                    setField('achievements', [
+                      ...form.achievements,
+                      {
+                        id: crypto.randomUUID(),
+                        title: '',
+                        issuer: '',
+                        issuedAt: null,
+                        description: '',
+                        credentialUrl: null,
+                      },
+                    ])
+                  }
+                >
+                  Agregar logro
+                </button>
+              </div>
+              {form.achievements.map((entry) => (
+                <fieldset className="portal-portfolio-entry" key={entry.id}>
+                  <legend>Logro o certificación</legend>
+                  <div className="portal-field-grid">
+                    <label>
+                      <span>Título</span>
+                      <input
+                        value={entry.title}
+                        onChange={(event) =>
+                          updateAchievement(entry.id, {
+                            title: event.target.value,
+                          })
+                        }
+                        maxLength={160}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Institución emisora</span>
+                      <input
+                        value={entry.issuer}
+                        onChange={(event) =>
+                          updateAchievement(entry.id, {
+                            issuer: event.target.value,
+                          })
+                        }
+                        maxLength={160}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Fecha</span>
+                      <input
+                        type="month"
+                        value={entry.issuedAt ?? ''}
+                        onChange={(event) =>
+                          updateAchievement(entry.id, {
+                            issuedAt: event.target.value || null,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Enlace de credencial</span>
+                      <input
+                        type="url"
+                        value={entry.credentialUrl ?? ''}
+                        onChange={(event) =>
+                          updateAchievement(entry.id, {
+                            credentialUrl: event.target.value,
+                          })
+                        }
+                        placeholder="https://…"
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>Descripción opcional</span>
+                    <textarea
+                      value={entry.description}
+                      onChange={(event) =>
+                        updateAchievement(entry.id, {
+                          description: event.target.value,
+                        })
+                      }
+                      maxLength={600}
+                      rows={2}
+                    />
+                  </label>
+                  <button
+                    className="portal-text-danger"
+                    type="button"
+                    onClick={() =>
+                      setField(
+                        'achievements',
+                        form.achievements.filter(
+                          (item) => item.id !== entry.id,
+                        ),
+                      )
+                    }
+                  >
+                    Quitar logro
+                  </button>
+                </fieldset>
+              ))}
+            </section>
             <details className="portal-profile-url-fields">
               <summary>Usar enlaces externos para las imágenes</summary>
               <label>
@@ -2208,6 +2628,76 @@ function ProfileView({
           </p>
         )}
       </section>
+
+      {!editing && (
+        <section className="portal-card portal-own-portfolio">
+          <div className="portal-section-title">
+            <div>
+              <span className="portal-card-kicker">Portafolio</span>
+              <h2>Trayectoria y proyectos</h2>
+            </div>
+          </div>
+          {user.education.length === 0 &&
+          user.projects.length === 0 &&
+          user.achievements.length === 0 ? (
+            <div className="portal-empty-state portal-empty-state--compact">
+              <h3>Tu portafolio está vacío</h3>
+              <p>
+                Edita tu perfil para agregar formación, proyectos y logros que
+                acrediten tu trayectoria.
+              </p>
+            </div>
+          ) : (
+            <div className="portal-own-portfolio__grid">
+              {user.education.length > 0 && (
+                <section>
+                  <h3>Formación</h3>
+                  {user.education.map((entry) => (
+                    <article key={entry.id}>
+                      <strong>{entry.program}</strong>
+                      <span>{entry.institution}</span>
+                      <small>
+                        {entry.startYear ?? 'Inicio no indicado'} —{' '}
+                        {entry.current
+                          ? 'Actualidad'
+                          : (entry.endYear ?? 'Término no indicado')}
+                      </small>
+                    </article>
+                  ))}
+                </section>
+              )}
+              {user.projects.length > 0 && (
+                <section>
+                  <h3>Proyectos</h3>
+                  {user.projects.map((entry) => (
+                    <article key={entry.id}>
+                      <strong>{entry.title}</strong>
+                      <span>{entry.description}</span>
+                      {entry.url && (
+                        <a href={entry.url} target="_blank" rel="noreferrer">
+                          Ver proyecto
+                        </a>
+                      )}
+                    </article>
+                  ))}
+                </section>
+              )}
+              {user.achievements.length > 0 && (
+                <section>
+                  <h3>Logros</h3>
+                  {user.achievements.map((entry) => (
+                    <article key={entry.id}>
+                      <strong>{entry.title}</strong>
+                      <span>{entry.issuer}</span>
+                      {entry.description && <small>{entry.description}</small>}
+                    </article>
+                  ))}
+                </section>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="portal-profile-activity">
         <div
@@ -2480,7 +2970,14 @@ function ReportResourcePreview({ report }: { report: Report }) {
       return (
         <div className="portal-report-resource-preview">
           <span>Chat {report.resource.type}</span>
-          <p>{report.resource.name}</p>
+          <p>{report.resource.name ?? 'Conversaci\u00f3n directa'}</p>
+          {report.resource.avatarUrl && (
+            <img
+              src={report.resource.avatarUrl}
+              alt="Imagen del chat reportado"
+              loading="lazy"
+            />
+          )}
         </div>
       )
     case 'message':
@@ -2488,6 +2985,18 @@ function ReportResourcePreview({ report }: { report: Report }) {
         <div className="portal-report-resource-preview">
           <span>Mensaje de {report.resource.sender.displayName}</span>
           <p>{report.resource.content}</p>
+          {report.resource.fileUrl && report.resource.type === 'image' && (
+            <img
+              src={report.resource.fileUrl}
+              alt="Imagen del mensaje reportado"
+              loading="lazy"
+            />
+          )}
+          {report.resource.fileUrl && report.resource.type === 'file' && (
+            <a href={report.resource.fileUrl} target="_blank" rel="noreferrer">
+              Abrir archivo: {report.resource.fileName ?? 'adjunto'}
+            </a>
+          )}
           <small>
             En chat <code>{report.resource.chatId}</code>
           </small>
@@ -2887,6 +3396,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
   )
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [unreadChats, setUnreadChats] = useState(0)
+  const notificationRequestRef = useRef(0)
   const [loggingOut, setLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState('')
 
@@ -2940,29 +3450,32 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     }
   }, [applyRoute, canModerate])
 
-  useEffect(() => {
-    let cancelled = false
+  const refreshUnreadNotifications = useCallback(() => {
+    const requestId = ++notificationRequestRef.current
+    return getUnreadNotificationCount()
+      .then((count) => {
+        if (requestId === notificationRequestRef.current) {
+          setUnreadNotifications(count)
+        }
+      })
+      .catch(() => {
+        // La campana no debe bloquear el resto del portal si este contador falla.
+      })
+  }, [])
 
-    const refreshUnreadCount = () => {
-      getUnreadNotificationCount()
-        .then((count) => {
-          if (!cancelled) setUnreadNotifications(count)
-        })
-        .catch(() => {
-          // La campana no debe bloquear el resto del portal si este contador falla.
-        })
-    }
+  useEffect(() => {
+    const refreshUnreadCount = () => void refreshUnreadNotifications()
 
     refreshUnreadCount()
-    const interval = window.setInterval(refreshUnreadCount, 30_000)
+    const interval = window.setInterval(refreshUnreadCount, 5_000)
     window.addEventListener('focus', refreshUnreadCount)
 
     return () => {
-      cancelled = true
+      notificationRequestRef.current += 1
       window.clearInterval(interval)
       window.removeEventListener('focus', refreshUnreadCount)
     }
-  }, [])
+  }, [refreshUnreadNotifications])
 
   useEffect(() => {
     let cancelled = false
@@ -2978,7 +3491,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     }
 
     refreshUnreadChats()
-    const interval = window.setInterval(refreshUnreadChats, 30_000)
+    const interval = window.setInterval(refreshUnreadChats, 5_000)
     window.addEventListener('focus', refreshUnreadChats)
     return () => {
       cancelled = true
@@ -2995,7 +3508,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
   const desktopNavigation: NavigationItem[] = [
     { view: 'feed', label: 'Inicio', icon: 'feed' },
-    { view: 'network', label: 'Personas', icon: 'users' },
+    { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     ...(canModerate
@@ -3007,7 +3520,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
   const mobileNavigation: NavigationItem[] = [
     { view: 'feed', label: 'Inicio', icon: 'feed' },
-    { view: 'network', label: 'Personas', icon: 'users' },
+    { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     { view: 'profile', label: 'Perfil', icon: 'profile' },
@@ -3015,7 +3528,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
   const pageDetails: Record<PortalView, { eyebrow: string; title: string }> = {
     feed: { eyebrow: 'Comunidad', title: 'Tu campus, en un solo lugar' },
-    network: { eyebrow: 'Conexiones', title: 'Personas en Konea' },
+    network: { eyebrow: 'Privacidad por diseño', title: 'Mis conexiones' },
     chat: { eyebrow: 'Conversaciones', title: 'Chat Konea' },
     duco: { eyebrow: 'Asistente', title: 'Organízate con DUCO' },
     notifications: { eyebrow: 'Actividad', title: 'Tus notificaciones' },
@@ -3045,6 +3558,13 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
   const openChat = (chatId: string) => {
     applyRoute(routeFromHash(`#chat-${chatId}`, canModerate))
+  }
+
+  const syncChatRoute = (chatId: string | null) => {
+    const nextHash = chatId ? `#chat-${chatId}` : '#chat'
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, '', nextHash)
+    }
   }
 
   const openPost = (postId?: string) => {
@@ -3275,6 +3795,10 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             initialUserId={networkUserId}
             onOpenOwnProfile={openProfile}
             onStartChat={startChatWithUser}
+            onProfileChange={(userId) => {
+              if (userId) openNetworkUser(userId)
+              else goTo('network')
+            }}
           />
         )}
         {view === 'chat' && (
@@ -3283,7 +3807,9 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             initialChatId={initialChatId}
             initialUserId={initialChatUserId}
             onUnreadChange={setUnreadChats}
+            onNotificationsRead={() => void refreshUnreadNotifications()}
             onOpenUser={openNetworkUser}
+            onChatChange={syncChatRoute}
           />
         )}
         {view === 'duco' && <Duco currentUser={user} />}

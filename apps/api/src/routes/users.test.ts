@@ -16,12 +16,12 @@ function account(label: string) {
   }
 }
 
-describe.sequential('people and connections API', () => {
+describe.sequential('private connections and portfolio API', () => {
   const app = createApp()
   const firstAgent = request.agent(app)
   const secondAgent = request.agent(app)
-  const firstAccount = account('peopleone')
-  const secondAccount = account('peopletwo')
+  const firstAccount = account('connectionone')
+  const secondAccount = account('connectiontwo')
   let firstUserId = ''
   let secondUserId = ''
 
@@ -45,57 +45,115 @@ describe.sequential('people and connections API', () => {
     await closeDatabaseConnection()
   })
 
-  it('searches profiles without exposing private account fields', async () => {
-    const response = await firstAgent
-      .get('/api/v1/users')
-      .query({ q: secondAccount.username })
+  it('does not expose a global people directory', async () => {
+    const response = await firstAgent.get('/api/v1/users')
+    expect(response.status).toBe(404)
+  })
+
+  it('publishes a bounded academic portfolio without private account fields', async () => {
+    const educationId = randomUUID()
+    const projectId = randomUUID()
+    const achievementId = randomUUID()
+    const updated = await firstAgent.patch('/api/v1/profile').send({
+      education: [
+        {
+          id: educationId,
+          institution: 'DUOC UC',
+          program: 'Ingeniería en Informática',
+          startYear: 2023,
+          endYear: null,
+          current: true,
+        },
+      ],
+      projects: [
+        {
+          id: projectId,
+          title: 'Konea',
+          description: 'Plataforma universitaria segura.',
+          url: 'https://konea.example',
+          repositoryUrl: null,
+          imageUrl: null,
+          technologies: ['React', 'PostgreSQL'],
+        },
+      ],
+      achievements: [
+        {
+          id: achievementId,
+          title: 'Capstone destacado',
+          issuer: 'DUOC UC',
+          issuedAt: '2026-08',
+          description: 'Reconocimiento académico.',
+          credentialUrl: null,
+        },
+      ],
+    })
+    expect(updated.status).toBe(200)
+
+    const response = await secondAgent.get(`/api/v1/users/${firstUserId}`)
     expect(response.status).toBe(200)
-    expect(response.body.users).toHaveLength(1)
-    expect(response.body.users[0]).toMatchObject({
-      id: secondUserId,
-      username: secondAccount.username,
-      followedByMe: false,
+    expect(response.body.user).toMatchObject({
+      id: firstUserId,
+      username: firstAccount.username,
+      connectionStatus: 'none',
+      stats: { projects: 1, achievements: 1 },
+      education: [{ id: educationId, institution: 'DUOC UC' }],
+      projects: [{ id: projectId, title: 'Konea' }],
+      achievements: [{ id: achievementId, title: 'Capstone destacado' }],
     })
-    expect(response.body.users[0]).not.toHaveProperty('email')
+    expect(response.body.user).not.toHaveProperty('email')
   })
 
-  it('follows idempotently and exposes public profile statistics', async () => {
-    const firstFollow = await firstAgent.post(
-      `/api/v1/users/${secondUserId}/follow`,
+  it('keeps a one-sided request private and connects only after reciprocity', async () => {
+    const firstRequest = await firstAgent.post(
+      `/api/v1/users/${secondUserId}/connection-request`,
     )
-    const repeatedFollow = await firstAgent.post(
-      `/api/v1/users/${secondUserId}/follow`,
-    )
-    expect(firstFollow.status).toBe(200)
-    expect(repeatedFollow.status).toBe(200)
-    expect(repeatedFollow.body).toEqual({ followed: true, followersCount: 1 })
-
-    const profile = await firstAgent.get(`/api/v1/users/${secondUserId}`)
-    expect(profile.status).toBe(200)
-    expect(profile.body.user).toMatchObject({
-      followedByMe: true,
-      stats: { followers: 1 },
+    expect(firstRequest.status).toBe(200)
+    expect(firstRequest.body).toEqual({
+      connectionStatus: 'requested',
+      matched: false,
     })
-    expect(profile.body.posts).toEqual([])
 
-    const followers = await secondAgent.get(
-      `/api/v1/users/${secondUserId}/followers`,
+    const recipientProfile = await secondAgent.get(
+      `/api/v1/users/${firstUserId}`,
     )
-    expect(followers.body.users.map((user: { id: string }) => user.id)).toContain(
-      firstUserId,
+    expect(recipientProfile.body.user.connectionStatus).toBe('none')
+    const beforeMatch = await secondAgent.get('/api/v1/notifications')
+    expect(beforeMatch.body.notifications).toHaveLength(0)
+
+    const reciprocal = await secondAgent.post(
+      `/api/v1/users/${firstUserId}/connection-request`,
     )
+    expect(reciprocal.body).toEqual({
+      connectionStatus: 'connected',
+      matched: true,
+    })
+
+    const firstConnections = await firstAgent.get('/api/v1/users/connections')
+    const secondConnections = await secondAgent.get('/api/v1/users/connections')
+    expect(
+      firstConnections.body.users.map((user: { id: string }) => user.id),
+    ).toEqual([secondUserId])
+    expect(
+      secondConnections.body.users.map((user: { id: string }) => user.id),
+    ).toEqual([firstUserId])
+    const afterMatch = await firstAgent.get('/api/v1/notifications')
+    expect(afterMatch.body.notifications[0]).toMatchObject({
+      type: 'connection',
+      actor: { id: secondUserId },
+    })
   })
 
-  it('blocks self-follow and can unfollow', async () => {
-    const selfFollow = await firstAgent.post(
-      `/api/v1/users/${firstUserId}/follow`,
+  it('removes a mutual connection for both people', async () => {
+    const removed = await firstAgent.delete(
+      `/api/v1/users/${secondUserId}/connection`,
     )
-    expect(selfFollow.status).toBe(400)
-    expect(selfFollow.body.error.code).toBe('CANNOT_FOLLOW_SELF')
-
-    const unfollow = await firstAgent.delete(
-      `/api/v1/users/${secondUserId}/follow`,
-    )
-    expect(unfollow.body).toEqual({ followed: false, followersCount: 0 })
+    expect(removed.body).toEqual({ connectionStatus: 'none' })
+    const connections = await secondAgent.get('/api/v1/users/connections')
+    expect(connections.body.users).toEqual([])
+    const deniedChat = await firstAgent
+      .post('/api/v1/chats/direct')
+      .send({ userId: secondUserId })
+    expect(deniedChat.status).toBe(403)
+    expect(deniedChat.body.error.code).toBe('CONNECTION_REQUIRED')
   })
 })

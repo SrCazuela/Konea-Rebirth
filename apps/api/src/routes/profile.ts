@@ -28,6 +28,54 @@ const profileMediaUrl = z
     'Debe ser una URL válida o un archivo subido a Konea.',
   )
 
+const optionalUrl = z
+  .union([z.string().trim().url().max(2_048), z.literal(''), z.null()])
+  .transform((value) => value || null)
+
+const educationSchema = z
+  .strictObject({
+    id: z.string().uuid(),
+    institution: z.string().trim().min(2).max(160),
+    program: z.string().trim().min(2).max(160),
+    startYear: z.number().int().min(1950).max(2100).nullable(),
+    endYear: z.number().int().min(1950).max(2100).nullable(),
+    current: z.boolean(),
+  })
+  .refine(
+    (value) =>
+      value.current ||
+      !value.startYear ||
+      !value.endYear ||
+      value.endYear >= value.startYear,
+    { message: 'El año de término debe ser posterior al de inicio.' },
+  )
+
+const projectSchema = z.strictObject({
+  id: z.string().uuid(),
+  title: z.string().trim().min(2).max(120),
+  description: z.string().trim().min(2).max(1_000),
+  url: optionalUrl,
+  repositoryUrl: optionalUrl,
+  imageUrl: z
+    .union([profileMediaUrl, z.literal(''), z.null()])
+    .transform((value) => value || null),
+  technologies: z.array(z.string().trim().min(1).max(30)).max(12),
+})
+
+const achievementSchema = z.strictObject({
+  id: z.string().uuid(),
+  title: z.string().trim().min(2).max(160),
+  issuer: z.string().trim().min(2).max(160),
+  issuedAt: z
+    .union([z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), z.null()])
+    .transform((value) => value || null),
+  description: z.string().trim().max(600),
+  credentialUrl: optionalUrl,
+})
+
+const uniqueEntryIds = <T extends { id: string }>(entries: T[]) =>
+  new Set(entries.map((entry) => entry.id)).size === entries.length
+
 const updateProfileSchema = z.strictObject({
   username: z
     .string()
@@ -54,6 +102,21 @@ const updateProfileSchema = z.strictObject({
     .union([z.string().trim().url().max(2_048), z.literal(''), z.null()])
     .transform((value) => value || null)
     .optional(),
+  education: z
+    .array(educationSchema)
+    .max(6)
+    .refine(uniqueEntryIds, 'Las formaciones no pueden repetirse.')
+    .optional(),
+  projects: z
+    .array(projectSchema)
+    .max(12)
+    .refine(uniqueEntryIds, 'Los proyectos no pueden repetirse.')
+    .optional(),
+  achievements: z
+    .array(achievementSchema)
+    .max(12)
+    .refine(uniqueEntryIds, 'Los logros no pueden repetirse.')
+    .optional(),
 })
 
 export const profileRouter = Router()
@@ -66,6 +129,9 @@ profileRouter.patch('/', async (request, response) => {
   await Promise.all([
     requireOwnedLocalUpload(currentUser.id, input.avatarUrl, 'image'),
     requireOwnedLocalUpload(currentUser.id, input.coverUrl, 'image'),
+    ...(input.projects ?? []).map((project) =>
+      requireOwnedLocalUpload(currentUser.id, project.imageUrl, 'image'),
+    ),
   ])
 
   try {
@@ -107,6 +173,9 @@ profileRouter.patch('/', async (request, response) => {
       coverUrl: profiles.coverUrl,
       campus: profiles.campus,
       website: profiles.website,
+      education: profiles.education,
+      projects: profiles.projects,
+      achievements: profiles.achievements,
       createdAt: users.createdAt,
     })
     .from(users)

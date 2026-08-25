@@ -39,7 +39,7 @@ moderación y demás reglas de negocio.
 - notifican globalmente la expiración de sesión;
 - no contienen secretos ni deciden permisos definitivos.
 
-La interfaz se organiza alrededor de portal, personas, notificaciones, chat y
+La interfaz se organiza alrededor de portal, conexiones, notificaciones, chat y
 DUCO. Estado de carga, vacío y error se resuelve en el cliente, pero toda acción
 se vuelve a validar en el servidor.
 
@@ -63,7 +63,7 @@ PostgreSQL es la fuente de verdad para cuentas, contenido y colaboración. Las
 restricciones relacionales evitan, entre otros casos:
 
 - correos y usuarios duplicados;
-- seguirse a uno mismo;
+- solicitar conectarse con uno mismo;
 - duplicar Me gusta o relaciones de seguimiento;
 - duplicar una pareja de chat directo;
 - duplicar participantes y marcadores de lectura;
@@ -82,7 +82,10 @@ El adaptador actual escribe en `.local/uploads/`:
 - límite de 5 MB;
 - lista permitida JPEG/PNG/WebP/GIF/PDF;
 - comprobación de cabecera binaria además del MIME;
-- descarga solo con sesión y `nosniff`.
+- registro de propietario en PostgreSQL;
+- descarga con sesión y `nosniff`, limitada al propietario o a quien pueda ver
+  el perfil, post, chat o reporte que referencia el archivo;
+- imágenes de perfil, posts y avatares de grupo rechazan archivos PDF.
 
 La base guarda la URL, nombre y tamaño cuando corresponda. Este límite permite
 reemplazar el almacenamiento local por Supabase Storage o S3 sin rediseñar el
@@ -90,13 +93,15 @@ dominio social.
 
 ## Modelo de datos
 
-Agrupación conceptual de las 19 tablas:
+Agrupación conceptual de las 21 tablas:
 
 ```text
 users ──1:1── profiles
   │
   ├──1:N── user_sessions
-  ├──N:M── users             (follows)
+  ├──1:N── uploaded_files
+  ├──1:N── connection_intents ──N:1── users
+  ├──N:M── users             (connections)
   ├──1:N── posts ──1:N── comments
   │             └──N:M── users (post_likes)
   ├──N:M── chats             (chat_participants)
@@ -114,7 +119,7 @@ users ──1:1── profiles
 ### Enumeraciones de dominio
 
 - usuario: `student`, `professor`, `moderator`, `admin`;
-- visibilidad: `campus`, `followers`, `public`;
+- visibilidad: `campus`, `connections`, `public`;
 - contenido: `announcement`, `community`;
 - moderación: `pending`, `approved`, `rejected`;
 - chat: `direct`, `group`; miembro: `member`, `admin`, `owner`;
@@ -138,13 +143,26 @@ users ──1:1── profiles
 ### Feed y visibilidad
 
 La consulta de feed aplica estado de moderación y visibilidad en SQL. El autor
-puede ver su propio contenido. Un post `followers` aparece solo a seguidores;
+puede ver su propio contenido. Un post `connections` aparece solo a conexiones
+mutuas;
 `campus` y `public` aparecen a miembros autenticados de la comunidad. Moderación
 puede consultar todos los estados desde sus rutas específicas.
 
-Al reaccionar, comentar, responder o seguir, la API persiste primero la acción y
+Al reaccionar, comentar, responder o confirmar una conexión, la API persiste primero la acción y
 crea una notificación para el dueño del recurso, excepto cuando actor y receptor
 son la misma persona.
+
+### Conexión privada
+
+1. Un perfil solo se descubre desde contenido, un chat existente o un QR; no
+   existe una consulta de directorio global.
+2. `connection_intents` guarda la intención del solicitante durante 30 días.
+3. El destinatario no puede consultar ni recibe notificación sobre esa fila.
+4. Si aparece la intención inversa, una transacción bloquea el par canónico,
+   crea `connections`, elimina ambas intenciones y notifica a los dos usuarios.
+5. Crear chats directos, grupos o añadir participantes exige conexión mutua.
+6. Canjear un QR de cinco minutos crea la conexión de forma explícita y abre el
+   chat en la misma transacción.
 
 ### Chat y no leídos
 
@@ -184,10 +202,11 @@ moderador que modifica su estado.
 
 ### DUCO
 
-DUCO consulta hasta 20 tareas no completadas asignadas al usuario, priorizadas
-por fecha, y construye una respuesta local según intención básica (saludo,
-resumen o planificación). Pregunta y respuesta se guardan juntas en una
-transacción. No existe tráfico hacia un modelo o webhook externo.
+DUCO consulta las tareas no completadas asignadas al usuario dentro de chats en
+los que aún participa, priorizadas por fecha, y construye una respuesta local
+según intención básica (saludo, resumen o planificación). Pregunta y respuesta
+se guardan juntas en una transacción. No existe tráfico hacia un modelo o
+webhook externo.
 
 ## Seguridad
 
@@ -208,7 +227,7 @@ Riesgos que requieren trabajo antes de producción:
 
 - protección CSRF explícita si frontend/API se sirven en sitios diferentes;
 - recuperación/verificación de cuenta y administración de sesiones;
-- análisis antivirus, cuotas, propiedad y ciclo de vida de archivos;
+- análisis antivirus, cuotas y recolección de archivos huérfanos;
 - auditoría durable de decisiones administrativas;
 - límites de tasa generales y monitoreo;
 - aislamiento real por institución si Konea se vuelve multi-campus;
@@ -245,7 +264,9 @@ desde el navegador ni incrustada en el dominio.
 
 - Vite sirve React y redirige `/api` a Express.
 - Express y Drizzle usan `.env` en la raíz.
-- Docker publica PostgreSQL en el puerto configurado.
+- Docker publica PostgreSQL solo en `127.0.0.1` y el puerto configurado.
+- Express escucha en `API_HOST=127.0.0.1` por defecto; un contenedor o reverse
+  proxy puede establecer `API_HOST=0.0.0.0` explícitamente.
 - datos y archivos permanecen en `D:` con la instalación actual.
 
 ### Producción prevista

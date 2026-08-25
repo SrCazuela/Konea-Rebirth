@@ -1,13 +1,23 @@
-import { and, count, eq, ilike, inArray, or, type SQL } from 'drizzle-orm'
+import { and, count, eq, gt, ilike, inArray, or, type SQL } from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db/client.js'
-import { follows, posts, profiles, users } from '../db/schema.js'
+import {
+  chatParticipants,
+  chats,
+  connectionIntents,
+  connections,
+  posts,
+  profiles,
+  users,
+} from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
+import { directChatKey } from '../services/chat-service.js'
+import { sendPrivateConnectionRequest } from '../services/connection-service.js'
 import { createNotification } from '../services/notification-service.js'
 import {
   getLikedPostsByUser,
@@ -40,7 +50,9 @@ const publicUserSelection = {
   website: profiles.website,
   avatarUrl: profiles.avatarUrl,
   coverUrl: profiles.coverUrl,
-  lastSeenAt: profiles.lastSeenAt,
+  education: profiles.education,
+  projects: profiles.projects,
+  achievements: profiles.achievements,
   role: users.role,
   createdAt: users.createdAt,
 }
@@ -57,78 +69,84 @@ async function loadUsers(condition?: SQL) {
     .limit(50)
 }
 
+async function connectedUserIds(userId: string) {
+  const rows = await db
+    .select({
+      userOneId: connections.userOneId,
+      userTwoId: connections.userTwoId,
+    })
+    .from(connections)
+    .where(
+      or(eq(connections.userOneId, userId), eq(connections.userTwoId, userId)),
+    )
+  return rows.map((row) =>
+    row.userOneId === userId ? row.userTwoId : row.userOneId,
+  )
+}
+
 async function enrichUsers(rows: PublicUserRow[], currentUserId: string) {
   if (rows.length === 0) return []
   const userIds = rows.map((row) => row.id)
-  const followedAuthorIds = db
-    .select({ id: follows.followingId })
-    .from(follows)
-    .where(eq(follows.followerId, currentUserId))
-  const [postCounts, followerCounts, followingCounts, followedRows] =
-    await Promise.all([
-      db
-        .select({ userId: posts.authorId, total: count() })
-        .from(posts)
-        .where(
-          and(
-            inArray(posts.authorId, userIds),
-            or(
-              eq(posts.authorId, currentUserId),
-              and(
-                eq(posts.moderationStatus, 'approved'),
-                or(
-                  eq(posts.visibility, 'campus'),
-                  eq(posts.visibility, 'public'),
-                  and(
-                    eq(posts.visibility, 'followers'),
-                    inArray(posts.authorId, followedAuthorIds),
-                  ),
-                ),
+  const myConnectionIds = await connectedUserIds(currentUserId)
+  const [postCounts, outgoingIntents] = await Promise.all([
+    db
+      .select({ userId: posts.authorId, total: count() })
+      .from(posts)
+      .where(
+        and(
+          inArray(posts.authorId, userIds),
+          or(
+            eq(posts.authorId, currentUserId),
+            and(
+              eq(posts.moderationStatus, 'approved'),
+              or(
+                eq(posts.visibility, 'campus'),
+                eq(posts.visibility, 'public'),
+                myConnectionIds.length
+                  ? and(
+                      eq(posts.visibility, 'connections'),
+                      inArray(posts.authorId, myConnectionIds),
+                    )
+                  : undefined,
               ),
             ),
           ),
-        )
-        .groupBy(posts.authorId),
-      db
-        .select({ userId: follows.followingId, total: count() })
-        .from(follows)
-        .where(inArray(follows.followingId, userIds))
-        .groupBy(follows.followingId),
-      db
-        .select({ userId: follows.followerId, total: count() })
-        .from(follows)
-        .where(inArray(follows.followerId, userIds))
-        .groupBy(follows.followerId),
-      db
-        .select({ userId: follows.followingId })
-        .from(follows)
-        .where(
-          and(
-            eq(follows.followerId, currentUserId),
-            inArray(follows.followingId, userIds),
-          ),
         ),
-    ])
+      )
+      .groupBy(posts.authorId),
+    db
+      .select({ recipientId: connectionIntents.recipientId })
+      .from(connectionIntents)
+      .where(
+        and(
+          eq(connectionIntents.requesterId, currentUserId),
+          inArray(connectionIntents.recipientId, userIds),
+          gt(connectionIntents.expiresAt, new Date()),
+        ),
+      ),
+  ])
 
   const postCountByUser = new Map(
     postCounts.map((row) => [row.userId, Number(row.total)]),
   )
-  const followerCountByUser = new Map(
-    followerCounts.map((row) => [row.userId, Number(row.total)]),
-  )
-  const followingCountByUser = new Map(
-    followingCounts.map((row) => [row.userId, Number(row.total)]),
-  )
-  const followedUserIds = new Set(followedRows.map((row) => row.userId))
+  const connectedIds = new Set(myConnectionIds)
+  const requestedIds = new Set(outgoingIntents.map((row) => row.recipientId))
 
   return rows.map((row) => ({
     ...row,
     stats: {
       posts: postCountByUser.get(row.id) ?? 0,
-      followers: followerCountByUser.get(row.id) ?? 0,
-      following: followingCountByUser.get(row.id) ?? 0,
+      projects: row.projects.length,
+      achievements: row.achievements.length,
     },
-    followedByMe: followedUserIds.has(row.id),
+    connectionStatus:
+      row.id === currentUserId
+        ? ('self' as const)
+        : connectedIds.has(row.id)
+          ? ('connected' as const)
+          : requestedIds.has(row.id)
+            ? ('requested' as const)
+            : ('none' as const),
     isMe: row.id === currentUserId,
   }))
 }
@@ -142,30 +160,26 @@ async function getUserOrThrow(userId: string, currentUserId: string) {
   return user
 }
 
-async function followerCount(userId: string) {
-  const [result] = await db
-    .select({ total: count() })
-    .from(follows)
-    .where(eq(follows.followingId, userId))
-  return Number(result?.total ?? 0)
-}
-
 export const usersRouter = Router()
 usersRouter.use(requireAuthentication)
 
-usersRouter.get('/', async (request, response) => {
+usersRouter.get('/connections', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const query = searchSchema.parse(request.query.q)
-  const condition = query
+  const ids = await connectedUserIds(currentUser.id)
+  if (!ids.length) {
+    response.json({ users: [] })
+    return
+  }
+  const searchCondition = query
     ? or(
         ilike(profiles.displayName, `%${query}%`),
         ilike(profiles.username, `%${query}%`),
-        ilike(profiles.campus, `%${query}%`),
         ilike(profiles.institution, `%${query}%`),
         ilike(profiles.career, `%${query}%`),
       )
     : undefined
-  const rows = await loadUsers(condition)
+  const rows = await loadUsers(and(inArray(users.id, ids), searchCondition))
   response.json({ users: await enrichUsers(rows, currentUser.id) })
 })
 
@@ -177,89 +191,97 @@ usersRouter.get('/:userId', async (request, response) => {
   response.json({ user, posts: userPosts })
 })
 
-usersRouter.get('/:userId/followers', async (request, response) => {
-  const currentUser = getAuthenticatedUser(response)
-  const userId = parseUserId(request.params.userId)
-  await getUserOrThrow(userId, currentUser.id)
-  const related = await db
-    .select({ id: follows.followerId })
-    .from(follows)
-    .where(eq(follows.followingId, userId))
-  const ids = related.map((row) => row.id)
-  const rows = ids.length ? await loadUsers(inArray(users.id, ids)) : []
-  response.json({ users: await enrichUsers(rows, currentUser.id) })
-})
-
-usersRouter.get('/:userId/following', async (request, response) => {
-  const currentUser = getAuthenticatedUser(response)
-  const userId = parseUserId(request.params.userId)
-  await getUserOrThrow(userId, currentUser.id)
-  const related = await db
-    .select({ id: follows.followingId })
-    .from(follows)
-    .where(eq(follows.followerId, userId))
-  const ids = related.map((row) => row.id)
-  const rows = ids.length ? await loadUsers(inArray(users.id, ids)) : []
-  response.json({ users: await enrichUsers(rows, currentUser.id) })
-})
-
 usersRouter.get('/:userId/likes', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const userId = parseUserId(request.params.userId)
-  await getUserOrThrow(userId, currentUser.id)
-  response.json({
-    posts: await getLikedPostsByUser(userId, currentUser),
-  })
+  if (userId !== currentUser.id) {
+    throw new ApiError(
+      403,
+      'PRIVATE_ACTIVITY',
+      'Las publicaciones favoritas son privadas.',
+    )
+  }
+  response.json({ posts: await getLikedPostsByUser(userId, currentUser) })
 })
 
-usersRouter.post('/:userId/follow', async (request, response) => {
+usersRouter.post('/:userId/connection-request', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const userId = parseUserId(request.params.userId)
   if (userId === currentUser.id) {
     throw new ApiError(
       400,
-      'CANNOT_FOLLOW_SELF',
-      'No puedes seguirte a ti mismo.',
+      'CANNOT_CONNECT_SELF',
+      'No puedes enviarte una solicitud de conexión.',
     )
   }
   const target = await getUserOrThrow(userId, currentUser.id)
-  const inserted = await db
-    .insert(follows)
-    .values({ followerId: currentUser.id, followingId: userId })
-    .onConflictDoNothing()
-    .returning({ userId: follows.followingId })
+  const result = await sendPrivateConnectionRequest(currentUser.id, userId)
 
-  if (inserted.length) {
-    await createNotification({
-      userId,
-      actorId: currentUser.id,
-      type: 'follow',
-      title: 'Nuevo seguidor',
-      body: `${currentUser.displayName} comenzó a seguirte.`,
-      href: `user:${currentUser.id}`,
-      resourceId: currentUser.id,
-    })
+  if (result.matched) {
+    await Promise.all([
+      createNotification({
+        userId: currentUser.id,
+        actorId: userId,
+        type: 'connection',
+        title: 'Nueva conexión',
+        body: `Tú y ${target.displayName} aceptaron conectarse.`,
+        href: `user:${userId}`,
+        resourceId: userId,
+      }),
+      createNotification({
+        userId,
+        actorId: currentUser.id,
+        type: 'connection',
+        title: 'Nueva conexión',
+        body: `Tú y ${currentUser.displayName} aceptaron conectarse.`,
+        href: `user:${currentUser.id}`,
+        resourceId: currentUser.id,
+      }),
+    ])
   }
 
-  response.json({
-    followed: true,
-    followersCount: await followerCount(target.id),
-  })
+  response.json({ connectionStatus: result.status, matched: result.matched })
 })
 
-usersRouter.delete('/:userId/follow', async (request, response) => {
+usersRouter.delete('/:userId/connection-request', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const userId = parseUserId(request.params.userId)
   await db
-    .delete(follows)
+    .delete(connectionIntents)
     .where(
       and(
-        eq(follows.followerId, currentUser.id),
-        eq(follows.followingId, userId),
+        eq(connectionIntents.requesterId, currentUser.id),
+        eq(connectionIntents.recipientId, userId),
       ),
     )
-  response.json({
-    followed: false,
-    followersCount: await followerCount(userId),
+  response.json({ connectionStatus: 'none' })
+})
+
+usersRouter.delete('/:userId/connection', async (request, response) => {
+  const currentUser = getAuthenticatedUser(response)
+  const userId = parseUserId(request.params.userId)
+  const [userOneId, userTwoId] = [currentUser.id, userId].sort()
+  if (!userOneId || !userTwoId) throw new Error('Invalid connection pair')
+  await db.transaction(async (transaction) => {
+    await transaction
+      .delete(connections)
+      .where(
+        and(
+          eq(connections.userOneId, userOneId),
+          eq(connections.userTwoId, userTwoId),
+        ),
+      )
+    const [directChat] = await transaction
+      .select({ id: chats.id })
+      .from(chats)
+      .where(eq(chats.directKey, directChatKey(currentUser.id, userId)))
+      .limit(1)
+    if (directChat) {
+      await transaction
+        .update(chatParticipants)
+        .set({ archivedAt: new Date() })
+        .where(eq(chatParticipants.chatId, directChat.id))
+    }
   })
+  response.json({ connectionStatus: 'none' })
 })

@@ -2056,6 +2056,116 @@
   background: var(--portal-surface-muted);
 }
 
+.portal-portfolio-editor {
+  display: grid;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+
+.portal-portfolio-editor__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.portal-portfolio-editor__heading h3,
+.portal-portfolio-entry legend {
+  margin: 0.2rem 0 0;
+  color: var(--ink);
+}
+
+.portal-portfolio-entry {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fbf9fe;
+  padding: 1rem;
+}
+
+.portal-portfolio-entry legend {
+  padding: 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.portal-checkbox-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.55rem !important;
+}
+
+.portal-checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.portal-text-danger {
+  width: fit-content;
+  border: 0;
+  color: #a53c3c;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.portal-own-portfolio {
+  grid-column: 1 / -1;
+}
+
+.portal-own-portfolio__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.portal-own-portfolio__grid > section {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fbf9fe;
+  padding: 1rem;
+}
+
+.portal-own-portfolio__grid h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.portal-own-portfolio__grid article {
+  display: grid;
+  gap: 0.2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.portal-own-portfolio__grid article:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.portal-own-portfolio__grid span,
+.portal-own-portfolio__grid small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.portal-own-portfolio__grid a {
+  color: var(--primary);
+  font-size: 0.86rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
 .portal-profile-url-fields summary {
   color: var(--muted);
   cursor: pointer;
@@ -2226,6 +2336,17 @@
   display: block;
   border-radius: 9px;
   object-fit: contain;
+}
+
+.portal-report-resource-preview > a {
+  width: fit-content;
+  margin-top: 9px;
+  display: inline-flex;
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 720;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .portal-report-resource-note {
@@ -2706,6 +2827,17 @@
   .portal-decision-button {
     padding: 0 9px;
     justify-content: center;
+  }
+}
+
+@media (max-width: 780px) {
+  .portal-own-portfolio__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-portfolio-editor__heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

@@ -40,7 +40,7 @@ function formatDate(value: string) {
 
 function NotificationGlyph({ type }: { type: NotificationType }) {
   const paths: Record<NotificationType, ReactNode> = {
-    follow: (
+    connection: (
       <>
         <circle cx="9" cy="8" r="3.5" />
         <path d="M3 20a6 6 0 0 1 12 0M18 8v6M15 11h6" />

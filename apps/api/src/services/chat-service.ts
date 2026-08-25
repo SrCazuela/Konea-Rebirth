@@ -129,6 +129,11 @@ export async function createOrRestoreDirectChat(
 
   const now = new Date()
   await transaction
+    .update(chats)
+    .set({ updatedAt: now })
+    .where(eq(chats.id, chat.id))
+
+  await transaction
     .insert(chatParticipants)
     .values([
       { chatId: chat.id, userId: firstUserId, role: 'member' },

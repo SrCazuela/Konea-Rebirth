@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, type SQL } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { Router } from 'express'
 import { z } from 'zod'
@@ -182,7 +182,12 @@ async function loadReports(condition?: SQL) {
       : Promise.resolve([]),
     resourceIds.chat.length
       ? db
-          .select({ id: chats.id, name: chats.name, type: chats.type })
+          .select({
+            id: chats.id,
+            name: chats.name,
+            type: chats.type,
+            avatarUrl: chats.avatarUrl,
+          })
           .from(chats)
           .where(inArray(chats.id, resourceIds.chat))
       : Promise.resolve([]),
@@ -193,6 +198,9 @@ async function loadReports(condition?: SQL) {
             chatId: messages.chatId,
             content: messages.content,
             type: messages.type,
+            fileUrl: messages.fileUrl,
+            fileName: messages.fileName,
+            fileSize: messages.fileSize,
             sender: {
               id: profiles.userId,
               username: profiles.username,
@@ -281,6 +289,7 @@ async function resourceIsVisible(
           and(
             eq(chatParticipants.chatId, resourceId),
             eq(chatParticipants.userId, currentUser.id),
+            isNull(chatParticipants.archivedAt),
           ),
         )
         .limit(1)
@@ -299,6 +308,7 @@ async function resourceIsVisible(
           and(
             eq(messages.id, resourceId),
             eq(chatParticipants.userId, currentUser.id),
+            isNull(chatParticipants.archivedAt),
           ),
         )
         .limit(1)

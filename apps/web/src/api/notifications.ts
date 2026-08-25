@@ -6,7 +6,13 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
 )
 
 export type NotificationType =
-  'follow' | 'like' | 'comment' | 'reply' | 'message' | 'task' | 'moderation'
+  | 'connection'
+  | 'like'
+  | 'comment'
+  | 'reply'
+  | 'message'
+  | 'task'
+  | 'moderation'
 
 export type KoneaNotification = {
   id: string

@@ -31,6 +31,9 @@ const moderationDecisionSchema = z
   })
 
 const uuidSchema = z.string().uuid()
+const moderationStatusFilterSchema = z
+  .enum(['pending', 'approved', 'rejected'])
+  .optional()
 
 function parseId(value: string | undefined) {
   const result = uuidSchema.safeParse(value)
@@ -48,9 +51,21 @@ export const moderationRouter = Router()
 
 moderationRouter.use(requireAuthentication, requireModerator)
 
-moderationRouter.get('/posts', async (_request, response) => {
+moderationRouter.get('/posts', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
-  response.json({ posts: await getModerationPosts(currentUser) })
+  const parsedStatus = moderationStatusFilterSchema.safeParse(
+    request.query.status,
+  )
+  if (!parsedStatus.success) {
+    throw new ApiError(
+      400,
+      'INVALID_MODERATION_STATUS',
+      'El estado de moderaci\u00f3n no es v\u00e1lido.',
+    )
+  }
+  response.json({
+    posts: await getModerationPosts(currentUser, parsedStatus.data),
+  })
 })
 
 moderationRouter.patch('/posts/:postId', async (request, response) => {

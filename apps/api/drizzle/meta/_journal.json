@@ -29,6 +29,20 @@
       "when": 1787109358117,
       "tag": "0003_wealthy_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787567152064,
+      "tag": "0004_fast_nebula",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787569305818,
+      "tag": "0005_calm_sebastian_shaw",
+      "breakpoints": true
     }
   ]
 }

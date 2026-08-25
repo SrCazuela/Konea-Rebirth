@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closeDatabaseConnection, db } from '../db/client.js'
 import {
   chats,
+  chatParticipants,
   notifications,
   posts,
   profiles,
@@ -107,6 +108,12 @@ describe.sequential('auxiliary backend routes', () => {
       .returning({ id: chats.id })
 
     if (!chat) throw new Error('Test chat was not created')
+
+    await db.insert(chatParticipants).values({
+      chatId: chat.id,
+      userId: studentId,
+      role: 'owner',
+    })
 
     await db.insert(tasks).values({
       chatId: chat.id,

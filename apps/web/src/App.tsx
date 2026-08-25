@@ -22,7 +22,7 @@ const foundations = [
     number: '02',
     title: 'Colaboración real',
     description:
-      'Perfiles académicos, comentarios y conexiones pensadas para encontrar apoyo entre estudiantes.',
+      'Portafolios académicos, comentarios y conexiones recíprocas pensadas para colaborar sin contactos no deseados.',
   },
   {
     number: '03',
@@ -147,8 +147,8 @@ function App() {
             </h1>
             <p className="hero-summary">
               La red social universitaria donde estudiantes y docentes pueden
-              descubrir personas, conversar, colaborar y sentirse parte de su
-              comunidad.
+              compartir sus proyectos, formar conexiones por consentimiento,
+              colaborar y sentirse parte de su comunidad.
             </p>
 
             <div className="hero-actions">

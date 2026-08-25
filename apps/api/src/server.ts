@@ -6,8 +6,8 @@ import { closeDatabaseConnection } from './db/client.js'
 const app = createApp()
 const server = createServer(app)
 
-server.listen(env.API_PORT, () => {
-  console.log(`Konea API listening on http://localhost:${env.API_PORT}`)
+server.listen(env.API_PORT, env.API_HOST, () => {
+  console.log(`Konea API listening on http://${env.API_HOST}:${env.API_PORT}`)
 })
 
 async function shutdown(signal: NodeJS.Signals) {

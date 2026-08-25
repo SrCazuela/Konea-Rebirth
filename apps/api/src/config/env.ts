@@ -12,6 +12,7 @@ const environmentSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  API_HOST: z.string().min(1).default('127.0.0.1'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
