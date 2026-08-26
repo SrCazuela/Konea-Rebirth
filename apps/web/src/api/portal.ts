@@ -1,9 +1,5 @@
-import { ApiClientError, type KoneaUser } from './auth'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
+import { type KoneaUser } from './auth'
+import { apiRequest as portalRequest } from './base'
 
 export type PostVisibility = 'campus' | 'connections' | 'public'
 export type PostContentType = 'announcement' | 'community'
@@ -60,44 +56,12 @@ export type ProfileUpdate = {
   achievements: import('./network').ProfileAchievement[]
 }
 
-type ErrorEnvelope = {
-  error?: {
-    code?: string
-    message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
-  }
-}
-
-async function portalRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
-
-  if (response.status === 401) {
-    window.dispatchEvent(new Event('konea:session-expired'))
-  }
-
-  if (response.status === 204) return undefined as T
-
-  const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-
-  if (!response.ok) {
-    throw new ApiClientError(
-      response.status,
-      body.error?.code ?? 'REQUEST_FAILED',
-      body.error?.message ?? 'No pudimos completar la solicitud.',
-      body.error?.details?.fields,
-    )
-  }
-
-  return body
+export type ProfileCatalog = {
+  institutions: string[]
+  campuses: string[]
+  careers: string[]
+  verifiedAt: string
+  sources: { campuses: string; careers: string }
 }
 
 export async function getPosts() {
@@ -209,6 +173,13 @@ export async function updateProfile(input: ProfileUpdate) {
     body: JSON.stringify(input),
   })
   return response.user
+}
+
+export async function getProfileCatalog() {
+  const response = await portalRequest<{ catalog: ProfileCatalog }>(
+    '/profile/catalog',
+  )
+  return response.catalog
 }
 
 export async function getModerationPosts(

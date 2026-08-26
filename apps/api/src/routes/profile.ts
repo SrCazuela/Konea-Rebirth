@@ -1,8 +1,12 @@
 import { eq } from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
-import { db } from '../db/client.js'
+import { db, isUniqueViolation } from '../db/client.js'
 import { profiles, users } from '../db/schema.js'
+import {
+  canonicalCatalogValue,
+  profileCatalog,
+} from '../domain/profile-catalog.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
 import {
@@ -123,9 +127,71 @@ export const profileRouter = Router()
 
 profileRouter.use(requireAuthentication)
 
+profileRouter.get('/catalog', (_request, response) => {
+  response.json({ catalog: profileCatalog })
+})
+
 profileRouter.patch('/', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
-  const input = parseBody(updateProfileSchema, request.body)
+  const parsedInput = parseBody(updateProfileSchema, request.body)
+  const institution = canonicalCatalogValue(
+    parsedInput.institution,
+    profileCatalog.institutions,
+  )
+  const campus = canonicalCatalogValue(
+    parsedInput.campus,
+    profileCatalog.campuses,
+  )
+  const career = canonicalCatalogValue(
+    parsedInput.career,
+    profileCatalog.careers,
+  )
+
+  if (parsedInput.institution && !institution) {
+    throw new ApiError(
+      400,
+      'INVALID_INSTITUTION',
+      'Selecciona una institución disponible en el catálogo.',
+    )
+  }
+  if (parsedInput.campus && !campus) {
+    throw new ApiError(
+      400,
+      'INVALID_CAMPUS',
+      'Selecciona una sede o campus disponible en el catálogo.',
+    )
+  }
+  if (parsedInput.career && !career) {
+    throw new ApiError(
+      400,
+      'INVALID_CAREER',
+      'Selecciona una carrera disponible en el catálogo.',
+    )
+  }
+
+  const education = parsedInput.education?.map((entry) => {
+    const educationInstitution = canonicalCatalogValue(
+      entry.institution,
+      profileCatalog.institutions,
+    )
+    const program = canonicalCatalogValue(entry.program, profileCatalog.careers)
+    if (!educationInstitution || !program) {
+      throw new ApiError(
+        400,
+        'INVALID_EDUCATION',
+        'La institución y carrera de cada formación deben seleccionarse del catálogo.',
+      )
+    }
+    return { ...entry, institution: educationInstitution, program }
+  })
+
+  const input = {
+    ...parsedInput,
+    ...(parsedInput.institution !== undefined ? { institution } : {}),
+    ...(parsedInput.campus !== undefined ? { campus } : {}),
+    ...(parsedInput.career !== undefined ? { career } : {}),
+    ...(education ? { education } : {}),
+  }
   await Promise.all([
     requireOwnedLocalUpload(currentUser.id, input.avatarUrl, 'image'),
     requireOwnedLocalUpload(currentUser.id, input.coverUrl, 'image'),
@@ -140,21 +206,13 @@ profileRouter.patch('/', async (request, response) => {
       .set({ ...input, updatedAt: new Date() })
       .where(eq(profiles.userId, currentUser.id))
   } catch (error) {
-    let currentError = error
-
-    for (let depth = 0; depth < 4; depth += 1) {
-      if (typeof currentError !== 'object' || currentError === null) break
-      if ('code' in currentError && currentError.code === '23505') {
-        throw new ApiError(
-          409,
-          'USERNAME_ALREADY_EXISTS',
-          'Ese nombre de usuario ya está en uso.',
-        )
-      }
-      if (!('cause' in currentError)) break
-      currentError = currentError.cause
+    if (isUniqueViolation(error)) {
+      throw new ApiError(
+        409,
+        'USERNAME_ALREADY_EXISTS',
+        'Ese nombre de usuario ya está en uso.',
+      )
     }
-
     throw error
   }
 

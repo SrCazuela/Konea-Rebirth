@@ -153,7 +153,8 @@
   background: #e8f7f1;
 }
 
-.notification-card__icon--moderation {
+.notification-card__icon--moderation,
+.notification-card__icon--support_request {
   color: #976314;
   background: #fff4d7;
 }

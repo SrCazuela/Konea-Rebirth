@@ -20,6 +20,7 @@ type NotificationsProps = {
   onOpenUser: (userId: string) => void
   onOpenFeed: (postId?: string) => void
   onOpenChat?: (chatId: string) => void
+  onOpenSupportRequests?: () => void
 }
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', {
@@ -73,6 +74,12 @@ function NotificationGlyph({ type }: { type: NotificationType }) {
     moderation: (
       <path d="M12 3 20 6v5.5c0 4.7-3.1 8-8 9.5-4.9-1.5-8-4.8-8-9.5V6l8-3Zm-3 9 2 2 4-4" />
     ),
+    support_request: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </>
+    ),
   }
 
   return (
@@ -106,6 +113,7 @@ export function Notifications({
   onOpenUser,
   onOpenFeed,
   onOpenChat,
+  onOpenSupportRequests,
 }: NotificationsProps) {
   const [notifications, setNotifications] = useState<KoneaNotification[]>([])
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
@@ -194,6 +202,8 @@ export function Notifications({
       onOpenFeed(destination.id || undefined)
     } else if (destination?.type === 'chat' && destination.id) {
       onOpenChat?.(destination.id)
+    } else if (destination?.type === 'duco-request') {
+      onOpenSupportRequests?.()
     }
   }
 

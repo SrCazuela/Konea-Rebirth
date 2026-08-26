@@ -71,12 +71,28 @@ Konea-Rebirth/
 - Node.js 22.12 o superior.
 - npm 11 o superior.
 - Docker Desktop con backend WSL 2 y virtualización habilitada.
+- Ollama con `qwen3.5:4b` si DUCO usa el proveedor local de IA generativa.
 - Git para versionar y colaborar mediante GitHub.
 
 Postman/Insomnia y DBeaver/pgAdmin son útiles, pero no son necesarios para
 ejecutar Konea.
 
 ## Instalación local en `D:`
+
+### Inicio automático en Windows
+
+Después de crear `.env` e instalar las dependencias por primera vez, ejecuta
+`iniciar.bat` con doble clic. El iniciador comprueba las herramientas, abre
+Docker Desktop y Ollama si todavía no responden, espera el healthcheck de
+PostgreSQL, aplica todas las migraciones pendientes y levanta la API y la web.
+
+El modelo de Ollama no se descarga silenciosamente porque ocupa varios GB. Si
+falta el modelo configurado, el iniciador muestra el comando `ollama pull` que
+debes ejecutar una sola vez. `Ctrl+C` detiene API y web; PostgreSQL y Ollama
+permanecen activos para que el siguiente arranque sea más rápido. Si Windows
+pregunta si deseas terminar el trabajo por lotes, responde `S`.
+
+### Inicio manual
 
 Abre PowerShell en la carpeta del proyecto:
 
@@ -97,10 +113,16 @@ Servicios de desarrollo:
 - web: <http://localhost:5173>;
 - API: <http://localhost:3000/api/v1>;
 - salud: <http://localhost:3000/api/v1/health>;
-- salud de PostgreSQL: <http://localhost:3000/api/v1/health/database>.
+- salud de PostgreSQL, con sesión autenticada:
+  <http://localhost:3000/api/v1/health/database>.
 
 `npm run dev` mantiene web y API en la misma terminal. También pueden iniciarse
 por separado con `npm run dev:web` y `npm run dev:api`.
+
+Los procesos de desarrollo se ejecutan con `--no-maglev`. Es una medida de
+compatibilidad para evitar el cierre nativo `0xC0000409` observado con Node 24
+en determinadas compilaciones preliminares de Windows; no modifica el código
+de Konea ni el comportamiento de la aplicación.
 
 ### Variables de entorno
 
@@ -117,6 +139,12 @@ por separado con `npm run dev:web` y `npm run dev:api`.
 | `CORS_ORIGIN`            | Orígenes web permitidos, separados por coma | `http://localhost:5173`   |
 | `SESSION_TTL_DAYS`       | Vigencia de una sesión, entre 1 y 30 días   | `7`                       |
 | `POSTS_REQUIRE_APPROVAL` | Activa la cola para posts de estudiantes    | `false`                   |
+| `DUCO_AI_PROVIDER`       | Proveedor de DUCO: local, Ollama u OpenAI   | `ollama`                  |
+| `OLLAMA_BASE_URL`        | Dirección del servicio local de Ollama      | `http://127.0.0.1:11434`  |
+| `OLLAMA_MODEL`           | Modelo local utilizado por DUCO             | `qwen3.5:4b`              |
+| `DUCO_AI_TIMEOUT_MS`     | Tiempo máximo de respuesta de la IA         | `120000`                  |
+| `OPENAI_API_KEY`         | Clave privada; solo cuando se usa OpenAI    | sin valor                 |
+| `OPENAI_MODEL`           | Modelo utilizado con el proveedor OpenAI    | `gpt-5.6-luna`            |
 | `VITE_API_URL`           | Prefijo/base consumido por la web           | `/api/v1`                 |
 
 No uses las credenciales de ejemplo en producción ni subas `.env` a GitHub.

@@ -1,9 +1,12 @@
 .duco-layout {
   width: min(100%, 1160px);
-  min-height: min(710px, calc(100vh - 180px));
+  height: calc(100vh - 220px);
+  max-height: 820px;
+  min-height: 400px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(240px, 292px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--border, #e9e4ef);
   border-radius: 24px;
@@ -31,9 +34,13 @@
 .duco-about {
   position: relative;
   min-width: 0;
+  min-height: 0;
   padding: 28px 22px 24px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d7cbe7 transparent;
   border-right: 1px solid #e7dcf5;
   background:
     radial-gradient(circle at 0 0, rgb(255 255 255 / 85%), transparent 16rem),
@@ -385,6 +392,371 @@
   opacity: 0.42;
 }
 
+.duco-view-tabs {
+  margin-left: auto;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #e5dced;
+  border-radius: 12px;
+  background: #f8f5fb;
+}
+
+.duco-view-tabs button {
+  min-height: 32px;
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  color: #746a7e;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 730;
+  transition: 150ms ease;
+}
+
+.duco-view-tabs button:hover,
+.duco-view-tabs button.is-active {
+  color: #673ab7;
+  background: #fff;
+  box-shadow: 0 3px 11px rgb(56 33 85 / 8%);
+}
+
+.duco-view-tabs button > span {
+  min-width: 18px;
+  height: 18px;
+  padding-inline: 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: #7b4ac2;
+  font-size: 0.57rem;
+}
+
+.duco-refresh-button {
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e0d5ea;
+  border-radius: 10px;
+  color: #6f4fa1;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.duco-refresh-button:hover:not(:disabled) {
+  border-color: #bba2dc;
+  background: #faf7fd;
+}
+
+.duco-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.duco-refresh-button .duco-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.duco-requests-panel {
+  min-height: 0;
+  padding: clamp(20px, 4vw, 38px);
+  overflow-y: auto;
+  scrollbar-color: #d7cbe7 transparent;
+  background:
+    radial-gradient(
+      circle at 100% 0,
+      rgb(239 230 251 / 75%),
+      transparent 25rem
+    ),
+    #fcfbfd;
+}
+
+.duco-requests-panel__intro {
+  padding-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #e9e2ef;
+}
+
+.duco-requests-panel__intro > div > span {
+  color: #774bb5;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.duco-requests-panel__intro h3 {
+  margin: 4px 0 0;
+  color: #241c2e;
+  font-family: var(--font-display, Inter, sans-serif);
+  font-size: 1.3rem;
+  letter-spacing: -0.035em;
+}
+
+.duco-requests-panel__intro p {
+  max-width: 520px;
+  margin: 6px 0 0;
+  color: #756c7d;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.duco-requests-panel__total {
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #6941a7;
+  background: #efe8f8;
+  font-size: 0.65rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.duco-request-groups {
+  padding-top: 24px;
+  display: grid;
+  gap: 28px;
+}
+
+.duco-request-group__title {
+  margin-bottom: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.duco-request-group__title > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.duco-request-group__title h4 {
+  margin: 0;
+  color: #3e3448;
+  font-size: 0.78rem;
+}
+
+.duco-request-group__title > span {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #7045ad;
+  background: #efe8f8;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.duco-request-group__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e59a35;
+  box-shadow: 0 0 0 4px rgb(229 154 53 / 12%);
+}
+
+.duco-request-group__title--finished .duco-icon {
+  width: 17px;
+  height: 17px;
+  color: #3f906d;
+}
+
+.duco-request-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.duco-support-card {
+  padding: 17px;
+  border: 1px solid #e5dcec;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 8px 24px rgb(52 31 78 / 5%);
+}
+
+.duco-support-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.duco-support-card__category {
+  color: #7a55ab;
+  font-size: 0.59rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.duco-support-card h4 {
+  margin: 4px 0 0;
+  color: #332a3c;
+  font-size: 0.83rem;
+}
+
+.duco-support-card__description,
+.duco-support-card__outcome p {
+  margin: 11px 0 0;
+  color: #655c6d;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.duco-support-card__outcome {
+  margin-top: 13px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: #f8f5fb;
+}
+
+.duco-support-card__outcome strong {
+  color: #574b63;
+  font-size: 0.65rem;
+}
+
+.duco-support-card__outcome p {
+  margin-top: 4px;
+}
+
+.duco-support-card > footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  color: #918997;
+  font-size: 0.6rem;
+}
+
+.duco-support-status,
+.duco-support-urgency {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 0.59rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.duco-support-status--pending {
+  color: #9b671d;
+  background: #fff3dd;
+}
+
+.duco-support-status--reviewing {
+  color: #5f43a5;
+  background: #eee7fa;
+}
+
+.duco-support-status--resolved {
+  color: #267552;
+  background: #e5f6ed;
+}
+
+.duco-support-status--rejected {
+  color: #9c3e4d;
+  background: #fdebed;
+}
+
+.duco-support-urgency--high {
+  color: #a43445;
+  background: #fff0f2;
+}
+
+.duco-support-urgency--medium {
+  color: #95651e;
+  background: #fff5e3;
+}
+
+.duco-support-urgency--low {
+  color: #54705f;
+  background: #edf5f0;
+}
+
+.duco-request-group__empty,
+.duco-requests-inline-error {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed #dfd4e8;
+  border-radius: 13px;
+  color: #81778a;
+  background: rgb(255 255 255 / 65%);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.duco-requests-inline-error {
+  border-style: solid;
+  border-color: #f0ccd2;
+  color: #9e3041;
+  background: #fff3f5;
+}
+
+.duco-requests-state {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: #756b7e;
+  text-align: center;
+}
+
+.duco-requests-state > span {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  color: #7041b7;
+  background: #eee6f8;
+}
+
+.duco-requests-state h4 {
+  margin: 15px 0 0;
+  color: #392f43;
+  font-size: 0.92rem;
+}
+
+.duco-requests-state p {
+  max-width: 390px;
+  margin: 7px 0 0;
+  font-size: 0.73rem;
+  line-height: 1.55;
+}
+
+.duco-requests-state button {
+  min-height: 38px;
+  margin-top: 15px;
+  padding: 6px 12px;
+  border: 1px solid #d9c7ef;
+  border-radius: 10px;
+  color: #673ab7;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
 .duco-messages {
   min-height: 0;
   padding: 28px clamp(18px, 4vw, 42px);
@@ -473,6 +845,47 @@
   line-height: 1.58;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.duco-message__request-action {
+  margin: 9px 3px 0;
+}
+
+.duco-message__request-action button,
+.duco-request-sent {
+  min-height: 38px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 11px;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.duco-message__request-action button {
+  border: 1px solid #d9c7f1;
+  color: #673ab7;
+  background: #f8f3ff;
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.duco-message__request-action button:hover {
+  border-color: #a983da;
+  background: #f0e6fc;
+  transform: translateY(-1px);
+}
+
+.duco-message__request-action .duco-icon,
+.duco-request-sent .duco-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.duco-request-sent {
+  color: #36765a;
+  background: #ebf8f1;
 }
 
 .duco-message__failure {
@@ -814,6 +1227,195 @@
   color: #46906f;
 }
 
+.duco-request-modal {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgb(27 18 40 / 58%);
+  backdrop-filter: blur(5px);
+}
+
+.duco-request-dialog {
+  width: min(100%, 650px);
+  max-height: calc(100vh - 48px);
+  padding: 28px;
+  overflow-y: auto;
+  border: 1px solid #e3d8ef;
+  border-radius: 22px;
+  color: #332a3c;
+  background: #fff;
+  box-shadow: 0 30px 90px rgb(29 15 48 / 30%);
+}
+
+.duco-request-dialog > header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.duco-request-dialog__mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(145deg, #8350cb, #673ab7);
+}
+
+.duco-request-dialog__mark .duco-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.duco-request-dialog header p,
+.duco-request-dialog header h3,
+.duco-request-dialog__intro {
+  margin: 0;
+}
+
+.duco-request-dialog header p {
+  color: #7b5aa9;
+  font-size: 0.67rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.duco-request-dialog header h3 {
+  margin-top: 2px;
+  font-size: 1.25rem;
+}
+
+.duco-request-dialog__intro {
+  margin-top: 17px;
+  color: #746c7c;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.duco-request-dialog form {
+  margin-top: 20px;
+  display: grid;
+  gap: 15px;
+}
+
+.duco-request-form__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(130px, 0.7fr);
+  gap: 12px;
+}
+
+.duco-request-dialog label {
+  display: grid;
+  gap: 6px;
+  color: #51475c;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.duco-request-dialog label > span,
+.duco-request-dialog label > small {
+  color: #93899c;
+  font-size: 0.64rem;
+  font-weight: 500;
+}
+
+.duco-request-dialog label > small {
+  justify-self: end;
+  margin-top: -3px;
+}
+
+.duco-request-dialog input,
+.duco-request-dialog select,
+.duco-request-dialog textarea {
+  width: 100%;
+  border: 1px solid #ded4e8;
+  border-radius: 11px;
+  color: #342b3d;
+  background: #fcfaff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.duco-request-dialog input,
+.duco-request-dialog select {
+  min-height: 42px;
+  padding: 8px 11px;
+}
+
+.duco-request-dialog textarea {
+  min-height: 76px;
+  padding: 11px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.duco-request-dialog input:focus,
+.duco-request-dialog select:focus,
+.duco-request-dialog textarea:focus {
+  border-color: #8f67c7;
+  box-shadow: 0 0 0 3px rgb(119 72 183 / 12%);
+}
+
+.duco-request-form__error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #9e3041;
+  background: #fff0f2;
+  font-size: 0.72rem;
+}
+
+.duco-request-dialog footer {
+  margin-top: 4px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.duco-request-dialog footer button {
+  min-height: 42px;
+  padding: 8px 15px;
+  border-radius: 11px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.duco-request-form__cancel {
+  border: 1px solid #dfd5e7;
+  color: #655b6d;
+  background: #fff;
+}
+
+.duco-request-form__submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(145deg, #8050cb, #673ab7);
+  box-shadow: 0 8px 20px rgb(103 58 183 / 20%);
+}
+
+.duco-request-form__submit .duco-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.duco-request-dialog footer button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 @keyframes duco-writing {
   0%,
   60%,
@@ -855,6 +1457,20 @@
 
   .duco-privacy-card__icon {
     display: none;
+  }
+
+  .duco-chat__header {
+    flex-wrap: wrap;
+  }
+
+  .duco-view-tabs {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .duco-view-tabs button {
+    flex: 1;
   }
 }
 
@@ -962,6 +1578,24 @@
     padding: 10px 14px;
   }
 
+  .duco-chat__status small {
+    display: none;
+  }
+
+  .duco-view-tabs {
+    order: 3;
+  }
+
+  .duco-refresh-button span {
+    display: none;
+  }
+
+  .duco-refresh-button {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
   .duco-clear-button span {
     display: none;
   }
@@ -978,6 +1612,27 @@
 
   .duco-messages {
     padding: 22px 14px;
+  }
+
+  .duco-requests-panel {
+    min-height: 500px;
+    padding: 20px 14px;
+  }
+
+  .duco-requests-panel__intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .duco-support-card > header {
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .duco-support-card > footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .duco-message,
@@ -1013,6 +1668,30 @@
 
   .duco-composer__hint > span:first-child {
     max-width: 75%;
+  }
+
+  .duco-request-modal {
+    padding: 10px;
+    align-items: end;
+  }
+
+  .duco-request-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 21px 17px;
+    border-radius: 20px 20px 14px 14px;
+  }
+
+  .duco-request-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .duco-request-dialog footer {
+    flex-direction: column-reverse;
+  }
+
+  .duco-request-dialog footer button {
+    width: 100%;
+    justify-content: center;
   }
 }
 

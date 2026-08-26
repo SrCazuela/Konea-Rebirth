@@ -23,6 +23,7 @@ import {
   deletePost,
   getLikedPostsByUser,
   getModerationPosts,
+  getProfileCatalog,
   getPost,
   getPostComments,
   getPosts,
@@ -37,6 +38,7 @@ import {
   type Post,
   type PostContentType,
   type PostVisibility,
+  type ProfileCatalog,
   type ProfileUpdate,
 } from '../api/portal'
 import {
@@ -47,11 +49,21 @@ import {
   type ReportResourceType,
   type ReportStatus,
 } from '../api/reports'
+import {
+  getManagedSupportRequests,
+  updateManagedSupportRequest,
+  type ManagedSupportRequest,
+  type SupportRequestCategory,
+  type SupportRequestStatus,
+} from '../api/support-requests'
 import { uploadImage, validateImage } from '../api/uploads'
 import { Network } from './Network'
 import { Notifications } from './Notifications'
 import { Chat } from './Chat'
 import { Duco } from './Duco'
+import { Academic } from './Academic'
+import { ImageCropDialog } from './ImageCropDialog'
+import { SearchableSelect } from './SearchableSelect'
 import './Portal.css'
 
 type PortalView =
@@ -59,6 +71,7 @@ type PortalView =
   | 'network'
   | 'chat'
   | 'duco'
+  | 'academic'
   | 'notifications'
   | 'profile'
   | 'moderation'
@@ -86,6 +99,8 @@ function routeFromHash(hash: string, canModerate: boolean): PortalRoute {
     '#people': 'network',
     '#chat': 'chat',
     '#duco': 'duco',
+    '#duco-requests': 'duco',
+    '#academic': 'academic',
     '#profile': 'profile',
     '#notifications': 'notifications',
   }
@@ -158,6 +173,7 @@ function hashForView(view: PortalView) {
     network: '#people',
     chat: '#chat',
     duco: '#duco',
+    academic: '#academic',
     notifications: '#notifications',
     profile: '#profile',
     moderation: '#moderation',
@@ -189,10 +205,17 @@ type IconName =
   | 'megaphone'
   | 'chat'
   | 'duco'
+  | 'academic'
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', {
   dateStyle: 'medium',
   timeStyle: 'short',
+})
+
+const monthFormatter = new Intl.DateTimeFormat('es-CL', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
 })
 
 function PortalIcon({ name }: { name: IconName }) {
@@ -318,6 +341,12 @@ function PortalIcon({ name }: { name: IconName }) {
         <path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15ZM5 3l.7 2.3L8 6l-2.3.7L5 9l-.7-2.3L2 6l2.3-.7L5 3Z" />
       </>
     ),
+    academic: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 3v18M8 8h8M8 13h8M8 18h5" />
+      </>
+    ),
   }
 
   return (
@@ -377,6 +406,15 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime())
     ? 'Fecha no disponible'
     : dateFormatter.format(date)
+}
+
+function formatMonth(value: string) {
+  const date = new Date(`${value}-01T00:00:00Z`)
+  return Number.isNaN(date.getTime())
+    ? value
+    : monthFormatter
+        .format(date)
+        .replace(/^./, (letter) => letter.toUpperCase())
 }
 
 async function copyText(value: string) {
@@ -1676,9 +1714,10 @@ function ProfileImageUpload({
 }) {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
   const input = useRef<HTMLInputElement>(null)
 
-  const selectFile = async (file: File | undefined) => {
+  const selectFile = (file: File | undefined) => {
     if (!file) return
     const validationError = validateImage(file)
     if (validationError) {
@@ -1687,6 +1726,11 @@ function ProfileImageUpload({
       return
     }
     setError('')
+    setPendingFile(file)
+  }
+
+  const uploadCroppedFile = async (file: File) => {
+    setPendingFile(null)
     setProgress(1)
     onUploadingChange(true)
     try {
@@ -1728,8 +1772,8 @@ function ProfileImageUpload({
           <input
             ref={input}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            onChange={(event) => void selectFile(event.target.files?.[0])}
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => selectFile(event.target.files?.[0])}
             disabled={disabled || progress > 0}
           />
         </label>
@@ -1748,6 +1792,17 @@ function ProfileImageUpload({
         <p className="portal-inline-error" role="alert">
           {error}
         </p>
+      )}
+      {pendingFile && (
+        <ImageCropDialog
+          file={pendingFile}
+          variant={variant}
+          onCancel={() => {
+            setPendingFile(null)
+            if (input.current) input.current.value = ''
+          }}
+          onConfirm={(file) => void uploadCroppedFile(file)}
+        />
       )}
     </div>
   )
@@ -1778,6 +1833,8 @@ function ProfileView({
   const [likedPosts, setLikedPosts] = useState<Post[]>([])
   const [activityLoading, setActivityLoading] = useState(true)
   const [activityError, setActivityError] = useState('')
+  const [catalog, setCatalog] = useState<ProfileCatalog | null>(null)
+  const [catalogError, setCatalogError] = useState('')
   const [form, setForm] = useState<ProfileUpdate>({
     username: user.username,
     displayName: user.displayName,
@@ -1843,6 +1900,27 @@ function ProfileView({
     }
   }, [user.id])
 
+  useEffect(() => {
+    let cancelled = false
+    getProfileCatalog()
+      .then((result) => {
+        if (!cancelled) setCatalog(result)
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setCatalogError(
+            readableError(
+              loadError,
+              'No pudimos cargar las opciones del perfil.',
+            ),
+          )
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const setField = <Field extends keyof ProfileUpdate>(
     field: Field,
     value: ProfileUpdate[Field],
@@ -1869,6 +1947,18 @@ function ProfileView({
     resetForm()
   }
 
+  const beginEditing = () => {
+    resetForm()
+    setEditing(true)
+    setError('')
+    setSuccess('')
+    window.requestAnimationFrame(() =>
+      document
+        .getElementById('profile-editor')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    )
+  }
+
   const updateEducation = (id: string, update: Partial<ProfileEducation>) =>
     setField(
       'education',
@@ -1893,6 +1983,66 @@ function ProfileView({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const hasOption = (value: string | null, options: string[] | undefined) =>
+      !value ||
+      Boolean(
+        options?.some(
+          (option) =>
+            option.localeCompare(value, 'es-CL', { sensitivity: 'base' }) === 0,
+        ),
+      )
+    const invalidEducation = form.education.find(
+      (entry) =>
+        !entry.institution.trim() ||
+        !entry.program.trim() ||
+        !hasOption(entry.institution, catalog?.institutions) ||
+        !hasOption(entry.program, catalog?.careers) ||
+        (!entry.current &&
+          entry.startYear &&
+          entry.endYear &&
+          entry.endYear < entry.startYear),
+    )
+    const invalidProject = form.projects.find(
+      (entry) =>
+        entry.title.trim().length < 2 || entry.description.trim().length < 2,
+    )
+    const invalidAchievement = form.achievements.find(
+      (entry) =>
+        entry.title.trim().length < 2 || entry.issuer.trim().length < 2,
+    )
+    let validationMessage = ''
+    if (!catalog) {
+      validationMessage =
+        catalogError || 'Espera mientras cargamos las opciones oficiales.'
+    } else if (form.displayName.trim().length < 2) {
+      validationMessage = 'El nombre visible debe tener al menos 2 caracteres.'
+    } else if (!/^[a-z0-9._]{3,30}$/.test(form.username.trim().toLowerCase())) {
+      validationMessage =
+        'El nombre de usuario debe tener entre 3 y 30 caracteres y usar solo letras minúsculas, números, punto o guion bajo.'
+    } else if (!hasOption(form.institution, catalog.institutions)) {
+      validationMessage =
+        'Selecciona una institución desde las opciones oficiales.'
+    } else if (!hasOption(form.campus, catalog.campuses)) {
+      validationMessage =
+        'Selecciona una sede o campus desde las opciones oficiales.'
+    } else if (!hasOption(form.career, catalog.careers)) {
+      validationMessage = 'Selecciona una carrera desde las opciones oficiales.'
+    } else if (invalidEducation) {
+      validationMessage =
+        'Revisa la formación académica: institución, carrera y años deben ser válidos.'
+    } else if (invalidProject) {
+      validationMessage =
+        'Cada proyecto necesita un título y una descripción de al menos 2 caracteres.'
+    } else if (invalidAchievement) {
+      validationMessage =
+        'Cada logro necesita un título y una institución emisora.'
+    }
+
+    if (validationMessage) {
+      setError(validationMessage)
+      setSuccess('')
+      return
+    }
     setSaving(true)
     setError('')
     setSuccess('')
@@ -2022,10 +2172,7 @@ function ProfileView({
               <button
                 className="portal-secondary-button"
                 type="button"
-                onClick={() => {
-                  setEditing(true)
-                  setSuccess('')
-                }}
+                onClick={beginEditing}
               >
                 <PortalIcon name="edit" /> Editar perfil
               </button>
@@ -2036,6 +2183,16 @@ function ProfileView({
           >
             {user.bio || 'Aún no has agregado una presentación.'}
           </p>
+          {user.website && (
+            <a
+              className="portal-profile-website"
+              href={user.website}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <PortalIcon name="globe" /> Visitar sitio web
+            </a>
+          )}
           {profileStats && (
             <dl className="portal-profile-social-stats">
               <div>
@@ -2073,7 +2230,10 @@ function ProfileView({
         </div>
       </section>
 
-      <section className="portal-card portal-profile-details">
+      <section
+        className="portal-card portal-profile-details"
+        id="profile-editor"
+      >
         <div className="portal-section-title">
           <div>
             <span className="portal-card-kicker">Cuenta</span>
@@ -2084,7 +2244,11 @@ function ProfileView({
           </span>
         </div>
         {editing ? (
-          <form className="portal-profile-form" onSubmit={handleSubmit}>
+          <form
+            className="portal-profile-form"
+            onSubmit={handleSubmit}
+            noValidate
+          >
             <div className="portal-profile-upload-grid">
               <ProfileImageUpload
                 label="Foto de perfil"
@@ -2137,38 +2301,42 @@ function ProfileView({
                   />
                 </div>
               </label>
-              <label>
-                <span>Institución</span>
-                <input
-                  value={form.institution ?? ''}
-                  onChange={(event) =>
-                    setField('institution', event.target.value)
+              <SearchableSelect
+                label="Institución"
+                value={form.institution}
+                options={catalog?.institutions ?? []}
+                placeholder="Busca tu institución"
+                disabled={saving || uploadsBusy || !catalog}
+                onChange={(value) => {
+                  setField('institution', value)
+                  if (!value) {
+                    setField('campus', null)
+                    setField('career', null)
                   }
-                  maxLength={160}
-                  placeholder="Ej. DUOC UC"
-                  disabled={saving || uploadsBusy}
-                />
-              </label>
-              <label>
-                <span>Campus</span>
-                <input
-                  value={form.campus ?? ''}
-                  onChange={(event) => setField('campus', event.target.value)}
-                  maxLength={160}
-                  placeholder="Ej. Sede Antonio Varas"
-                  disabled={saving || uploadsBusy}
-                />
-              </label>
-              <label>
-                <span>Carrera</span>
-                <input
-                  value={form.career ?? ''}
-                  onChange={(event) => setField('career', event.target.value)}
-                  maxLength={160}
-                  placeholder="Ej. Ingeniería en Informática"
-                  disabled={saving || uploadsBusy}
-                />
-              </label>
+                }}
+              />
+              <SearchableSelect
+                key={`campus-${form.institution ?? 'none'}`}
+                label="Campus o sede"
+                value={form.campus}
+                options={catalog?.campuses ?? []}
+                placeholder="Busca tu sede o campus"
+                disabled={
+                  saving || uploadsBusy || !catalog || !form.institution
+                }
+                onChange={(value) => setField('campus', value)}
+              />
+              <SearchableSelect
+                key={`career-${form.institution ?? 'none'}`}
+                label="Carrera"
+                value={form.career}
+                options={catalog?.careers ?? []}
+                placeholder="Busca tu carrera"
+                disabled={
+                  saving || uploadsBusy || !catalog || !form.institution
+                }
+                onChange={(value) => setField('career', value)}
+              />
               <label>
                 <span>Sitio web</span>
                 <input
@@ -2208,8 +2376,8 @@ function ProfileView({
                       ...form.education,
                       {
                         id: crypto.randomUUID(),
-                        institution: '',
-                        program: '',
+                        institution: form.institution ?? '',
+                        program: form.career ?? '',
                         startYear: null,
                         endYear: null,
                         current: false,
@@ -2224,34 +2392,28 @@ function ProfileView({
                 <fieldset className="portal-portfolio-entry" key={entry.id}>
                   <legend>Estudio o título</legend>
                   <div className="portal-field-grid">
-                    <label>
-                      <span>Institución</span>
-                      <input
-                        value={entry.institution}
-                        onChange={(event) =>
-                          updateEducation(entry.id, {
-                            institution: event.target.value,
-                          })
-                        }
-                        maxLength={160}
-                        placeholder="Ej. DUOC UC"
-                        required
-                      />
-                    </label>
-                    <label>
-                      <span>Carrera, título o programa</span>
-                      <input
-                        value={entry.program}
-                        onChange={(event) =>
-                          updateEducation(entry.id, {
-                            program: event.target.value,
-                          })
-                        }
-                        maxLength={160}
-                        placeholder="Ej. Ingeniería en Informática"
-                        required
-                      />
-                    </label>
+                    <SearchableSelect
+                      label="Institución"
+                      value={entry.institution || null}
+                      options={catalog?.institutions ?? []}
+                      placeholder="Busca la institución"
+                      required
+                      disabled={saving || uploadsBusy || !catalog}
+                      onChange={(value) =>
+                        updateEducation(entry.id, { institution: value ?? '' })
+                      }
+                    />
+                    <SearchableSelect
+                      label="Carrera, título o programa"
+                      value={entry.program || null}
+                      options={catalog?.careers ?? []}
+                      placeholder="Busca la carrera"
+                      required
+                      disabled={saving || uploadsBusy || !catalog}
+                      onChange={(value) =>
+                        updateEducation(entry.id, { program: value ?? '' })
+                      }
+                    />
                     <label>
                       <span>Año de inicio</span>
                       <input
@@ -2636,22 +2798,43 @@ function ProfileView({
               <span className="portal-card-kicker">Portafolio</span>
               <h2>Trayectoria y proyectos</h2>
             </div>
+            <button
+              className="portal-secondary-button"
+              type="button"
+              onClick={beginEditing}
+            >
+              <PortalIcon name="edit" /> Editar portafolio
+            </button>
           </div>
           {user.education.length === 0 &&
           user.projects.length === 0 &&
           user.achievements.length === 0 ? (
-            <div className="portal-empty-state portal-empty-state--compact">
-              <h3>Tu portafolio está vacío</h3>
-              <p>
-                Edita tu perfil para agregar formación, proyectos y logros que
-                acrediten tu trayectoria.
-              </p>
-            </div>
+            <EmptyState
+              icon="academic"
+              title="Tu portafolio está vacío"
+              action={
+                <button
+                  className="portal-primary-button"
+                  type="button"
+                  onClick={beginEditing}
+                >
+                  Crear mi portafolio
+                </button>
+              }
+            >
+              Agrega formación, proyectos y logros para acreditar tu trayectoria
+              ante tu comunidad.
+            </EmptyState>
           ) : (
             <div className="portal-own-portfolio__grid">
               {user.education.length > 0 && (
                 <section>
-                  <h3>Formación</h3>
+                  <header>
+                    <span className="portal-own-portfolio__icon">
+                      <PortalIcon name="academic" />
+                    </span>
+                    <h3>Formación</h3>
+                  </header>
                   {user.education.map((entry) => (
                     <article key={entry.id}>
                       <strong>{entry.program}</strong>
@@ -2668,15 +2851,52 @@ function ProfileView({
               )}
               {user.projects.length > 0 && (
                 <section>
-                  <h3>Proyectos</h3>
+                  <header>
+                    <span className="portal-own-portfolio__icon">
+                      <PortalIcon name="image" />
+                    </span>
+                    <h3>Proyectos</h3>
+                  </header>
                   {user.projects.map((entry) => (
                     <article key={entry.id}>
+                      {entry.imageUrl && (
+                        <img
+                          className="portal-own-portfolio__project-image"
+                          src={entry.imageUrl}
+                          alt={`Vista previa de ${entry.title}`}
+                          loading="lazy"
+                        />
+                      )}
                       <strong>{entry.title}</strong>
                       <span>{entry.description}</span>
-                      {entry.url && (
-                        <a href={entry.url} target="_blank" rel="noreferrer">
-                          Ver proyecto
-                        </a>
+                      {entry.technologies.length > 0 && (
+                        <div className="portal-own-portfolio__technologies">
+                          {entry.technologies.map((technology) => (
+                            <span key={technology}>{technology}</span>
+                          ))}
+                        </div>
+                      )}
+                      {(entry.url || entry.repositoryUrl) && (
+                        <div className="portal-own-portfolio__links">
+                          {entry.url && (
+                            <a
+                              href={entry.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Ver proyecto
+                            </a>
+                          )}
+                          {entry.repositoryUrl && (
+                            <a
+                              href={entry.repositoryUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Repositorio
+                            </a>
+                          )}
+                        </div>
                       )}
                     </article>
                   ))}
@@ -2684,12 +2904,29 @@ function ProfileView({
               )}
               {user.achievements.length > 0 && (
                 <section>
-                  <h3>Logros</h3>
+                  <header>
+                    <span className="portal-own-portfolio__icon">
+                      <PortalIcon name="check" />
+                    </span>
+                    <h3>Logros</h3>
+                  </header>
                   {user.achievements.map((entry) => (
                     <article key={entry.id}>
                       <strong>{entry.title}</strong>
                       <span>{entry.issuer}</span>
+                      {entry.issuedAt && (
+                        <small>{formatMonth(entry.issuedAt)}</small>
+                      )}
                       {entry.description && <small>{entry.description}</small>}
+                      {entry.credentialUrl && (
+                        <a
+                          href={entry.credentialUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver credencial
+                        </a>
+                      )}
                     </article>
                   ))}
                 </section>
@@ -3131,12 +3368,172 @@ function ReportReviewCard({
   )
 }
 
+const supportRequestCategoryLabels: Record<SupportRequestCategory, string> = {
+  section_change: 'Cambio de sección',
+  missing_course: 'Asignatura faltante',
+  enrollment: 'Inscripción de asignaturas',
+  schedule_conflict: 'Conflicto de horario',
+  harassment: 'Convivencia o acoso',
+  technical: 'Soporte técnico',
+  financial: 'Asunto financiero',
+  wellbeing: 'Bienestar estudiantil',
+  other: 'Otra solicitud',
+}
+
+const supportRequestStatusLabels: Record<SupportRequestStatus, string> = {
+  pending: 'Pendiente',
+  reviewing: 'En revisión',
+  resolved: 'Resuelta',
+  rejected: 'Rechazada',
+}
+
+function SupportRequestReviewCard({
+  request,
+  onStatusChange,
+}: {
+  request: ManagedSupportRequest
+  onStatusChange: (
+    requestId: string,
+    status: SupportRequestStatus,
+  ) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const changeStatus = async (status: SupportRequestStatus) => {
+    setSaving(true)
+    setError('')
+    try {
+      await onStatusChange(request.id, status)
+    } catch (updateError) {
+      setError(
+        readableError(updateError, 'No pudimos actualizar esta solicitud.'),
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const requesterName = request.requester?.displayName ?? 'Estudiante'
+  return (
+    <article className="portal-card portal-support-review-card">
+      <header>
+        <Avatar
+          name={requesterName}
+          url={request.requester?.avatarUrl ?? null}
+        />
+        <div>
+          <strong>{requesterName}</strong>
+          <span>
+            {request.requester
+              ? `@${request.requester.username}`
+              : `ID ${request.requesterId.slice(0, 8)}`}{' '}
+            · {formatDate(request.createdAt)}
+          </span>
+        </div>
+        <span
+          className={`portal-support-status portal-support-status--${request.status}`}
+        >
+          {supportRequestStatusLabels[request.status]}
+        </span>
+      </header>
+
+      <div className="portal-support-review-card__heading">
+        <span>{supportRequestCategoryLabels[request.category]}</span>
+        <span
+          className={`portal-support-urgency portal-support-urgency--${request.urgency}`}
+        >
+          Urgencia{' '}
+          {{ low: 'baja', medium: 'media', high: 'alta' }[request.urgency]}
+        </span>
+        <h3>{request.subject}</h3>
+      </div>
+
+      <div className="portal-support-review-card__details">
+        <div>
+          <strong>Situación informada</strong>
+          <p>{request.description}</p>
+        </div>
+        {request.desiredOutcome && (
+          <div>
+            <strong>Resultado esperado</strong>
+            <p>{request.desiredOutcome}</p>
+          </div>
+        )}
+      </div>
+
+      <footer className="portal-support-review-card__footer">
+        <span>
+          {request.assignedTo
+            ? `Asignada a ${request.assignedTo.displayName}`
+            : 'Sin asignar'}
+        </span>
+        <span>Actualizada {formatDate(request.updatedAt)}</span>
+      </footer>
+
+      {error && (
+        <p className="portal-inline-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="portal-support-review-actions">
+        {request.status === 'pending' && (
+          <button
+            type="button"
+            onClick={() => void changeStatus('reviewing')}
+            disabled={saving}
+          >
+            Comenzar revisión
+          </button>
+        )}
+        {(request.status === 'pending' || request.status === 'reviewing') && (
+          <>
+            <button
+              className="is-reject"
+              type="button"
+              onClick={() => void changeStatus('rejected')}
+              disabled={saving}
+            >
+              Rechazar
+            </button>
+            <button
+              className="is-resolve"
+              type="button"
+              onClick={() => void changeStatus('resolved')}
+              disabled={saving}
+            >
+              {saving ? 'Guardando…' : 'Resolver'}
+            </button>
+          </>
+        )}
+        {(request.status === 'resolved' || request.status === 'rejected') && (
+          <button
+            type="button"
+            onClick={() => void changeStatus('reviewing')}
+            disabled={saving}
+          >
+            Reabrir
+          </button>
+        )}
+      </div>
+    </article>
+  )
+}
+
 function ModerationView() {
   const [posts, setPosts] = useState<Post[]>([])
   const [reports, setReports] = useState<Report[]>([])
-  const [section, setSection] = useState<'posts' | 'reports'>('posts')
+  const [supportRequests, setSupportRequests] = useState<
+    ManagedSupportRequest[]
+  >([])
+  const [section, setSection] = useState<'posts' | 'reports' | 'requests'>(
+    'posts',
+  )
   const [filter, setFilter] = useState<ModerationStatus>('pending')
   const [reportFilter, setReportFilter] = useState<ReportStatus>('pending')
+  const [requestFilter, setRequestFilter] =
+    useState<SupportRequestStatus>('pending')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -3144,12 +3541,14 @@ function ModerationView() {
     setLoading(true)
     setError('')
     try {
-      const [loadedPosts, loadedReports] = await Promise.all([
+      const [loadedPosts, loadedReports, loadedRequests] = await Promise.all([
         getModerationPosts(),
         getReports(),
+        getManagedSupportRequests(),
       ])
       setPosts(loadedPosts)
       setReports(loadedReports)
+      setSupportRequests(loadedRequests)
     } catch (loadError) {
       setError(
         readableError(loadError, 'No pudimos cargar el centro de moderación.'),
@@ -3162,11 +3561,16 @@ function ModerationView() {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([getModerationPosts(), getReports()])
-      .then(([loadedPosts, loadedReports]) => {
+    Promise.all([
+      getModerationPosts(),
+      getReports(),
+      getManagedSupportRequests(),
+    ])
+      .then(([loadedPosts, loadedReports, loadedRequests]) => {
         if (!cancelled) {
           setPosts(loadedPosts)
           setReports(loadedReports)
+          setSupportRequests(loadedRequests)
         }
       })
       .catch((loadError: unknown) => {
@@ -3202,6 +3606,12 @@ function ModerationView() {
   const filteredReports = reports.filter(
     (report) => report.status === reportFilter,
   )
+  const openRequestsCount = supportRequests.filter(
+    (item) => item.status === 'pending' || item.status === 'reviewing',
+  ).length
+  const filteredSupportRequests = supportRequests.filter(
+    (item) => item.status === requestFilter,
+  )
 
   const handleModerate = async (
     postId: string,
@@ -3221,6 +3631,18 @@ function ModerationView() {
     )
   }
 
+  const handleSupportRequestStatus = async (
+    requestId: string,
+    status: SupportRequestStatus,
+  ) => {
+    const updated = await updateManagedSupportRequest(requestId, status)
+    setSupportRequests((current) =>
+      current.map((item) =>
+        item.id === requestId ? { ...item, ...updated } : item,
+      ),
+    )
+  }
+
   return (
     <div className="portal-moderation-layout">
       <section className="portal-card portal-moderation-overview">
@@ -3230,11 +3652,12 @@ function ModerationView() {
         <div>
           <span className="portal-card-kicker">Cola de revisión</span>
           <h2>
-            {pendingCount} publicaciones · {openReportsCount} reportes abiertos
+            {pendingCount} publicaciones · {openReportsCount} reportes ·{' '}
+            {openRequestsCount} solicitudes abiertas
           </h2>
           <p>
-            Revisa el contenido con criterios consistentes y entrega motivos
-            claros cuando sea necesario rechazarlo.
+            Revisa contenido, reportes y solicitudes estudiantiles con criterios
+            consistentes y un seguimiento claro.
           </p>
         </div>
       </section>
@@ -3262,12 +3685,25 @@ function ModerationView() {
         >
           Reportes <span>{openReportsCount}</span>
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === 'requests'}
+          className={section === 'requests' ? 'is-active' : ''}
+          onClick={() => setSection('requests')}
+        >
+          Solicitudes <span>{openRequestsCount}</span>
+        </button>
       </div>
 
       <div
         className="portal-filter-bar"
         aria-label={
-          section === 'posts' ? 'Filtrar publicaciones' : 'Filtrar reportes'
+          section === 'posts'
+            ? 'Filtrar publicaciones'
+            : section === 'reports'
+              ? 'Filtrar reportes'
+              : 'Filtrar solicitudes'
         }
       >
         {section === 'posts'
@@ -3294,27 +3730,52 @@ function ModerationView() {
                 </span>
               </button>
             ))
-          : (
-              [
-                ['pending', 'Pendientes'],
-                ['reviewing', 'En revisión'],
-                ['resolved', 'Resueltos'],
-                ['dismissed', 'Descartados'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={reportFilter === value ? 'is-active' : ''}
-                onClick={() => setReportFilter(value)}
-                aria-pressed={reportFilter === value}
-              >
-                {label}
-                <span>
-                  {reports.filter((report) => report.status === value).length}
-                </span>
-              </button>
-            ))}
+          : section === 'reports'
+            ? (
+                [
+                  ['pending', 'Pendientes'],
+                  ['reviewing', 'En revisión'],
+                  ['resolved', 'Resueltos'],
+                  ['dismissed', 'Descartados'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={reportFilter === value ? 'is-active' : ''}
+                  onClick={() => setReportFilter(value)}
+                  aria-pressed={reportFilter === value}
+                >
+                  {label}
+                  <span>
+                    {reports.filter((report) => report.status === value).length}
+                  </span>
+                </button>
+              ))
+            : (
+                [
+                  ['pending', 'Pendientes'],
+                  ['reviewing', 'En revisión'],
+                  ['resolved', 'Resueltas'],
+                  ['rejected', 'Rechazadas'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={requestFilter === value ? 'is-active' : ''}
+                  onClick={() => setRequestFilter(value)}
+                  aria-pressed={requestFilter === value}
+                >
+                  {label}
+                  <span>
+                    {
+                      supportRequests.filter((item) => item.status === value)
+                        .length
+                    }
+                  </span>
+                </button>
+              ))}
       </div>
 
       {loading ? (
@@ -3356,18 +3817,33 @@ function ModerationView() {
             />
           ))}
         </div>
-      ) : filteredReports.length === 0 ? (
+      ) : section === 'reports' && filteredReports.length === 0 ? (
         <EmptyState icon="check" title="No hay reportes en esta vista">
           No hay reportes con estado “
           {reportStatusLabel(reportFilter).toLowerCase()}”.
         </EmptyState>
-      ) : (
+      ) : section === 'reports' ? (
         <div className="portal-report-review-list">
           {filteredReports.map((report) => (
             <ReportReviewCard
               key={report.id}
               report={report}
               onStatusChange={handleReportStatus}
+            />
+          ))}
+        </div>
+      ) : filteredSupportRequests.length === 0 ? (
+        <EmptyState icon="check" title="No hay solicitudes en esta vista">
+          No hay solicitudes con estado “
+          {supportRequestStatusLabels[requestFilter].toLowerCase()}”.
+        </EmptyState>
+      ) : (
+        <div className="portal-support-review-list">
+          {filteredSupportRequests.map((request) => (
+            <SupportRequestReviewCard
+              key={request.id}
+              request={request}
+              onStatusChange={handleSupportRequestStatus}
             />
           ))}
         </div>
@@ -3510,6 +3986,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'feed', label: 'Inicio', icon: 'feed' },
     { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
+    { view: 'academic', label: 'Materias', icon: 'academic' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     ...(canModerate
       ? ([
@@ -3522,6 +3999,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'feed', label: 'Inicio', icon: 'feed' },
     { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
+    { view: 'academic', label: 'Materias', icon: 'academic' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     { view: 'profile', label: 'Perfil', icon: 'profile' },
   ]
@@ -3531,6 +4009,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     network: { eyebrow: 'Privacidad por diseño', title: 'Mis conexiones' },
     chat: { eyebrow: 'Conversaciones', title: 'Chat Konea' },
     duco: { eyebrow: 'Asistente', title: 'Organízate con DUCO' },
+    academic: { eyebrow: 'Planificación', title: 'Mi espacio académico' },
     notifications: { eyebrow: 'Actividad', title: 'Tus notificaciones' },
     profile: { eyebrow: 'Identidad', title: 'Tu perfil Konea' },
     moderation: { eyebrow: 'Seguridad', title: 'Centro de moderación' },
@@ -3577,6 +4056,10 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
   const openNotifications = () => {
     applyRoute(routeFromHash('#notifications', canModerate))
+  }
+
+  const openSupportRequests = () => {
+    applyRoute(routeFromHash('#duco-requests', canModerate))
   }
 
   const openProfile = () => {
@@ -3812,7 +4295,17 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             onChatChange={syncChatRoute}
           />
         )}
-        {view === 'duco' && <Duco currentUser={user} />}
+        {view === 'duco' && (
+          <Duco
+            currentUser={user}
+            initialPanel={
+              window.location.hash === '#duco-requests'
+                ? 'requests'
+                : 'conversation'
+            }
+          />
+        )}
+        {view === 'academic' && <Academic />}
         {view === 'notifications' && (
           <Notifications
             unreadCount={unreadNotifications}
@@ -3820,6 +4313,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             onOpenUser={openNetworkUser}
             onOpenFeed={openPost}
             onOpenChat={openChat}
+            onOpenSupportRequests={openSupportRequests}
           />
         )}
         {view === 'profile' && (

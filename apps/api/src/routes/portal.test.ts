@@ -70,6 +70,18 @@ describe.sequential('authenticated portal API', () => {
   })
 
   it('updates and returns the current student profile', async () => {
+    const catalog = await firstAgent.get('/api/v1/profile/catalog')
+    expect(catalog.status).toBe(200)
+    expect(catalog.body.catalog.institutions).toContain('Duoc UC')
+    expect(catalog.body.catalog.campuses).toContain('Sede San Joaquín')
+    expect(catalog.body.catalog.careers).toContain('Ingeniería en Informática')
+
+    const invalidCatalogValue = await firstAgent
+      .patch('/api/v1/profile')
+      .send({ institution: 'Institución inventada' })
+    expect(invalidCatalogValue.status).toBe(400)
+    expect(invalidCatalogValue.body.error.code).toBe('INVALID_INSTITUTION')
+
     const emptyProfileUpdate = await secondAgent.patch('/api/v1/profile').send({
       username: secondAccount.username,
       displayName: secondAccount.displayName,
@@ -85,8 +97,9 @@ describe.sequential('authenticated portal API', () => {
       username: updatedUsername,
       displayName: 'Estudiante Uno',
       bio: 'Me interesa colaborar en proyectos tecnológicos.',
-      institution: 'Universidad Konea',
-      career: 'Ingeniería Informática',
+      institution: 'Duoc UC',
+      campus: 'Sede San Joaquín',
+      career: 'Ingeniería en Informática',
       avatarUrl:
         '/api/v1/uploads/files/11111111-1111-4111-8111-111111111111.png',
       coverUrl:
@@ -98,8 +111,9 @@ describe.sequential('authenticated portal API', () => {
       id: firstUserId,
       username: updatedUsername,
       displayName: 'Estudiante Uno',
-      institution: 'Universidad Konea',
-      career: 'Ingeniería Informática',
+      institution: 'Duoc UC',
+      campus: 'Sede San Joaquín',
+      career: 'Ingeniería en Informática',
       avatarUrl:
         '/api/v1/uploads/files/11111111-1111-4111-8111-111111111111.png',
     })

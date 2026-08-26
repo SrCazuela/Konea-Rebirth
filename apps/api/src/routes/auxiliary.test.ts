@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser'
 import express, { type ErrorRequestHandler } from 'express'
 import { eq, inArray } from 'drizzle-orm'
 import request from 'supertest'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { closeDatabaseConnection, db } from '../db/client.js'
 import {
   chats,
@@ -291,13 +291,134 @@ describe.sequential('auxiliary backend routes', () => {
     expect(emptyCount.body).toEqual({ unreadCount: 0 })
   })
 
+  it('synchronizes a private AVA calendar without persisting its URL', async () => {
+    const calendarUrl =
+      'https://campusvirtual.duoc.cl/webapps/calendar/calendarFeed/test_token/learn.ics'
+    const calendar = `BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+UID:capstone-deadline@blackboard\r
+DTSTART:20300901T160000Z\r
+SUMMARY:Entrega final Capstone\r
+CATEGORIES:Proyecto de Título\r
+END:VEVENT\r
+END:VCALENDAR\r
+`
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(calendar, {
+        status: 200,
+        headers: { 'Content-Type': 'text/calendar' },
+      }),
+    )
+
+    try {
+      const sync = await studentAgent.post('/api/v1/ava-calendar/sync').send({
+        calendarUrl,
+      })
+      expect(sync.status).toBe(200)
+      expect(sync.body).toMatchObject({
+        importedCount: 1,
+        upcomingCount: 1,
+        events: [
+          {
+            title: 'Entrega final Capstone',
+            courseName: 'Proyecto de Título',
+          },
+        ],
+      })
+      expect(JSON.stringify(sync.body)).not.toContain('calendarFeed')
+
+      const stored = await studentAgent.get('/api/v1/ava-calendar')
+      expect(stored.status).toBe(200)
+      expect(stored.body.sync).toMatchObject({ lastEventCount: 1 })
+      expect(stored.body.events).toHaveLength(1)
+
+      const invalid = await studentAgent
+        .post('/api/v1/ava-calendar/sync')
+        .send({ calendarUrl: 'https://example.com/private.ics' })
+      expect(invalid.status).toBe(400)
+      expect(invalid.body.error.code).toBe('INVALID_AVA_CALENDAR_URL')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      fetchMock.mockRestore()
+    }
+  })
+
+  it('manages personal subjects and academic tasks', async () => {
+    const initial = await studentAgent.get('/api/v1/academic')
+    expect(initial.status).toBe(200)
+    expect(initial.body.courses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Proyecto de Título',
+          source: 'ava',
+        }),
+      ]),
+    )
+
+    const courseCreation = await studentAgent
+      .post('/api/v1/academic/courses')
+      .send({
+        name: 'Arquitectura de Software',
+        code: 'ASY4131',
+        section: '001D',
+        term: 'Segundo semestre 2030',
+      })
+    expect(courseCreation.status).toBe(201)
+    expect(courseCreation.body.course).toMatchObject({
+      name: 'Arquitectura de Software',
+      section: '001D',
+      source: 'manual',
+    })
+    const courseId = courseCreation.body.course.id
+
+    const duplicate = await studentAgent.post('/api/v1/academic/courses').send({
+      name: '  ARQUITECTURA   DE SOFTWARE ',
+    })
+    expect(duplicate.status).toBe(409)
+
+    const taskCreation = await studentAgent
+      .post('/api/v1/academic/tasks')
+      .send({
+        courseId,
+        title: 'Preparar diagrama de arquitectura',
+        description: 'Completar los componentes antes de la revisión.',
+        dueAt: '2030-09-03T18:00:00.000Z',
+        priority: 'high',
+      })
+    expect(taskCreation.status).toBe(201)
+    expect(taskCreation.body.task).toMatchObject({
+      courseId,
+      priority: 'high',
+      status: 'pending',
+    })
+    const taskId = taskCreation.body.task.id
+
+    const completed = await studentAgent
+      .patch(`/api/v1/academic/tasks/${taskId}`)
+      .send({ status: 'completed' })
+    expect(completed.status).toBe(200)
+    expect(completed.body.task.status).toBe('completed')
+
+    const dashboard = await studentAgent.get('/api/v1/academic')
+    expect(dashboard.body.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: taskId,
+          title: 'Preparar diagrama de arquitectura',
+          status: 'completed',
+        }),
+      ]),
+    )
+  })
+
   it('persists DUCO history and builds a local answer from assigned tasks', async () => {
     const reply = await studentAgent.post('/api/v1/duco/messages').send({
       content: 'Organiza mis tareas pendientes',
     })
 
     expect(reply.status).toBe(201)
-    expect(reply.body.openTaskCount).toBe(1)
+    expect(reply.body.openTaskCount).toBe(2)
     expect(reply.body.userMessage).toMatchObject({
       role: 'user',
       content: 'Organiza mis tareas pendientes',
@@ -317,6 +438,225 @@ describe.sequential('auxiliary backend routes', () => {
     expect(cleared.body).toEqual({ deletedCount: 2 })
     const emptyHistory = await studentAgent.get('/api/v1/duco/messages')
     expect(emptyHistory.body.messages).toEqual([])
+  })
+
+  it('lets DUCO suggest and create an editable academic pending item once', async () => {
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content:
+        'Tengo que realizar una guía de algoritmos matemáticos para la asignatura Fundamentos de Matemáticas.',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage).toMatchObject({
+      role: 'assistant',
+      action: {
+        type: 'create_task',
+        label: 'Crear pendiente',
+        draft: {
+          priority: 'medium',
+          courseName: 'Fundamentos de Matemáticas',
+        },
+        task: null,
+      },
+    })
+    expect(reply.body.assistantMessage.content).toContain(
+      'no realizar una entrega completa',
+    )
+
+    const sourceMessageId = reply.body.assistantMessage.id
+    const creation = await studentAgent.post('/api/v1/duco/tasks').send({
+      sourceMessageId,
+      title: 'Guía de algoritmos matemáticos',
+      description: 'Resolver y revisar la guía antes de la próxima clase.',
+      courseName: 'Fundamentos de Matemáticas',
+      dueAt: '2030-09-05T20:00:00.000Z',
+      priority: 'high',
+    })
+
+    expect(creation.status).toBe(201)
+    expect(creation.body.task).toMatchObject({
+      title: 'Guía de algoritmos matemáticos',
+      priority: 'high',
+      status: 'pending',
+    })
+    expect(creation.body.action.task).toEqual({ id: creation.body.task.id })
+
+    const duplicate = await studentAgent.post('/api/v1/duco/tasks').send({
+      sourceMessageId,
+      title: 'No debe duplicarse',
+      description: '',
+      courseName: null,
+      dueAt: null,
+      priority: 'low',
+    })
+    expect(duplicate.status).toBe(409)
+    expect(duplicate.body.error.code).toBe('DUCO_TASK_ALREADY_CREATED')
+
+    const dashboard = await studentAgent.get('/api/v1/academic')
+    expect(dashboard.body.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: creation.body.task.id,
+          title: 'Guía de algoritmos matemáticos',
+        }),
+      ]),
+    )
+
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  })
+
+  it('lets DUCO prepare an editable request and only sends it after confirmation', async () => {
+    const incompleteReply = await studentAgent
+      .post('/api/v1/duco/messages')
+      .send({
+        content:
+          'Necesito solicitar un cambio de sección porque mi horario se superpone.',
+      })
+
+    expect(incompleteReply.status).toBe(201)
+    expect(incompleteReply.body.assistantMessage.action).toBeNull()
+    expect(incompleteReply.body.assistantMessage.content).toContain(
+      'Antes de mostrar el botón',
+    )
+    expect(incompleteReply.body.assistantMessage.content).toContain(
+      'la asignatura',
+    )
+
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content:
+        'La asignatura es Capstone, mi sección actual es 001D y el motivo es que se superpone con otra clase.',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage).toMatchObject({
+      role: 'assistant',
+      action: {
+        type: 'manage_request',
+        label: 'Gestionar solicitud',
+        draft: { category: 'section_change', urgency: 'medium' },
+      },
+      request: null,
+    })
+    expect(reply.body.aiProvider).toBe('local')
+
+    const sourceMessageId = reply.body.assistantMessage.id
+    const creation = await studentAgent.post('/api/v1/duco/requests').send({
+      sourceMessageId,
+      category: 'section_change',
+      subject: 'Cambio de sección para Capstone',
+      description:
+        'Solicito cambiarme de sección porque el horario actual se superpone con otra asignatura.',
+      desiredOutcome:
+        'Quedar inscrito en una sección sin conflicto de horario.',
+      urgency: 'medium',
+    })
+
+    expect(creation.status).toBe(201)
+    expect(creation.body.request).toMatchObject({
+      requesterId: studentId,
+      sourceMessageId,
+      category: 'section_change',
+      subject: 'Cambio de sección para Capstone',
+      status: 'pending',
+    })
+    const supportRequestId = creation.body.request.id
+
+    const duplicate = await studentAgent.post('/api/v1/duco/requests').send({
+      sourceMessageId,
+      category: 'section_change',
+      subject: 'Intento duplicado',
+      description: 'Esta solicitud no debería volver a ser creada.',
+      desiredOutcome: '',
+      urgency: 'low',
+    })
+    expect(duplicate.status).toBe(409)
+    expect(duplicate.body.error.code).toBe('DUCO_REQUEST_ALREADY_SENT')
+
+    const history = await studentAgent.get('/api/v1/duco/messages')
+    const linkedMessage = history.body.messages.find(
+      (message: { id: string }) => message.id === sourceMessageId,
+    )
+    expect(linkedMessage.request).toEqual({
+      id: supportRequestId,
+      status: 'pending',
+    })
+
+    const moderatorList = await moderatorAgent.get('/api/v1/duco/requests/all')
+    expect(moderatorList.status).toBe(200)
+    expect(
+      moderatorList.body.requests.map((item: { id: string }) => item.id),
+    ).toContain(supportRequestId)
+
+    const updated = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'reviewing' })
+    expect(updated.status).toBe(200)
+    expect(updated.body.request).toMatchObject({
+      id: supportRequestId,
+      status: 'reviewing',
+      assignedToId: moderatorId,
+    })
+
+    const moderatorNotifications = await moderatorAgent.get(
+      '/api/v1/notifications',
+    )
+    expect(
+      moderatorNotifications.body.notifications.some(
+        (notification: { resourceId: string; type: string }) =>
+          notification.resourceId === supportRequestId &&
+          notification.type === 'support_request',
+      ),
+    ).toBe(true)
+
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    const ownRequests = await studentAgent.get('/api/v1/duco/requests')
+    expect(ownRequests.status).toBe(200)
+    expect(
+      ownRequests.body.requests.find(
+        (item: { id: string }) => item.id === supportRequestId,
+      ),
+    ).toMatchObject({ status: 'reviewing', sourceMessageId: null })
+  })
+
+  it('asks about immediate safety before offering a wellbeing request', async () => {
+    const initial = await studentAgent.post('/api/v1/duco/messages').send({
+      content:
+        'En mi clase me están hostigando y tengo pensamientos suicidas y de atentar contra la institución.',
+    })
+
+    expect(initial.status).toBe(201)
+    expect(initial.body.assistantMessage.action).toBeNull()
+    expect(initial.body.assistantMessage.content).toContain('peligro inmediato')
+    expect(initial.body.assistantMessage.content).toContain(
+      'no ha contactado automáticamente a nadie',
+    )
+
+    const followUp = await studentAgent.post('/api/v1/duco/messages').send({
+      content:
+        'No estoy en peligro inmediato y no tengo un plan. Los insultos ocurrieron hoy dentro de mi clase.',
+    })
+
+    expect(followUp.status).toBe(201)
+    expect(followUp.body.assistantMessage).toMatchObject({
+      action: {
+        type: 'manage_request',
+        draft: { category: 'wellbeing', urgency: 'high' },
+      },
+    })
+    expect(
+      followUp.body.assistantMessage.action.draft.description,
+    ).not.toContain('Antes de preparar una solicitud')
+
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    const selfHarmOnly = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Últimamente he tenido pensamientos suicidas.',
+    })
+    expect(selfHarmOnly.body.assistantMessage.action).toBeNull()
+    expect(selfHarmOnly.body.assistantMessage.content).toContain(
+      'peligro inmediato',
+    )
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
   })
 
   it('accepts user reports and restricts review state to moderators', async () => {

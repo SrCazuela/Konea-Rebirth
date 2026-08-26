@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:seed:dev": "tsx src/scripts/ensure-development-admin.ts",
     "db:studio": "drizzle-kit studio",
     "user:role": "tsx src/scripts/set-user-role.ts"
   },

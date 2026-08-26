@@ -6,11 +6,13 @@
   --chat-danger: #b33b4a;
   --chat-success: #16845a;
   width: min(100%, 1380px);
-  height: clamp(620px, calc(100vh - 185px), 820px);
-  min-height: 620px;
+  height: calc(100vh - 220px);
+  max-height: 820px;
+  min-height: 400px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(260px, 300px) minmax(400px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   position: relative;
   border: 1px solid var(--border);

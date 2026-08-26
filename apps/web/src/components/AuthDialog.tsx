@@ -13,13 +13,14 @@ type AuthDialogProps = {
 
 const errorMessages: Record<string, string> = {
   ACCOUNT_ALREADY_EXISTS: 'Ese correo o nombre de usuario ya está registrado.',
-  INVALID_CREDENTIALS: 'El correo o la contraseña no son correctos.',
+  INVALID_CREDENTIALS: 'El correo, usuario o contraseña no son correctos.',
   TOO_MANY_ATTEMPTS: 'Hubo demasiados intentos. Espera unos minutos.',
   VALIDATION_ERROR: 'Revisa los campos marcados e inténtalo nuevamente.',
 }
 
 const fieldMessages: Record<string, string> = {
   email: 'Ingresa un correo electrónico válido.',
+  identifier: 'Ingresa un correo o nombre de usuario válido.',
   password: 'La contraseña debe tener entre 10 y 128 caracteres.',
   username: 'Usa entre 3 y 30 letras, números, puntos o guiones bajos.',
   displayName: 'Ingresa un nombre de entre 2 y 100 caracteres.',
@@ -78,17 +79,19 @@ export function AuthDialog({
     const data = new FormData(event.currentTarget)
 
     try {
-      const email = String(data.get('email') ?? '')
       const password = String(data.get('password') ?? '')
       const user =
         mode === 'register'
           ? await register({
-              email,
+              email: String(data.get('email') ?? ''),
               password,
               username: String(data.get('username') ?? ''),
               displayName: String(data.get('displayName') ?? ''),
             })
-          : await login({ email, password })
+          : await login({
+              identifier: String(data.get('identifier') ?? ''),
+              password,
+            })
 
       onAuthenticated(user)
       onClose()
@@ -214,18 +217,26 @@ export function AuthDialog({
           ) : null}
 
           <label>
-            Correo electrónico
+            {isRegistration ? 'Correo electrónico' : 'Correo o usuario'}
             <input
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder="estudiante@universidad.cl"
+              name={isRegistration ? 'email' : 'identifier'}
+              type={isRegistration ? 'email' : 'text'}
+              autoComplete={isRegistration ? 'email' : 'username'}
+              placeholder={
+                isRegistration
+                  ? 'estudiante@universidad.cl'
+                  : 'correo o usuario'
+              }
               maxLength={320}
               required
               autoFocus={!isRegistration}
-              aria-invalid={Boolean(getFieldError(fields, 'email'))}
+              aria-invalid={Boolean(
+                getFieldError(fields, isRegistration ? 'email' : 'identifier'),
+              )}
             />
-            <small>{getFieldError(fields, 'email')}</small>
+            <small>
+              {getFieldError(fields, isRegistration ? 'email' : 'identifier')}
+            </small>
           </label>
 
           <label>

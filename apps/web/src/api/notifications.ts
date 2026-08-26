@@ -13,6 +13,7 @@ export type NotificationType =
   | 'message'
   | 'task'
   | 'moderation'
+  | 'support_request'
 
 export type KoneaNotification = {
   id: string

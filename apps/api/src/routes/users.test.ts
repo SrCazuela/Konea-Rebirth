@@ -58,7 +58,7 @@ describe.sequential('private connections and portfolio API', () => {
       education: [
         {
           id: educationId,
-          institution: 'DUOC UC',
+          institution: 'Duoc UC',
           program: 'Ingeniería en Informática',
           startYear: 2023,
           endYear: null,
@@ -96,7 +96,7 @@ describe.sequential('private connections and portfolio API', () => {
       username: firstAccount.username,
       connectionStatus: 'none',
       stats: { projects: 1, achievements: 1 },
-      education: [{ id: educationId, institution: 'DUOC UC' }],
+      education: [{ id: educationId, institution: 'Duoc UC' }],
       projects: [{ id: projectId, title: 'Konea' }],
       achievements: [{ id: achievementId, title: 'Capstone destacado' }],
     })

@@ -1,0 +1,350 @@
+.ava-sync-card {
+  margin-top: 14px;
+  padding: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #ded1ef;
+  border-radius: 15px;
+  background: rgb(255 255 255 / 68%);
+}
+
+.ava-sync-card__icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  color: #673ab7;
+  background: #eee4fb;
+}
+
+.ava-sync-card svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ava-sync-card > div {
+  min-width: 0;
+}
+
+.ava-sync-card strong {
+  color: #372d41;
+  font-size: 0.74rem;
+}
+
+.ava-sync-card p {
+  margin: 3px 0 8px;
+  color: #756b7e;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.ava-sync-card button {
+  padding: 0;
+  border: 0;
+  color: #673ab7;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.ava-sync-card button:hover {
+  text-decoration: underline;
+}
+
+.ava-sync-modal {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgb(27 18 40 / 58%);
+  backdrop-filter: blur(5px);
+}
+
+.ava-sync-dialog {
+  width: min(100%, 650px);
+  max-height: calc(100vh - 48px);
+  padding: 28px;
+  overflow-y: auto;
+  border: 1px solid #e3d8ef;
+  border-radius: 22px;
+  color: #332a3c;
+  background: #fff;
+  box-shadow: 0 30px 90px rgb(29 15 48 / 30%);
+}
+
+.ava-sync-dialog > header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.ava-sync-dialog > header > span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(145deg, #8350cb, #673ab7);
+}
+
+.ava-sync-dialog svg {
+  width: 21px;
+  height: 21px;
+}
+
+.ava-sync-dialog header p,
+.ava-sync-dialog header h3 {
+  margin: 0;
+}
+
+.ava-sync-dialog > header p {
+  color: #7b5aa9;
+  font-size: 0.67rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ava-sync-dialog > header h3 {
+  margin-top: 2px;
+  font-size: 1.22rem;
+}
+
+.ava-sync-steps {
+  margin-top: 19px;
+  padding: 13px 15px;
+  border: 1px solid #e2d6ef;
+  border-radius: 13px;
+  background: #faf7fe;
+}
+
+.ava-sync-steps p {
+  margin: 0;
+  color: #655b6e;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.ava-sync-steps a {
+  margin-top: 7px;
+  display: inline-block;
+  color: #673ab7;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.ava-sync-dialog > form {
+  margin-top: 18px;
+  display: grid;
+  gap: 7px;
+}
+
+.ava-sync-dialog form label {
+  color: #51475c;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.ava-sync-dialog form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid #ded4e8;
+  border-radius: 11px;
+  color: #342b3d;
+  background: #fcfaff;
+  font: inherit;
+  font-size: 0.76rem;
+  outline: none;
+}
+
+.ava-sync-dialog form input:focus {
+  border-color: #8f67c7;
+  box-shadow: 0 0 0 3px rgb(119 72 183 / 12%);
+}
+
+.ava-sync-dialog form > small {
+  color: #8c8195;
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.ava-sync-error,
+.ava-sync-success {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.ava-sync-error {
+  color: #9e3041;
+  background: #fff0f2;
+}
+
+.ava-sync-success {
+  color: #2e7455;
+  background: #eaf8f0;
+}
+
+.ava-sync-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ava-sync-actions button {
+  min-height: 41px;
+  padding: 8px 15px;
+  border: 1px solid #dfd5e7;
+  border-radius: 11px;
+  color: #655b6d;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.71rem;
+  font-weight: 750;
+}
+
+.ava-sync-actions button:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(145deg, #8050cb, #673ab7);
+  box-shadow: 0 8px 20px rgb(103 58 183 / 20%);
+}
+
+.ava-sync-actions button:last-child svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ava-sync-actions button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.ava-sync-events {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #ebe4f1;
+}
+
+.ava-sync-events > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.ava-sync-events > header strong {
+  font-size: 0.78rem;
+}
+
+.ava-sync-events > header span {
+  color: #8e8397;
+  font-size: 0.61rem;
+}
+
+.ava-sync-events ul {
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.ava-sync-events li {
+  padding: 10px 11px;
+  display: flex;
+  gap: 10px;
+  border: 1px solid #e8e0ef;
+  border-radius: 11px;
+  background: #fdfcff;
+}
+
+.ava-sync-events li > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  color: #7042bd;
+  background: #f0e8fb;
+}
+
+.ava-sync-events li svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ava-sync-events li > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ava-sync-events li strong {
+  overflow: hidden;
+  color: #433849;
+  font-size: 0.71rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ava-sync-events li time,
+.ava-sync-events li small {
+  color: #817589;
+  font-size: 0.62rem;
+}
+
+.ava-sync-empty {
+  margin: 12px 0 0;
+  padding: 14px;
+  border-radius: 11px;
+  color: #756a7d;
+  background: #f8f5fa;
+  font-size: 0.71rem;
+  text-align: center;
+}
+
+@media (max-width: 680px) {
+  .ava-sync-modal {
+    padding: 10px;
+    align-items: end;
+  }
+
+  .ava-sync-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 21px 17px;
+    border-radius: 20px 20px 14px 14px;
+  }
+
+  .ava-sync-actions {
+    flex-direction: column-reverse;
+  }
+
+  .ava-sync-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ava-sync-events > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}

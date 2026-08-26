@@ -68,7 +68,7 @@ describe('authentication API', () => {
     await request(app).post('/api/v1/auth/register').send(account).expect(201)
 
     const incorrect = await request(app).post('/api/v1/auth/login').send({
-      email: account.email,
+      identifier: account.email,
       password: 'IncorrectPassword',
     })
 
@@ -76,12 +76,29 @@ describe('authentication API', () => {
     expect(incorrect.body.error.code).toBe('INVALID_CREDENTIALS')
 
     const login = await request(app).post('/api/v1/auth/login').send({
-      email: account.email.toUpperCase(),
+      identifier: account.email.toUpperCase(),
       password: account.password,
     })
 
     expect(login.status).toBe(200)
     expect(login.body.user.email).toBe(account.email)
+    expect(login.headers['set-cookie']?.[0]).toContain('konea_session=')
+  })
+
+  it('logs in with a case-insensitive username', async () => {
+    const account = createTestAccount()
+    await request(app).post('/api/v1/auth/register').send(account).expect(201)
+
+    const login = await request(app).post('/api/v1/auth/login').send({
+      identifier: account.username.toUpperCase(),
+      password: account.password,
+    })
+
+    expect(login.status).toBe(200)
+    expect(login.body.user).toMatchObject({
+      email: account.email,
+      username: account.username,
+    })
     expect(login.headers['set-cookie']?.[0]).toContain('konea_session=')
   })
 

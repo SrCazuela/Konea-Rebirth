@@ -53,8 +53,8 @@ function App() {
       .then((user) => {
         if (active) setCurrentUser(user)
       })
-      .catch(() => {
-        if (active) setApiState('offline')
+      .catch((error) => {
+        console.error('Failed to restore session:', error)
       })
       .finally(() => {
         if (active) setSessionReady(true)

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client.js'
 import { posts } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
-import { parseBody } from '../http/validation.js'
+import { parseBody, parseId } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
@@ -30,22 +30,9 @@ const moderationDecisionSchema = z
     }
   })
 
-const uuidSchema = z.string().uuid()
 const moderationStatusFilterSchema = z
   .enum(['pending', 'approved', 'rejected'])
   .optional()
-
-function parseId(value: string | undefined) {
-  const result = uuidSchema.safeParse(value)
-  if (!result.success) {
-    throw new ApiError(
-      400,
-      'INVALID_IDENTIFIER',
-      'Se requiere un identificador válido.',
-    )
-  }
-  return result.data
-}
 
 export const moderationRouter = Router()
 

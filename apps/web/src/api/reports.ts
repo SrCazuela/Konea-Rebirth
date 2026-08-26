@@ -1,10 +1,4 @@
-import { ApiClientError } from './auth'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
-
+import { apiRequest as reportsRequest } from './base'
 export type ReportResourceType =
   'post' | 'comment' | 'chat' | 'message' | 'user'
 export type ReportStatus = 'pending' | 'reviewing' | 'resolved' | 'dismissed'
@@ -71,42 +65,6 @@ export type Report = ReportBase &
     | { resourceType: 'user'; resource: UserReportResource | null }
   )
 
-type ErrorEnvelope = {
-  error?: {
-    code?: string
-    message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
-  }
-}
-
-async function reportsRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
-
-  if (response.status === 401) {
-    window.dispatchEvent(new Event('konea:session-expired'))
-  }
-
-  const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-  if (!response.ok) {
-    throw new ApiClientError(
-      response.status,
-      body.error?.code ?? 'REPORT_FAILED',
-      body.error?.message ?? 'No pudimos enviar el reporte.',
-      body.error?.details?.fields,
-    )
-  }
-  return body
-}
-
 export async function createReport(input: {
   resourceType: ReportResourceType
   resourceId: string
@@ -133,7 +91,7 @@ export async function getReports(status?: ReportStatus): Promise<Report[]> {
     ]
     return (await Promise.all(statuses.map(getReports))).flat()
   }
-  const query = status ? `?status=${encodeURIComponent(status)}` : ''
+  const query = `?status=${encodeURIComponent(status)}`
   const response = await reportsRequest<{ reports: Report[] }>(
     `/reports${query}`,
   )

@@ -7,10 +7,72 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
 
 export type DucoMessageRole = 'user' | 'assistant'
 
+export type DucoRequestCategory =
+  | 'section_change'
+  | 'missing_course'
+  | 'enrollment'
+  | 'schedule_conflict'
+  | 'harassment'
+  | 'technical'
+  | 'financial'
+  | 'wellbeing'
+  | 'other'
+
+export type DucoRequestUrgency = 'low' | 'medium' | 'high'
+export type DucoRequestStatus =
+  'pending' | 'reviewing' | 'resolved' | 'rejected'
+export type DucoTaskPriority = 'low' | 'medium' | 'high'
+
+export type DucoRequestDraft = {
+  category: DucoRequestCategory
+  subject: string
+  description: string
+  desiredOutcome: string
+  urgency: DucoRequestUrgency
+}
+
+export type DucoManageRequestAction = {
+  type: 'manage_request'
+  label: 'Gestionar solicitud'
+  draft: DucoRequestDraft
+}
+
+export type DucoTaskDraft = {
+  title: string
+  description: string
+  courseName: string | null
+  dueAt: string | null
+  priority: DucoTaskPriority
+}
+
+export type DucoCreateTaskAction = {
+  type: 'create_task'
+  label: string
+  draft: DucoTaskDraft
+  task?: { id: string } | null
+}
+
+export type AssistantMessageAction =
+  DucoManageRequestAction | DucoCreateTaskAction
+
+export type DucoMessageAction = AssistantMessageAction
+
+export type DucoSupportRequest = DucoRequestDraft & {
+  id: string
+  requesterId: string
+  assignedToId: string | null
+  sourceMessageId: string | null
+  status: DucoRequestStatus
+  createdAt: string
+  updatedAt: string
+}
+
 export type DucoMessage = {
   id: string
   role: DucoMessageRole
   content: string
+  action: DucoMessageAction | null
+  request: Pick<DucoSupportRequest, 'id' | 'status'> | null
   createdAt: string
 }
 
@@ -18,6 +80,7 @@ export type DucoReply = {
   userMessage: DucoMessage
   assistantMessage: DucoMessage
   openTaskCount: number
+  aiProvider: 'local' | 'ollama' | 'openai'
 }
 
 type ErrorEnvelope = {
@@ -79,4 +142,37 @@ export async function clearDucoMessages() {
   return ducoRequest<{ deletedCount: number }>('/duco/messages', {
     method: 'DELETE',
   })
+}
+
+export async function createDucoSupportRequest(
+  sourceMessageId: string,
+  draft: DucoRequestDraft,
+) {
+  const response = await ducoRequest<{ request: DucoSupportRequest }>(
+    '/duco/requests',
+    {
+      method: 'POST',
+      body: JSON.stringify({ sourceMessageId, ...draft }),
+    },
+  )
+  return response.request
+}
+
+export async function getDucoSupportRequests(signal?: AbortSignal) {
+  const response = await ducoRequest<{ requests: DucoSupportRequest[] }>(
+    '/duco/requests',
+    { signal },
+  )
+  return response.requests
+}
+
+export async function createDucoTask(
+  sourceMessageId: string,
+  draft: DucoTaskDraft,
+) {
+  const response = await ducoRequest<{ task: { id: string } }>('/duco/tasks', {
+    method: 'POST',
+    body: JSON.stringify({ sourceMessageId, ...draft }),
+  })
+  return response.task
 }

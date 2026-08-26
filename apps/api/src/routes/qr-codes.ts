@@ -3,7 +3,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm'
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
-import { db } from '../db/client.js'
+import { db, isUniqueViolation } from '../db/client.js'
 import { qrCodes } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
@@ -44,17 +44,6 @@ function generateCode() {
     code += QR_ALPHABET[randomInt(QR_ALPHABET.length)]
   }
   return code
-}
-
-function isUniqueViolation(error: unknown) {
-  let current = error
-  for (let depth = 0; depth < 5; depth += 1) {
-    if (typeof current !== 'object' || current === null) return false
-    if ('code' in current && current.code === '23505') return true
-    if (!('cause' in current)) return false
-    current = current.cause
-  }
-  return false
 }
 
 async function createPersonalCode(ownerId: string) {
@@ -155,6 +144,11 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       .set({ usedAt: new Date(), usedById: currentUser.id })
       .where(and(eq(qrCodes.id, code.id), isNull(qrCodes.usedAt)))
       .returning({ id: qrCodes.id })
+
+    // Si el UPDATE no afectó filas significa que el código fue canjeado
+    // concurrentemente. Verificamos si lo canjeo el mismo usuario (idempotente)
+    // o fue otro (error).
+    let redemptionRepeated = false
     if (!claimed) {
       const [latest] = await transaction
         .select({ usedById: qrCodes.usedById })
@@ -168,7 +162,10 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
           'El código QR ya fue utilizado.',
         )
       }
+      // El mismo usuario ya lo canjeó antes: operación idempotente
+      redemptionRepeated = true
     }
+
     await createConfirmedConnection(transaction, currentUser.id, code.ownerId)
     const chat = await createOrRestoreDirectChat(
       transaction,
@@ -176,7 +173,7 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       code.ownerId,
       currentUser.id,
     )
-    return { ...chat, ownerId: code.ownerId, redemptionRepeated: false }
+    return { ...chat, ownerId: code.ownerId, redemptionRepeated }
   })
 
   if (!result.redemptionRepeated) {

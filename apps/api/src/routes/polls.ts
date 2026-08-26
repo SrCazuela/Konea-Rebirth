@@ -4,14 +4,13 @@ import { z } from 'zod'
 import { db } from '../db/client.js'
 import { pollVotes } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
-import { parseBody } from '../http/validation.js'
+import { parseBody, parseId, uuidSchema } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
 import { getPollDetails } from '../services/chat-service.js'
 
-const uuidSchema = z.string().uuid()
 const voteSchema = z.strictObject({
   optionIds: z
     .array(uuidSchema)
@@ -21,18 +20,6 @@ const voteSchema = z.strictObject({
       message: 'No puedes repetir opciones.',
     }),
 })
-
-function parseId(value: string | undefined) {
-  const result = uuidSchema.safeParse(value)
-  if (!result.success) {
-    throw new ApiError(
-      400,
-      'INVALID_IDENTIFIER',
-      'Se requiere un identificador válido.',
-    )
-  }
-  return result.data
-}
 
 export const pollsRouter = Router()
 pollsRouter.use(requireAuthentication)

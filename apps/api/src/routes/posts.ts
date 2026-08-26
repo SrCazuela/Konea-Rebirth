@@ -5,7 +5,7 @@ import { env } from '../config/env.js'
 import { db } from '../db/client.js'
 import { comments, postLikes, posts, profiles } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
-import { parseBody } from '../http/validation.js'
+import { parseBody, parseId } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
@@ -42,22 +42,6 @@ const createCommentSchema = z.strictObject({
 const updateCommentSchema = z.strictObject({
   content: z.string().trim().min(1).max(1_000),
 })
-
-const uuidSchema = z.string().uuid()
-
-function parseId(value: string | undefined) {
-  const result = uuidSchema.safeParse(value)
-
-  if (!result.success) {
-    throw new ApiError(
-      400,
-      'INVALID_IDENTIFIER',
-      'Se requiere un identificador válido.',
-    )
-  }
-
-  return result.data
-}
 
 export const postsRouter = Router()
 
@@ -282,6 +266,8 @@ postsRouter.post('/:postId/comments', async (request, response) => {
     throw new Error('Database did not return the created comment')
   }
 
+  // Notificación al autor del comentario padre (si es una respuesta)
+  // o al autor del post (si es un comentario directo).
   const notificationUserId = parentAuthorId ?? post.author.id
   await createNotification({
     userId: notificationUserId,
@@ -294,6 +280,25 @@ postsRouter.post('/:postId/comments', async (request, response) => {
     href: `post:${postId}`,
     resourceId: postId,
   })
+
+  // Si es una respuesta a un comentario, notificar también al autor del post
+  // siempre que sea distinto del autor del comentario padre y del usuario actual.
+  if (
+    input.parentCommentId &&
+    parentAuthorId &&
+    post.author.id !== parentAuthorId &&
+    post.author.id !== currentUser.id
+  ) {
+    await createNotification({
+      userId: post.author.id,
+      actorId: currentUser.id,
+      type: 'comment',
+      title: 'Nueva respuesta en tu publicación',
+      body: `${currentUser.displayName} respondió a un comentario en tu publicación.`,
+      href: `post:${postId}`,
+      resourceId: postId,
+    })
+  }
 
   response.status(201).json({
     comment: {

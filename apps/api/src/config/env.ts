@@ -20,6 +20,19 @@ const environmentSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  DUCO_AI_PROVIDER: z.enum(['local', 'ollama', 'openai']).optional(),
+  OLLAMA_BASE_URL: z.url().default('http://127.0.0.1:11434'),
+  OLLAMA_MODEL: z.string().trim().min(1).default('qwen3.5:4b'),
+  OLLAMA_KEEP_ALIVE: z.string().trim().min(1).default('2m'),
+  DUCO_AI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(5_000)
+    .max(300_000)
+    .default(120_000),
+  OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6-luna'),
+  OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
 })
 
 const result = environmentSchema.safeParse(process.env)
@@ -29,4 +42,9 @@ if (!result.success) {
   throw new Error(`Invalid environment configuration:\n${details}`)
 }
 
-export const env = result.data
+export const env = {
+  ...result.data,
+  DUCO_AI_PROVIDER:
+    result.data.DUCO_AI_PROVIDER ??
+    (result.data.NODE_ENV === 'development' ? ('ollama' as const) : 'local'),
+}

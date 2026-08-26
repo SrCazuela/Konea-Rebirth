@@ -1,9 +1,4 @@
-import { ApiClientError } from './auth'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
+import { ApiClientError, apiBaseUrl, type ErrorEnvelope } from './base'
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const ACCEPTED_IMAGE_TYPES = [
@@ -19,16 +14,6 @@ export type UploadedFile = {
   mimeType: string
   size: number
   url: string
-}
-
-type ErrorEnvelope = {
-  error?: {
-    code?: string
-    message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
-  }
 }
 
 function uploadError(xhr: XMLHttpRequest) {

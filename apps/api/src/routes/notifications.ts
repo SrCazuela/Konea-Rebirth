@@ -1,16 +1,15 @@
 import { and, count, desc, eq, isNull, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { Router } from 'express'
-import { z } from 'zod'
 import { db } from '../db/client.js'
 import { notifications, profiles } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
+import { parseId } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
 
-const uuidSchema = z.string().uuid()
 const actorProfiles = alias(profiles, 'notification_actor_profiles')
 
 const notificationSelection = {
@@ -28,20 +27,6 @@ const notificationSelection = {
     displayName: actorProfiles.displayName,
     avatarUrl: actorProfiles.avatarUrl,
   },
-}
-
-function parseNotificationId(value: string | undefined) {
-  const result = uuidSchema.safeParse(value)
-
-  if (!result.success) {
-    throw new ApiError(
-      400,
-      'INVALID_IDENTIFIER',
-      'Se requiere una notificación válida.',
-    )
-  }
-
-  return result.data
 }
 
 async function loadNotifications(userId: string, condition?: SQL) {
@@ -107,7 +92,10 @@ notificationsRouter.patch(
   '/:notificationId/read',
   async (request, response) => {
     const currentUser = getAuthenticatedUser(response)
-    const notificationId = parseNotificationId(request.params.notificationId)
+    const notificationId = parseId(
+      request.params.notificationId,
+      'Se requiere una notificación válida.',
+    )
     const [updated] = await db
       .update(notifications)
       .set({ readAt: new Date() })

@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { avaCalendarRouter } from './ava-calendar.js'
+import { academicRouter } from './academic.js'
 import { ducoRouter } from './duco.js'
 import { notificationsRouter } from './notifications.js'
 import { reportsRouter } from './reports.js'
@@ -13,5 +15,7 @@ export const auxiliaryRouter = Router()
 
 auxiliaryRouter.use('/uploads', uploadsRouter)
 auxiliaryRouter.use('/notifications', notificationsRouter)
+auxiliaryRouter.use('/ava-calendar', avaCalendarRouter)
+auxiliaryRouter.use('/academic', academicRouter)
 auxiliaryRouter.use('/duco', ducoRouter)
 auxiliaryRouter.use('/reports', reportsRouter)

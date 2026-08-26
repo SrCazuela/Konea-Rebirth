@@ -71,6 +71,11 @@ export const taskStatus = pgEnum('task_status', [
   'completed',
 ])
 
+export const academicCourseSource = pgEnum('academic_course_source', [
+  'manual',
+  'ava',
+])
+
 export const notificationType = pgEnum('notification_type', [
   'connection',
   'like',
@@ -79,6 +84,32 @@ export const notificationType = pgEnum('notification_type', [
   'message',
   'task',
   'moderation',
+  'support_request',
+])
+
+export const supportRequestCategory = pgEnum('support_request_category', [
+  'section_change',
+  'missing_course',
+  'enrollment',
+  'schedule_conflict',
+  'harassment',
+  'technical',
+  'financial',
+  'wellbeing',
+  'other',
+])
+
+export const supportRequestUrgency = pgEnum('support_request_urgency', [
+  'low',
+  'medium',
+  'high',
+])
+
+export const supportRequestStatus = pgEnum('support_request_status', [
+  'pending',
+  'reviewing',
+  'resolved',
+  'rejected',
 ])
 
 export type ProfileEducation = {
@@ -108,6 +139,44 @@ export type ProfileAchievement = {
   description: string
   credentialUrl: string | null
 }
+
+export type DucoRequestDraft = {
+  category:
+    | 'section_change'
+    | 'missing_course'
+    | 'enrollment'
+    | 'schedule_conflict'
+    | 'harassment'
+    | 'technical'
+    | 'financial'
+    | 'wellbeing'
+    | 'other'
+  subject: string
+  description: string
+  desiredOutcome: string
+  urgency: 'low' | 'medium' | 'high'
+}
+
+export type DucoTaskDraft = {
+  title: string
+  description: string
+  courseName: string | null
+  dueAt: string | null
+  priority: 'low' | 'medium' | 'high'
+}
+
+export type AssistantMessageAction =
+  | {
+      type: 'manage_request'
+      label: 'Gestionar solicitud'
+      draft: DucoRequestDraft
+    }
+  | {
+      type: 'create_task'
+      label: string
+      draft: DucoTaskDraft
+      task?: { id: string } | null
+    }
 
 export const assistantMessageRole = pgEnum('assistant_message_role', [
   'user',
@@ -498,6 +567,120 @@ export const tasks = pgTable(
   ],
 )
 
+export const academicCalendarEvents = pgTable(
+  'academic_calendar_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    externalId: varchar('external_id', { length: 64 }).notNull(),
+    uid: varchar('uid', { length: 500 }),
+    title: varchar('title', { length: 300 }).notNull(),
+    description: text('description'),
+    location: varchar('location', { length: 300 }),
+    courseName: varchar('course_name', { length: 300 }),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+    allDay: boolean('all_day').default(false).notNull(),
+    active: boolean('active').default(true).notNull(),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('academic_calendar_events_user_external_unique').on(
+      table.userId,
+      table.externalId,
+    ),
+    index('academic_calendar_events_user_start_index').on(
+      table.userId,
+      table.startsAt,
+    ),
+  ],
+)
+
+export const academicCalendarSyncs = pgTable('academic_calendar_syncs', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastEventCount: integer('last_event_count').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+})
+
+export const academicCourses = pgTable(
+  'academic_courses',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 300 }).notNull(),
+    normalizedName: varchar('normalized_name', { length: 300 }).notNull(),
+    code: varchar('code', { length: 80 }),
+    section: varchar('section', { length: 80 }),
+    term: varchar('term', { length: 100 }),
+    source: academicCourseSource('source').default('manual').notNull(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('academic_courses_user_name_unique').on(
+      table.userId,
+      table.normalizedName,
+    ),
+    index('academic_courses_user_active_index').on(table.userId, table.active),
+  ],
+)
+
+export const academicTasks = pgTable(
+  'academic_tasks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    courseId: uuid('course_id').references(() => academicCourses.id, {
+      onDelete: 'set null',
+    }),
+    title: varchar('title', { length: 160 }).notNull(),
+    description: varchar('description', { length: 1_000 }),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    priority: taskPriority('priority').default('medium').notNull(),
+    status: taskStatus('status').default('pending').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('academic_tasks_user_status_due_index').on(
+      table.userId,
+      table.status,
+      table.dueAt,
+    ),
+    index('academic_tasks_course_index').on(table.courseId),
+  ],
+)
+
 export const qrCodes = pgTable(
   'qr_codes',
   {
@@ -614,6 +797,7 @@ export const assistantMessages = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     role: assistantMessageRole('role').notNull(),
     content: varchar('content', { length: 8_000 }).notNull(),
+    action: jsonb('action').$type<AssistantMessageAction>(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -621,6 +805,48 @@ export const assistantMessages = pgTable(
   (table) => [
     index('assistant_messages_user_created_at_index').on(
       table.userId,
+      table.createdAt,
+    ),
+  ],
+)
+
+export const supportRequests = pgTable(
+  'support_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    requesterId: uuid('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    assignedToId: uuid('assigned_to_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    sourceMessageId: uuid('source_message_id').references(
+      () => assistantMessages.id,
+      { onDelete: 'set null' },
+    ),
+    category: supportRequestCategory('category').notNull(),
+    subject: varchar('subject', { length: 160 }).notNull(),
+    description: varchar('description', { length: 2_000 }).notNull(),
+    desiredOutcome: varchar('desired_outcome', { length: 1_000 }).notNull(),
+    urgency: supportRequestUrgency('urgency').default('medium').notNull(),
+    status: supportRequestStatus('status').default('pending').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('support_requests_source_message_unique').on(
+      table.sourceMessageId,
+    ),
+    index('support_requests_requester_created_at_index').on(
+      table.requesterId,
+      table.createdAt,
+    ),
+    index('support_requests_status_created_at_index').on(
+      table.status,
       table.createdAt,
     ),
   ],

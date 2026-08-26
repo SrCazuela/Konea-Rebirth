@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
-import { db } from '../db/client.js'
+import { db, isUniqueViolation } from '../db/client.js'
 import { profiles, users } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
@@ -16,24 +16,26 @@ import {
   setSessionCookie,
 } from '../security/session.js'
 
+const emailSchema = z.string().trim().toLowerCase().email().max(320)
+const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(30)
+  .regex(/^[a-z0-9._]+$/, {
+    message: 'Username may only contain letters, numbers, dots and underscores',
+  })
+
 const registrationSchema = z.strictObject({
-  email: z.string().trim().toLowerCase().email().max(320),
+  email: emailSchema,
   password: z.string().min(10).max(128),
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(3)
-    .max(30)
-    .regex(/^[a-z0-9._]+$/, {
-      message:
-        'Username may only contain letters, numbers, dots and underscores',
-    }),
+  username: usernameSchema,
   displayName: z.string().trim().min(2).max(100),
 })
 
 const loginSchema = z.strictObject({
-  email: z.string().trim().toLowerCase().email().max(320),
+  identifier: z.union([emailSchema, usernameSchema]),
   password: z.string().min(1).max(128),
 })
 
@@ -49,19 +51,6 @@ const authWriteLimiter = rateLimit({
     },
   },
 })
-
-function isUniqueViolation(error: unknown) {
-  let currentError = error
-
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (typeof currentError !== 'object' || currentError === null) return false
-    if ('code' in currentError && currentError.code === '23505') return true
-    if (!('cause' in currentError)) return false
-    currentError = currentError.cause
-  }
-
-  return false
-}
 
 export const authRouter = Router()
 
@@ -133,11 +122,51 @@ authRouter.post('/register', authWriteLimiter, async (request, response) => {
 
 authRouter.post('/login', authWriteLimiter, async (request, response) => {
   const input = parseBody(loginSchema, request.body)
-  const [account] = await db
+
+  // Primer SELECT: solo lo necesario para verificar credenciales
+  const [credentials] = await db
+    .select({
+      id: users.id,
+      passwordHash: users.passwordHash,
+      status: users.status,
+    })
+    .from(users)
+    .innerJoin(profiles, eq(users.id, profiles.userId))
+    .where(
+      or(
+        eq(users.email, input.identifier),
+        eq(profiles.username, input.identifier),
+      ),
+    )
+    .limit(1)
+
+  if (!credentials) {
+    await hashPassword(input.password) // timing-safe: evita enumeración de usuarios
+    throw new ApiError(
+      401,
+      'INVALID_CREDENTIALS',
+      'Correo, usuario o contraseña incorrectos.',
+    )
+  }
+
+  const passwordIsValid = await verifyPassword(
+    input.password,
+    credentials.passwordHash,
+  )
+
+  if (!passwordIsValid || credentials.status !== 'active') {
+    throw new ApiError(
+      401,
+      'INVALID_CREDENTIALS',
+      'Correo, usuario o contraseña incorrectos.',
+    )
+  }
+
+  // Segundo SELECT: datos del perfil sin incluir passwordHash
+  const [user] = await db
     .select({
       id: users.id,
       email: users.email,
-      passwordHash: users.passwordHash,
       role: users.role,
       status: users.status,
       username: profiles.username,
@@ -156,32 +185,11 @@ authRouter.post('/login', authWriteLimiter, async (request, response) => {
     })
     .from(users)
     .innerJoin(profiles, eq(users.id, profiles.userId))
-    .where(eq(users.email, input.email))
+    .where(eq(users.id, credentials.id))
     .limit(1)
 
-  if (!account) {
-    await hashPassword(input.password)
-    throw new ApiError(
-      401,
-      'INVALID_CREDENTIALS',
-      'Correo o contraseña incorrectos.',
-    )
-  }
+  if (!user) throw new Error('User profile not found after successful login')
 
-  const passwordIsValid = await verifyPassword(
-    input.password,
-    account.passwordHash,
-  )
-
-  if (!passwordIsValid || account.status !== 'active') {
-    throw new ApiError(
-      401,
-      'INVALID_CREDENTIALS',
-      'Correo o contraseña incorrectos.',
-    )
-  }
-
-  const { passwordHash: _passwordHash, ...user } = account
   const session = await createSession(user.id)
   setSessionCookie(response, session)
 
