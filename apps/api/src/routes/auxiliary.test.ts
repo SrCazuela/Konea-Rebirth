@@ -505,6 +505,46 @@ END:VCALENDAR\r
     await studentAgent.delete('/api/v1/duco/messages').expect(200)
   })
 
+  it('treats an explicit request to schedule a new task as creation', async () => {
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Lo sé, pero me gustaría agendar una nueva tarea.',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage).toMatchObject({
+      role: 'assistant',
+      action: {
+        type: 'create_task',
+        label: 'Crear pendiente',
+        draft: {
+          title: 'Nueva tarea académica',
+          priority: 'medium',
+        },
+        task: null,
+      },
+    })
+    expect(reply.body.assistantMessage.content).toContain('Próximas tareas')
+
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  })
+
+  it('does not confuse academic help with listing existing tasks', async () => {
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Perfecto, muchas gracias. ¿Me ayudas con mi tarea?',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage.action).toBeNull()
+    expect(reply.body.assistantMessage.content).toContain(
+      'ayudarte a entender los contenidos',
+    )
+    expect(reply.body.assistantMessage.content).not.toContain(
+      'No tienes tareas pendientes',
+    )
+
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  })
+
   it('lets DUCO prepare an editable request and only sends it after confirmation', async () => {
     const incompleteReply = await studentAgent
       .post('/api/v1/duco/messages')

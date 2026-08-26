@@ -126,11 +126,24 @@ function createLocalReply(
   const normalized = normalizeText(prompt)
   const summary = taskSummary(pendingTasks)
   const asksForTasks =
-    /\b(tarea|tareas|pendiente|pendientes|entrega|entregas|vence|vencimiento)\b/.test(
+    /\b(que|cuales|cuantas|mostrar|muestra|ver|revisar|dime|listar|lista)\b.*\b(tareas|pendientes|entregas|vencimientos)\b/.test(
+      normalized,
+    ) ||
+    /\b(mis|las)\s+(tareas|entregas|pendientes)(?:\s+pendientes)?\b/.test(
+      normalized,
+    ) ||
+    /\b(tengo|hay)\s+(?:alguna?s?\s+)?(tareas?|entregas?|pendientes)\b/.test(
       normalized,
     )
   const asksForPlan =
     /\b(organiza|organizar|plan|prioriza|priorizar|que hago|por donde empiezo)\b/.test(
+      normalized,
+    )
+  const asksForAcademicHelp =
+    /\b(ayuda|ayudas|ayudame|ayudar|ayudarme|explica|explicame|entender|estudiar|como hago)\b.*\b(tarea|guia|informe|proyecto|evaluacion|trabajo|actividad)\b/.test(
+      normalized,
+    ) ||
+    /\b(tarea|guia|informe|proyecto|evaluacion|trabajo|actividad)\b.*\b(ayuda|ayudas|ayudame|ayudar|ayudarme|explica|explicame|entender|estudiar|como hago)\b/.test(
       normalized,
     )
   const greets =
@@ -147,16 +160,15 @@ function createLocalReply(
       summary,
     ].join('\n')
   }
+  if (asksForPlan)
+    return 'Todavía no tienes tareas registradas. Si quieres, dime qué debes hacer, para qué asignatura y cuándo vence; te ayudaré a crear y organizar el pendiente.'
   if (asksForTasks) return summary
+  if (asksForAcademicHelp)
+    return 'Claro. Puedo ayudarte a entender los contenidos y dividir la tarea en pasos, sin hacer una entrega completa por ti. Dime la asignatura, en qué consiste y cuándo vence.'
   if (greets)
-    return [
-      `¡Hola, ${displayName}! Soy DUCO.`,
-      summary,
-      'Puedes pedirme “organiza mis tareas” o contarme si necesitas realizar una gestión.',
-    ].join('\n')
+    return `¡Hola, ${displayName}! Soy DUCO. Puedo ayudarte a organizar tus tareas, estudiar contenidos o preparar una solicitud institucional.`
   return [
-    'Puedo ayudarte a revisar tus tareas y a preparar solicitudes para el equipo institucional.',
-    summary,
+    'Puedo ayudarte a organizar tus tareas, estudiar contenidos y preparar solicitudes para el equipo institucional.',
     'Cuéntame qué necesitas y, si corresponde, prepararé un formulario editable.',
   ].join('\n')
 }

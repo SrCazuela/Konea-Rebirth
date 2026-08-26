@@ -426,14 +426,25 @@ function isTaskIntent(value: string) {
     /\b(tengo que|debo|necesito|me pidieron|hay que|quiero organizar|ayudame a organizar|ayudarme a organizar)\b/.test(
       normalized,
     )
+  const explicitlyCreatesTask =
+    /\b(crear|agendar|anadir|agregar|registrar|programar|guardar|incorporar)\b.{0,80}\b(tarea|pendiente|guia|informe|proyecto|evaluacion|trabajo|presentacion|ensayo|laboratorio|entrega|actividad)\b/.test(
+      normalized,
+    )
   const asksExisting =
     /\b(que|cuales|ver|dime)\b.*\b(tareas|pendientes|entregas)\b/.test(
       normalized,
     )
-  return deliverable && pendingWork && !asksExisting
+  return deliverable && (pendingWork || explicitlyCreatesTask) && !asksExisting
 }
 
 function taskTitle(value: string) {
+  const normalized = normalizeText(value)
+  const isBareCreationRequest =
+    /\b(crear|agendar|anadir|agregar|registrar|programar|guardar|incorporar)\b\s+(?:una?\s+)?(?:nueva?\s+)?(?:tarea|pendiente|actividad|entrega)\s*[.!?]*$/.test(
+      normalized,
+    )
+  if (isBareCreationRequest) return 'Nueva tarea académica'
+
   const cleaned = value
     .trim()
     .replace(
