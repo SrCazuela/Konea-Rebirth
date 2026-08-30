@@ -165,10 +165,56 @@ function Wait-ForDocker {
   throw 'Docker Desktop no respondio dentro de 120 segundos.'
 }
 
-function Wait-ForOllama {
-  param([string]$OllamaPath)
+function Get-OllamaTags {
+  param([string]$BaseUrl = 'http://127.0.0.1:11434')
 
-  if (Test-NativeCommand -FilePath $OllamaPath -Arguments @('list')) {
+  try {
+    return Invoke-RestMethod `
+      -Uri ("{0}/api/tags" -f $BaseUrl.TrimEnd('/')) `
+      -Method Get `
+      -TimeoutSec 3
+  }
+  catch {
+    return $null
+  }
+}
+
+function Test-OllamaAvailable {
+  param([string]$BaseUrl = 'http://127.0.0.1:11434')
+
+  return $null -ne (Get-OllamaTags -BaseUrl $BaseUrl)
+}
+
+function Test-OllamaModelAvailable {
+  param(
+    [string]$Model,
+    [string]$BaseUrl = 'http://127.0.0.1:11434'
+  )
+
+  $Tags = Get-OllamaTags -BaseUrl $BaseUrl
+  if ($null -eq $Tags) {
+    return $false
+  }
+
+  $InstalledModels = @(
+    $Tags.models |
+      ForEach-Object { $_.name }
+  )
+  if ($InstalledModels -contains $Model) {
+    return $true
+  }
+
+  # Ollama interpreta un nombre sin etiqueta como :latest.
+  return $Model -notmatch ':' -and $InstalledModels -contains ("{0}:latest" -f $Model)
+}
+
+function Wait-ForOllama {
+  param(
+    [string]$OllamaPath,
+    [string]$BaseUrl = 'http://127.0.0.1:11434'
+  )
+
+  if (Test-OllamaAvailable -BaseUrl $BaseUrl) {
     Write-Host 'Ollama ya esta disponible.' -ForegroundColor Green
     return
   }
@@ -181,7 +227,7 @@ function Wait-ForOllama {
 
   for ($Attempt = 1; $Attempt -le 45; $Attempt += 1) {
     Start-Sleep -Seconds 1
-    if (Test-NativeCommand -FilePath $OllamaPath -Arguments @('list')) {
+    if (Test-OllamaAvailable -BaseUrl $BaseUrl) {
       Write-Host 'Ollama quedo disponible.' -ForegroundColor Green
       return
     }
@@ -315,15 +361,19 @@ try {
   switch ($Provider) {
     'ollama' {
       $env:OLLAMA_HOST = '127.0.0.1:11434'
+      $OllamaBaseUrl = Get-DotEnvValue -Name 'OLLAMA_BASE_URL'
+      if ([string]::IsNullOrWhiteSpace($OllamaBaseUrl)) {
+        $OllamaBaseUrl = 'http://127.0.0.1:11434'
+      }
       $OllamaPath = Get-OllamaPath
-      Wait-ForOllama -OllamaPath $OllamaPath
+      Wait-ForOllama -OllamaPath $OllamaPath -BaseUrl $OllamaBaseUrl
 
       $Model = Get-DotEnvValue -Name 'OLLAMA_MODEL'
       if ([string]::IsNullOrWhiteSpace($Model)) {
         $Model = 'qwen3.5:4b'
       }
 
-      if (-not (Test-NativeCommand -FilePath $OllamaPath -Arguments @('show', $Model))) {
+      if (-not (Test-OllamaModelAvailable -Model $Model -BaseUrl $OllamaBaseUrl)) {
         throw "Falta el modelo $Model. Ejecuta 'ollama pull $Model' una sola vez y vuelve a iniciar Konea."
       }
       Write-Host "IA local lista: Ollama / $Model" -ForegroundColor Green
