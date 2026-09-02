@@ -112,6 +112,22 @@ export const supportRequestStatus = pgEnum('support_request_status', [
   'rejected',
 ])
 
+export const ducoDraftKind = pgEnum('duco_draft_kind', [
+  'task',
+  'support_request',
+])
+
+export const ducoDraftStatus = pgEnum('duco_draft_status', [
+  'collecting_information',
+  'ready_for_review',
+  'confirmed',
+  'cancelled',
+  'expired',
+])
+
+export type DucoDraftKind = (typeof ducoDraftKind.enumValues)[number]
+export type DucoDraftStatus = (typeof ducoDraftStatus.enumValues)[number]
+
 export type ProfileEducation = {
   id: string
   institution: string
@@ -175,6 +191,8 @@ export type AssistantMessageAction =
       type: 'create_task'
       label: string
       draft: DucoTaskDraft
+      draftId?: string | null
+      draftStatus?: DucoDraftStatus
       task?: { id: string } | null
     }
 
@@ -807,6 +825,48 @@ export const assistantMessages = pgTable(
       table.userId,
       table.createdAt,
     ),
+  ],
+)
+
+export const ducoDrafts = pgTable(
+  'duco_drafts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: ducoDraftKind('kind').notNull(),
+    status: ducoDraftStatus('status')
+      .default('collecting_information')
+      .notNull(),
+    payload: jsonb('payload')
+      .$type<DucoTaskDraft | DucoRequestDraft>()
+      .notNull(),
+    sourceMessageId: uuid('source_message_id').references(
+      () => assistantMessages.id,
+      { onDelete: 'set null' },
+    ),
+    completedResourceId: uuid('completed_resource_id'),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '30 days'`)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('duco_drafts_source_message_unique')
+      .on(table.sourceMessageId)
+      .where(sql`${table.sourceMessageId} is not null`),
+    index('duco_drafts_user_status_updated_at_index').on(
+      table.userId,
+      table.status,
+      table.updatedAt,
+    ),
+    index('duco_drafts_expires_at_index').on(table.expiresAt),
   ],
 )
 

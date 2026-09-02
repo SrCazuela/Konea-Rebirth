@@ -93,7 +93,7 @@ dominio social.
 
 ## Modelo de datos
 
-Agrupación conceptual de las 21 tablas:
+Agrupación conceptual de las 28 tablas:
 
 ```text
 users ──1:1── profiles
@@ -113,6 +113,11 @@ users ──1:1── profiles
   ├──1:N── qr_codes
   ├──1:N── notifications
   ├──1:N── assistant_messages
+  ├──1:N── duco_drafts
+  ├──1:N── academic_courses ──1:N── academic_tasks
+  ├──1:N── academic_calendar_events
+  ├──1:0..1── academic_calendar_syncs
+  ├──1:N── support_requests
   └──1:N── reports
 ```
 
@@ -202,11 +207,44 @@ moderador que modifica su estado.
 
 ### DUCO
 
-DUCO consulta las tareas no completadas asignadas al usuario dentro de chats en
-los que aún participa, priorizadas por fecha, y construye una respuesta local
-según intención básica (saludo, resumen o planificación). Pregunta y respuesta
-se guardan juntas en una transacción. No existe tráfico hacia un modelo o
-webhook externo.
+DUCO usa un adaptador de servidor seleccionado por `DUCO_AI_PROVIDER`:
+
+- `local` aplica reglas determinísticas y también funciona como fallback;
+- `ollama` consulta el modelo local definido en `OLLAMA_MODEL`;
+- `openai` consulta mediante la Responses API el modelo de `OPENAI_MODEL`, que
+  en la configuración de referencia es OpenAI Luna.
+
+La clave y las llamadas al proveedor viven exclusivamente en la API. Con
+Ollama el procesamiento generativo permanece en el equipo; con OpenAI se envía
+al endpoint configurado el contexto necesario para responder. Si Ollama u
+OpenAI falla, el servicio vuelve al modo `local`.
+
+El flujo separa lenguaje de acciones de negocio:
+
+1. la API carga la conversación reciente, tareas pendientes y el último
+   borrador de tarea activo del usuario;
+2. el proveedor interpreta el mensaje y devuelve JSON sujeto a un esquema
+   estricto;
+3. el backend valida la intención, descarta acciones no respaldadas por lo que
+   dijo el estudiante y aplica reglas determinísticas de seguridad;
+4. pregunta y respuesta se guardan juntas en una transacción; una acción
+   `create_task` crea o actualiza un `duco_draft`, no una tarea;
+5. la web recupera el borrador, permite editarlo y exige una confirmación
+   explícita antes de llamar a `POST /duco/tasks`;
+6. la confirmación crea `academic_tasks` y cambia el borrador a `confirmed` en
+   la misma transacción; descartarlo cambia su estado a `cancelled`.
+
+Los borradores de tareas admiten los estados `collecting_information`,
+`ready_for_review`, `confirmed`, `cancelled` y `expired`. Cada uno tiene
+`expiresAt` con una vigencia inicial de 30 días. El listado de activos excluye
+fechas vencidas. La relación desde el borrador hacia su mensaje de origen usa
+`ON DELETE SET NULL`: borrar el historial de conversación no elimina el
+borrador ni permite saltarse la revisión humana.
+
+Las solicitudes institucionales mantienen la misma frontera: DUCO puede
+preparar un formulario, pero el envío solo ocurre cuando el usuario lo revisa y
+confirma mediante la ruta correspondiente. El modelo nunca obtiene acceso
+directo a PostgreSQL ni ejecuta botones por cuenta propia.
 
 ## Seguridad
 
@@ -252,11 +290,13 @@ Para el Capstone local, polling reduce dependencias y conserva comportamiento
 multiusuario demostrable. WebSocket o SSE puede añadirse detrás de los mismos
 contratos persistentes.
 
-### DUCO local antes que una clave externa
+### Proveedor configurable y acciones validadas
 
-Ofrece una función útil y auditable aunque las integraciones anteriores hayan
-desaparecido. Una futura IA debe entrar mediante un adaptador de servicio, no
-desde el navegador ni incrustada en el dominio.
+El modo `local` conserva una función útil y auditable sin credenciales. Ollama
+permite pruebas generativas en el equipo y OpenAI Luna puede usarse cuando hay
+créditos, sin cambiar los contratos del cliente. En los tres modos la API, y no
+el modelo ni el navegador, conserva la autoridad sobre persistencia, permisos y
+transiciones de estado.
 
 ## Entornos y despliegue
 

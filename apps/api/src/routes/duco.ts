@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  ne,
+  sql,
+} from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db/client.js'
@@ -8,11 +19,13 @@ import {
   academicCourses,
   academicTasks,
   chatParticipants,
+  ducoDrafts,
   profiles,
   supportRequests,
   tasks,
   users,
 } from '../db/schema.js'
+import type { AssistantMessageAction, DucoTaskDraft } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody, parseId } from '../http/validation.js'
 import {
@@ -58,27 +71,33 @@ const createSupportRequestSchema = z.strictObject({
   desiredOutcome: z.string().trim().max(1_000),
   urgency: z.enum(requestUrgencies),
 })
-const createAcademicTaskSchema = z.strictObject({
-  sourceMessageId: z.string().uuid(),
-  title: z.string().trim().min(2).max(160),
-  description: z
-    .string()
-    .trim()
-    .max(1_000)
-    .nullable()
-    .optional()
-    .transform((value) => value || null),
-  courseName: z
-    .string()
-    .trim()
-    .min(2)
-    .max(300)
-    .nullable()
-    .optional()
-    .transform((value) => value || null),
-  dueAt: z.string().datetime({ offset: true }).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high']).default('medium'),
-})
+const createAcademicTaskSchema = z
+  .strictObject({
+    draftId: z.string().uuid().optional(),
+    sourceMessageId: z.string().uuid().optional(),
+    title: z.string().trim().min(2).max(160),
+    description: z
+      .string()
+      .trim()
+      .max(1_000)
+      .nullable()
+      .optional()
+      .transform((value) => value || null),
+    courseName: z
+      .string()
+      .trim()
+      .min(2)
+      .max(300)
+      .nullable()
+      .optional()
+      .transform((value) => value || null),
+    dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+    priority: z.enum(['low', 'medium', 'high']).default('medium'),
+  })
+  .refine((input) => input.draftId || input.sourceMessageId, {
+    message: 'Se requiere un borrador de DUCO.',
+    path: ['draftId'],
+  })
 const updateSupportRequestSchema = z.strictObject({
   status: z.enum(requestStatuses),
 })
@@ -266,8 +285,40 @@ async function loadRecentConversation(userId: string) {
     .from(assistantMessages)
     .where(eq(assistantMessages.userId, userId))
     .orderBy(desc(assistantMessages.createdAt))
-    .limit(10)
+    .limit(30)
   return messages.reverse()
+}
+
+async function loadActiveTaskDraft(userId: string) {
+  const [draft] = await db
+    .select({
+      id: ducoDrafts.id,
+      status: ducoDrafts.status,
+      payload: ducoDrafts.payload,
+      expiresAt: ducoDrafts.expiresAt,
+    })
+    .from(ducoDrafts)
+    .where(
+      and(
+        eq(ducoDrafts.userId, userId),
+        eq(ducoDrafts.kind, 'task'),
+        inArray(ducoDrafts.status, [
+          'collecting_information',
+          'ready_for_review',
+        ]),
+        gt(ducoDrafts.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(desc(ducoDrafts.updatedAt))
+    .limit(1)
+
+  if (!draft) return null
+  return {
+    id: draft.id,
+    status: draft.status as 'collecting_information' | 'ready_for_review',
+    draft: draft.payload as DucoTaskDraft,
+    expiresAt: draft.expiresAt.toISOString(),
+  }
 }
 
 async function loadMessages(userId: string) {
@@ -320,9 +371,10 @@ ducoRouter.get('/messages', async (_request, response) => {
 ducoRouter.post('/messages', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const content = parseBody(sendMessageSchema, request.body)
-  const [pendingTasks, conversation] = await Promise.all([
+  const [pendingTasks, conversation, activeTaskDraft] = await Promise.all([
     loadPendingTasks(currentUser.id),
     loadRecentConversation(currentUser.id),
+    loadActiveTaskDraft(currentUser.id),
   ])
   const aiReply = await buildDucoAiReply({
     prompt: content,
@@ -333,6 +385,7 @@ ducoRouter.post('/messages', async (request, response) => {
     ),
     conversation,
     pendingTasks,
+    activeTaskDraft,
   })
   const askedAt = new Date()
   const answeredAt = new Date(askedAt.getTime() + 1)
@@ -353,7 +406,7 @@ ducoRouter.post('/messages', async (request, response) => {
         action: assistantMessages.action,
         createdAt: assistantMessages.createdAt,
       })
-    const [assistantMessage] = await transaction
+    const [insertedAssistantMessage] = await transaction
       .insert(assistantMessages)
       .values({
         userId: currentUser.id,
@@ -369,8 +422,83 @@ ducoRouter.post('/messages', async (request, response) => {
         action: assistantMessages.action,
         createdAt: assistantMessages.createdAt,
       })
-    if (!userMessage || !assistantMessage)
+    if (!userMessage || !insertedAssistantMessage)
       throw new Error('Database did not return the DUCO messages')
+
+    let assistantMessage = insertedAssistantMessage
+    if (aiReply.action?.type === 'create_task') {
+      const shouldUpdateActiveDraft =
+        activeTaskDraft !== null &&
+        aiReply.action.draftId === activeTaskDraft.id
+      let draftId: string
+
+      if (shouldUpdateActiveDraft) {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${activeTaskDraft.id}))`,
+        )
+        const [updatedDraft] = await transaction
+          .update(ducoDrafts)
+          .set({
+            status: 'ready_for_review',
+            payload: aiReply.action.draft,
+            sourceMessageId: insertedAssistantMessage.id,
+            expiresAt: sql`now() + interval '30 days'`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(ducoDrafts.id, activeTaskDraft.id),
+              eq(ducoDrafts.userId, currentUser.id),
+              eq(ducoDrafts.kind, 'task'),
+              inArray(ducoDrafts.status, [
+                'collecting_information',
+                'ready_for_review',
+              ]),
+              gt(ducoDrafts.expiresAt, new Date()),
+            ),
+          )
+          .returning({ id: ducoDrafts.id })
+        if (!updatedDraft)
+          throw new Error('The active DUCO task draft could not be updated')
+        draftId = updatedDraft.id
+      } else {
+        const [createdDraft] = await transaction
+          .insert(ducoDrafts)
+          .values({
+            userId: currentUser.id,
+            kind: 'task',
+            status: 'ready_for_review',
+            payload: aiReply.action.draft,
+            sourceMessageId: insertedAssistantMessage.id,
+          })
+          .returning({ id: ducoDrafts.id })
+        if (!createdDraft)
+          throw new Error('Database did not return the DUCO task draft')
+        draftId = createdDraft.id
+      }
+
+      const persistedAction: AssistantMessageAction = {
+        ...aiReply.action,
+        draftId,
+        draftStatus: 'ready_for_review',
+        task: null,
+      }
+      const [updatedAssistantMessage] = await transaction
+        .update(assistantMessages)
+        .set({ action: persistedAction })
+        .where(eq(assistantMessages.id, insertedAssistantMessage.id))
+        .returning({
+          id: assistantMessages.id,
+          role: assistantMessages.role,
+          content: assistantMessages.content,
+          action: assistantMessages.action,
+          createdAt: assistantMessages.createdAt,
+        })
+      if (!updatedAssistantMessage)
+        throw new Error('Database did not return the updated DUCO message')
+      assistantMessage = updatedAssistantMessage
+    }
+
     return {
       userMessage: { ...userMessage, request: null },
       assistantMessage: { ...assistantMessage, request: null },
@@ -393,45 +521,274 @@ ducoRouter.delete('/messages', async (_request, response) => {
   response.json({ deletedCount: deleted.length })
 })
 
+ducoRouter.get('/drafts', async (_request, response) => {
+  const currentUser = getAuthenticatedUser(response)
+  const drafts = await db
+    .select({
+      id: ducoDrafts.id,
+      kind: ducoDrafts.kind,
+      status: ducoDrafts.status,
+      payload: ducoDrafts.payload,
+      sourceMessageId: ducoDrafts.sourceMessageId,
+      completedResourceId: ducoDrafts.completedResourceId,
+      expiresAt: ducoDrafts.expiresAt,
+      createdAt: ducoDrafts.createdAt,
+      updatedAt: ducoDrafts.updatedAt,
+    })
+    .from(ducoDrafts)
+    .where(
+      and(
+        eq(ducoDrafts.userId, currentUser.id),
+        inArray(ducoDrafts.status, [
+          'collecting_information',
+          'ready_for_review',
+        ]),
+        gt(ducoDrafts.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(desc(ducoDrafts.updatedAt))
+  response.json({ drafts })
+})
+
+ducoRouter.delete('/drafts/:draftId', async (request, response) => {
+  const currentUser = getAuthenticatedUser(response)
+  const draftId = parseId(
+    request.params.draftId,
+    'El borrador de DUCO no es valido.',
+  )
+
+  const result = await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${draftId}))`,
+    )
+    const [draft] = await transaction
+      .select()
+      .from(ducoDrafts)
+      .where(
+        and(eq(ducoDrafts.id, draftId), eq(ducoDrafts.userId, currentUser.id)),
+      )
+      .limit(1)
+    if (!draft) {
+      throw new ApiError(
+        404,
+        'DUCO_DRAFT_NOT_FOUND',
+        'El borrador de DUCO no existe.',
+      )
+    }
+    if (draft.status === 'confirmed') {
+      throw new ApiError(
+        409,
+        'DUCO_DRAFT_ALREADY_CONFIRMED',
+        'Este borrador ya fue confirmado.',
+      )
+    }
+
+    const cancelledDraft =
+      draft.status === 'cancelled'
+        ? draft
+        : (
+            await transaction
+              .update(ducoDrafts)
+              .set({ status: 'cancelled', updatedAt: new Date() })
+              .where(
+                and(
+                  eq(ducoDrafts.id, draft.id),
+                  eq(ducoDrafts.userId, currentUser.id),
+                ),
+              )
+              .returning()
+          )[0]
+    if (!cancelledDraft)
+      throw new Error('Database did not return the cancelled DUCO draft')
+
+    if (draft.sourceMessageId) {
+      const [sourceMessage] = await transaction
+        .select({ action: assistantMessages.action })
+        .from(assistantMessages)
+        .where(
+          and(
+            eq(assistantMessages.id, draft.sourceMessageId),
+            eq(assistantMessages.userId, currentUser.id),
+            eq(assistantMessages.role, 'assistant'),
+          ),
+        )
+        .limit(1)
+      if (sourceMessage?.action?.type === 'create_task') {
+        await transaction
+          .update(assistantMessages)
+          .set({
+            action: {
+              ...sourceMessage.action,
+              draftId: draft.id,
+              draftStatus: 'cancelled',
+            },
+          })
+          .where(eq(assistantMessages.id, draft.sourceMessageId))
+      }
+    }
+
+    return cancelledDraft
+  })
+
+  response.json({ draft: result })
+})
+
 ducoRouter.post('/tasks', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(createAcademicTaskSchema, request.body)
 
   const result = await db.transaction(async (transaction) => {
-    // Serializa las confirmaciones de un mismo borrador para evitar tareas
-    // duplicadas si el usuario hace doble clic o reintenta la petición.
-    await transaction.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${input.sourceMessageId}))`,
-    )
+    let draftId = input.draftId
+    let sourceMessage:
+      { id: string; action: AssistantMessageAction | null } | undefined
 
-    const [sourceMessage] = await transaction
-      .select({
-        id: assistantMessages.id,
-        action: assistantMessages.action,
-      })
-      .from(assistantMessages)
-      .where(
-        and(
-          eq(assistantMessages.id, input.sourceMessageId),
-          eq(assistantMessages.userId, currentUser.id),
-          eq(assistantMessages.role, 'assistant'),
-        ),
+    // Los clientes anteriores solo envían sourceMessageId. Si ese mensaje ya
+    // pertenece al flujo persistente, usamos su draftId y evitamos duplicados.
+    if (!draftId && input.sourceMessageId) {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${input.sourceMessageId}))`,
       )
-      .limit(1)
-
-    if (!sourceMessage || sourceMessage.action?.type !== 'create_task') {
-      throw new ApiError(
-        404,
-        'DUCO_TASK_DRAFT_NOT_FOUND',
-        'El borrador de pendiente de DUCO no existe.',
-      )
+      ;[sourceMessage] = await transaction
+        .select({
+          id: assistantMessages.id,
+          action: assistantMessages.action,
+        })
+        .from(assistantMessages)
+        .where(
+          and(
+            eq(assistantMessages.id, input.sourceMessageId),
+            eq(assistantMessages.userId, currentUser.id),
+            eq(assistantMessages.role, 'assistant'),
+          ),
+        )
+        .limit(1)
+      if (!sourceMessage || sourceMessage.action?.type !== 'create_task') {
+        throw new ApiError(
+          404,
+          'DUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de DUCO no existe.',
+        )
+      }
+      draftId = sourceMessage.action.draftId ?? undefined
     }
-    if (sourceMessage.action.task?.id) {
-      throw new ApiError(
-        409,
-        'DUCO_TASK_ALREADY_CREATED',
-        'Este pendiente ya fue creado.',
+
+    let persistentDraft:
+      | {
+          id: string
+          status:
+            | 'collecting_information'
+            | 'ready_for_review'
+            | 'confirmed'
+            | 'cancelled'
+            | 'expired'
+          sourceMessageId: string | null
+          completedResourceId: string | null
+          expiresAt: Date
+        }
+      | undefined
+
+    if (draftId) {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${draftId}))`,
       )
+      await transaction.execute(
+        sql`select 1 from ${ducoDrafts} where ${ducoDrafts.id} = ${draftId} for update`,
+      )
+      const [draft] = await transaction
+        .select({
+          id: ducoDrafts.id,
+          kind: ducoDrafts.kind,
+          status: ducoDrafts.status,
+          sourceMessageId: ducoDrafts.sourceMessageId,
+          completedResourceId: ducoDrafts.completedResourceId,
+          expiresAt: ducoDrafts.expiresAt,
+        })
+        .from(ducoDrafts)
+        .where(
+          and(
+            eq(ducoDrafts.id, draftId),
+            eq(ducoDrafts.userId, currentUser.id),
+          ),
+        )
+        .limit(1)
+      if (!draft) {
+        throw new ApiError(
+          404,
+          'DUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de DUCO no existe.',
+        )
+      }
+      if (draft.kind !== 'task') {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_DRAFT_INVALID_KIND',
+          'Este borrador no corresponde a un pendiente académico.',
+        )
+      }
+      if (draft.status === 'confirmed' || draft.completedResourceId) {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_ALREADY_CREATED',
+          'Este pendiente ya fue creado.',
+        )
+      }
+      if (draft.expiresAt <= new Date() || draft.status === 'expired') {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_DRAFT_EXPIRED',
+          'El borrador de pendiente expiró.',
+        )
+      }
+      if (draft.status === 'cancelled') {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_DRAFT_CANCELLED',
+          'El borrador de pendiente fue descartado.',
+        )
+      }
+      if (draft.status !== 'ready_for_review') {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_DRAFT_NOT_READY',
+          'El borrador todavía requiere información.',
+        )
+      }
+      persistentDraft = draft
+
+      if (
+        draft.sourceMessageId &&
+        sourceMessage?.id !== draft.sourceMessageId
+      ) {
+        ;[sourceMessage] = await transaction
+          .select({
+            id: assistantMessages.id,
+            action: assistantMessages.action,
+          })
+          .from(assistantMessages)
+          .where(
+            and(
+              eq(assistantMessages.id, draft.sourceMessageId),
+              eq(assistantMessages.userId, currentUser.id),
+              eq(assistantMessages.role, 'assistant'),
+            ),
+          )
+          .limit(1)
+      }
+    } else {
+      if (!sourceMessage || sourceMessage.action?.type !== 'create_task') {
+        throw new ApiError(
+          404,
+          'DUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de DUCO no existe.',
+        )
+      }
+      if (sourceMessage.action.task?.id) {
+        throw new ApiError(
+          409,
+          'DUCO_TASK_ALREADY_CREATED',
+          'Este pendiente ya fue creado.',
+        )
+      }
     }
 
     let courseId: string | null = null
@@ -470,14 +827,72 @@ ducoRouter.post('/tasks', async (request, response) => {
     if (!createdTask)
       throw new Error('Database did not return the DUCO academic task')
 
-    const action = {
-      ...sourceMessage.action,
-      task: { id: createdTask.id },
+    const finalDraft: DucoTaskDraft = {
+      title: input.title,
+      description: input.description ?? '',
+      courseName: input.courseName ?? null,
+      dueAt: input.dueAt ?? null,
+      priority: input.priority,
     }
-    await transaction
-      .update(assistantMessages)
-      .set({ action })
-      .where(eq(assistantMessages.id, sourceMessage.id))
+    let action: AssistantMessageAction
+
+    if (persistentDraft) {
+      const [confirmedDraft] = await transaction
+        .update(ducoDrafts)
+        .set({
+          status: 'confirmed',
+          payload: finalDraft,
+          completedResourceId: createdTask.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(ducoDrafts.id, persistentDraft.id),
+            eq(ducoDrafts.userId, currentUser.id),
+            eq(ducoDrafts.status, 'ready_for_review'),
+          ),
+        )
+        .returning({ id: ducoDrafts.id })
+      if (!confirmedDraft)
+        throw new Error('Database did not confirm the DUCO task draft')
+
+      action =
+        sourceMessage?.action?.type === 'create_task'
+          ? {
+              ...sourceMessage.action,
+              draft: finalDraft,
+              draftId: persistentDraft.id,
+              draftStatus: 'confirmed',
+              task: { id: createdTask.id },
+            }
+          : {
+              type: 'create_task',
+              label: 'Revisar y crear',
+              draft: finalDraft,
+              draftId: persistentDraft.id,
+              draftStatus: 'confirmed',
+              task: { id: createdTask.id },
+            }
+    } else {
+      if (!sourceMessage || sourceMessage.action?.type !== 'create_task')
+        throw new Error('The legacy DUCO task message was not loaded')
+      action = {
+        ...sourceMessage.action,
+        task: { id: createdTask.id },
+      }
+    }
+
+    if (sourceMessage) {
+      await transaction
+        .update(assistantMessages)
+        .set({ action })
+        .where(
+          and(
+            eq(assistantMessages.id, sourceMessage.id),
+            eq(assistantMessages.userId, currentUser.id),
+          ),
+        )
+    }
 
     return { task: createdTask, action }
   })

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { env } from '../config/env.js'
 import type {
   AssistantMessageAction,
+  DucoDraftStatus,
   DucoRequestDraft,
   DucoTaskDraft,
 } from '../db/schema.js'
@@ -74,10 +75,11 @@ const ducoOutputJsonSchema = {
 const systemInstructions = `Eres DUCO, el asistente de organización académica de una plataforma universitaria chilena.
 Responde en español claro, empático y breve. Puedes explicar conceptos, proponer un plan de estudio y orientar al estudiante, pero no debes hacer una evaluación o entrega completa por él.
 Las acciones visibles son sugerencias: nunca afirmes que una tarea fue creada, una solicitud fue enviada o una persona fue contactada. El estudiante siempre revisa y confirma.
-Usa create_task cuando el estudiante mencione una tarea, guía, informe, proyecto, evaluación u otra entrega que quiera organizar. Prepara solo datos expresamente aportados; lo desconocido queda vacío.
+Usa create_task cuando el estudiante mencione una tarea, guía, informe, proyecto, evaluación, examen u otra actividad que quiera organizar, guardar o revisar como pendiente. Interpreta continuaciones como “guardarlo”, “anótalo”, “sí, esa tarea” o “déjalo para el viernes” usando el contexto reciente y el borrador activo. Prepara solo datos expresamente aportados; lo desconocido queda vacío.
 Usa manage_request únicamente si una gestión institucional ya contiene información suficiente. Si faltan datos, action=none y pregunta uno o dos datos concretos antes de ofrecer el formulario.
 Ante acoso, autolesión, amenazas o daño a terceros, prioriza la seguridad, no diagnostiques ni acuses y no inventes hechos. Aclara que DUCO no contactó automáticamente a nadie.
-En cualquier acción, los hechos del borrador deben provenir exclusivamente de mensajes del estudiante, nunca de una respuesta anterior de DUCO.`
+En cualquier acción, los hechos del borrador deben provenir exclusivamente de mensajes del estudiante o del borrador activo validado, nunca de una respuesta anterior de DUCO.
+Tu texto debe coincidir con action: si action=none no digas que preparaste, guardaste o dejaste listo un borrador. Si action=create_task, aclara que el borrador quedó guardado para revisión y que la tarea todavía no fue creada.`
 
 export type DucoConversationMessage = {
   role: 'user' | 'assistant'
@@ -98,11 +100,22 @@ export type DucoAiResult = {
   provider: 'local' | 'ollama' | 'openai'
 }
 
+export type DucoActiveTaskDraft = {
+  id: string
+  status: Extract<
+    DucoDraftStatus,
+    'collecting_information' | 'ready_for_review'
+  >
+  draft: DucoTaskDraft
+  expiresAt?: string | null
+}
+
 type BuildDucoReplyInput = {
   prompt: string
   localReply: string
   conversation: DucoConversationMessage[]
   pendingTasks: DucoTaskContext[]
+  activeTaskDraft?: DucoActiveTaskDraft | null
 }
 
 type RequestReadiness = {
@@ -419,7 +432,7 @@ function requestDecision(input: BuildDucoReplyInput): DucoAiResult | null {
 function isTaskIntent(value: string) {
   const normalized = normalizeText(value)
   const deliverable =
-    /\b(tarea|guia|informe|proyecto|evaluacion|trabajo|presentacion|ensayo|laboratorio|entrega|actividad)\b/.test(
+    /\b(tarea|guia|informe|proyecto|evaluacion|examen|prueba|certamen|control|trabajo|presentacion|ensayo|laboratorio|entrega|actividad|estudiar|repasar)\b/.test(
       normalized,
     )
   const pendingWork =
@@ -427,7 +440,7 @@ function isTaskIntent(value: string) {
       normalized,
     )
   const explicitlyCreatesTask =
-    /\b(crear|agendar|anadir|agregar|registrar|programar|guardar|incorporar)\b.{0,80}\b(tarea|pendiente|guia|informe|proyecto|evaluacion|trabajo|presentacion|ensayo|laboratorio|entrega|actividad)\b/.test(
+    /\b(crear(?:lo|la)?|crea(?:lo|la)?|agendar(?:lo|la)?|agenda(?:lo|la)?|anadir(?:lo|la)?|anade(?:lo|la)?|agregar(?:lo|la)?|agrega(?:lo|la)?|registrar(?:lo|la)?|registra(?:lo|la)?|programar(?:lo|la)?|programa(?:lo|la)?|guardar(?:lo|la)?|guarda(?:lo|la)?|incorporar(?:lo|la)?|incorpora(?:lo|la)?|anotar(?:lo|la)?|anota(?:lo|la)?)\b.{0,100}\b(tarea|pendiente|guia|informe|proyecto|evaluacion|examen|prueba|trabajo|presentacion|ensayo|laboratorio|entrega|actividad)\b/.test(
       normalized,
     )
   const asksExisting =
@@ -435,6 +448,139 @@ function isTaskIntent(value: string) {
       normalized,
     )
   return deliverable && (pendingWork || explicitlyCreatesTask) && !asksExisting
+}
+
+function referencesActiveTaskDraft(value: string) {
+  const normalized = normalizeText(value)
+  return (
+    /\b(guardarlo|guardarla|guardalo|guardala|anotarlo|anotarla|anotalo|anotala|registrarlo|registrarla|registralo|registrala|agendarlo|agendarla|agendalo|agendala|crearlo|crearla|crealo|creala)\b/.test(
+      normalized,
+    ) ||
+    /\b(esa|esta|la)\s+(tarea|actividad|entrega)\b/.test(normalized) ||
+    /\b(el|ese|este)\s+(pendiente|borrador|trabajo|examen)\b/.test(
+      normalized,
+    ) ||
+    /\b(si|dale|perfecto|bien|de acuerdo)\b.{0,40}\b(guard|cre|agend|anot|registr|borrador|tarea|pendiente)\w*/.test(
+      normalized,
+    )
+  )
+}
+
+function isSimpleDraftAffirmation(value: string) {
+  return /^(si|sí|dale|perfecto|bien|de acuerdo|ok|okay|hazlo|hagamoslo)[.!\s]*$/iu.test(
+    value.trim(),
+  )
+}
+
+function isTaskPreparationOffer(value: string) {
+  const normalized = normalizeText(value)
+  const mentionsTaskDraft =
+    /\b(borrador|tarea|pendiente|sugerencia|actividad|examen|entrega)\b/.test(
+      normalized,
+    )
+  const offersPreparation =
+    /\b(quieres|deseas|puedo)\b.{0,100}\b(prepar|recre|cre|guard|registr|agend)\w*/.test(
+      normalized,
+    )
+  const requestsReview =
+    /\b(borrador|sugerencia|tarea|pendiente)\b.{0,120}\b(revis|confirm|guard|cre)\w*/.test(
+      normalized,
+    )
+  return mentionsTaskDraft && (offersPreparation || requestsReview)
+}
+
+function isSubstantiveTaskFact(value: string) {
+  const normalized = normalizeText(value)
+  const mentionsTask =
+    /\b(tarea|guia|informe|proyecto|evaluacion|examen|prueba|certamen|control|trabajo|presentacion|ensayo|laboratorio|entrega|actividad|estudiar|repasar)\b/.test(
+      normalized,
+    )
+  const asksExisting =
+    /\b(que|cuales|cuantas|ver|dime|mostrar)\b.*\b(tareas|pendientes|entregas)\b/.test(
+      normalized,
+    )
+  return (
+    mentionsTask &&
+    !asksExisting &&
+    !referencesActiveTaskDraft(value) &&
+    !isSimpleDraftAffirmation(value)
+  )
+}
+
+function isSupportingTaskFact(value: string) {
+  const normalized = normalizeText(value)
+  return (
+    isSubstantiveTaskFact(value) ||
+    hasCourseDetails(value) ||
+    /\b(?:es|examen|prueba|certamen|control)\s+de\s+[a-z0-9]/.test(
+      normalized,
+    ) ||
+    /\b(?:en\s+\d{1,3}\s+dias?|vence|fecha|plazo|hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(
+      normalized,
+    )
+  )
+}
+
+function recoverableTaskContext(input: BuildDucoReplyInput) {
+  const userConversation = input.conversation
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+  const anchorIndex = userConversation.findLastIndex(isSubstantiveTaskFact)
+  if (anchorIndex < 0) return null
+
+  const facts = userConversation
+    .slice(Math.max(0, anchorIndex - 2))
+    .filter(isSupportingTaskFact)
+  if (facts.length === 0) return null
+
+  return {
+    source: userConversation[anchorIndex]!,
+    facts: facts.join('\n').trim().slice(-1_000),
+  }
+}
+
+function wantsRecoveredTaskDraft(input: BuildDucoReplyInput) {
+  return (
+    referencesActiveTaskDraft(input.prompt) ||
+    (isSimpleDraftAffirmation(input.prompt) &&
+      isTaskPreparationOffer(lastAssistantMessage(input) ?? ''))
+  )
+}
+
+function taskSourceText(input: BuildDucoReplyInput) {
+  const candidates = [
+    ...input.conversation
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content),
+    input.prompt,
+  ]
+  const useful = candidates.filter(
+    (message) =>
+      !referencesActiveTaskDraft(message) &&
+      !isSimpleDraftAffirmation(message) &&
+      /\b(tarea|guia|informe|proyecto|evaluacion|examen|prueba|certamen|control|trabajo|presentacion|ensayo|laboratorio|entrega|actividad|estudiar|repasar|tengo que|debo|necesito)\b/iu.test(
+        normalizeText(message),
+      ),
+  )
+  return useful.at(-1) ?? input.prompt
+}
+
+function normalizeTaskWording(value: string) {
+  return value
+    .replaceAll(/\bto\s*-?\s*be\b/giu, 'to be')
+    .replaceAll(/\s+/g, ' ')
+    .replaceAll(/\s+([,.;:!?])/g, '$1')
+    .trim()
+}
+
+function stripRelativeDeadline(value: string) {
+  return value
+    .replace(/\s+(?:en|dentro de)\s+\d{1,3}\s+d[ií]as?\b[\s\S]*$/iu, '')
+    .replace(
+      /\s+(?:para|antes de)\s+(?:hoy|ma[nñ]ana|pasado ma[nñ]ana)\b[\s\S]*$/iu,
+      '',
+    )
+    .trim()
 }
 
 function taskTitle(value: string) {
@@ -445,22 +591,77 @@ function taskTitle(value: string) {
     )
   if (isBareCreationRequest) return 'Nueva tarea académica'
 
-  const cleaned = value
-    .trim()
-    .replace(
-      /^.*?\b(?:tengo que|debo|necesito|me pidieron)\s+(?:hacer|realizar|entregar|preparar|completar)?\s*/iu,
-      '',
-    )
+  const cleaned = normalizeTaskWording(value)
+    .replace(/^.*?\b(?:tengo que|debo|necesito|me pidieron)\s+/iu, '')
     .replace(/^(?:una?|el|la)\s+/iu, '')
   const title = cleaned
     .split(
-      /\b(?:para (?:la )?(?:asignatura|materia|clase)?|antes de|que vence|el d[ií]a)\b/iu,
+      /\b(?:para (?:la )?(?:asignatura|materia|clase|ramo)|antes de|que vence|el d[ií]a|(?:en|dentro de) \d{1,3} d[ií]as?)\b/iu,
     )[0]
     ?.split(/[,.!?]/u)[0]
     ?.trim()
   const fallback = 'Pendiente académico'
-  const result = title && title.length >= 2 ? title : fallback
+  const result = normalizeTaskWording(
+    stripRelativeDeadline(title && title.length >= 2 ? title : fallback),
+  )
   return `${result.charAt(0).toUpperCase()}${result.slice(1)}`.slice(0, 160)
+}
+
+const courseWordCorrections: Record<string, string> = {
+  administracion: 'Administración',
+  algebra: 'Álgebra',
+  analisis: 'Análisis',
+  biologia: 'Biología',
+  calculo: 'Cálculo',
+  comunicacion: 'Comunicación',
+  computacion: 'Computación',
+  economia: 'Economía',
+  estadistica: 'Estadística',
+  etica: 'Ética',
+  fisica: 'Física',
+  ingles: 'Inglés',
+  matematica: 'Matemática',
+  matematicas: 'Matemáticas',
+  programacion: 'Programación',
+  quimica: 'Química',
+  tecnologia: 'Tecnología',
+  ia: 'IA',
+  ti: 'TI',
+  tic: 'TIC',
+}
+
+const lowercaseCourseWords = new Set([
+  'de',
+  'del',
+  'el',
+  'en',
+  'la',
+  'las',
+  'los',
+  'para',
+  'y',
+])
+
+function formatCourseName(value: string | null | undefined) {
+  if (!value) return null
+  const cleaned = normalizeTaskWording(stripRelativeDeadline(value))
+    .replace(/[,.!?;:]+$/u, '')
+    .trim()
+  if (!cleaned) return null
+
+  const words = cleaned.split(' ')
+  const formatted = words.map((word, index) => {
+    const normalized = normalizeText(word)
+    const corrected = courseWordCorrections[normalized]
+    if (corrected) return corrected
+    if (index > 0 && lowercaseCourseWords.has(normalized)) return normalized
+    if (/^(?:i{1,3}|iv|v|vi{0,3}|ix|x)$/iu.test(word)) return word.toUpperCase()
+    if (/^[A-ZÁÉÍÓÚÜÑ\d]{2,}$/u.test(word)) return word
+    const lowered = word.toLocaleLowerCase('es-CL')
+    return `${lowered.charAt(0).toLocaleUpperCase('es-CL')}${lowered.slice(1)}`
+  })
+
+  return formatted.join(' ').slice(0, 300)
 }
 
 function taskCourseName(value: string) {
@@ -471,36 +672,280 @@ function taskCourseName(value: string) {
     /\bpara\s+(?:la\s+)?(?:asignatura|materia|clase)\s+([^,.!?]+)/iu,
   )?.[1]
   const generalAfterFor = value.match(/\bpara\s+([^,.!?]+)/iu)?.[1]?.trim()
+  const simpleSubject = value.match(
+    /\b(?:es|examen|prueba|certamen|control)\s+de\s+([\p{L}\d][^,.!?\n]{1,80}?)(?=\s+(?:y\s+)?(?:tengo que|debo|necesito|para\s+(?:el|la|un|una))\b|[,.!?\n]|$)/iu,
+  )?.[1]
   const safeGeneralAfterFor =
     generalAfterFor &&
-    !/^(?:que|poder|terminar|entregar|hoy|mañana|manana|el\s+\d|la\s+próxima|la\s+proxima)\b/iu.test(
+    !/^(?:que|poder|terminar|entregar|hoy|mañana|manana|el|la|los|las|un|una)\b/iu.test(
       generalAfterFor,
     )
       ? generalAfterFor
       : undefined
-  const result = (explicit ?? afterFor ?? safeGeneralAfterFor)?.trim()
-  return result ? result.slice(0, 300) : null
+  const result = (
+    explicit ??
+    afterFor ??
+    simpleSubject ??
+    safeGeneralAfterFor
+  )?.trim()
+  return formatCourseName(result)
+}
+
+function validTaskDueAt(value: string | null | undefined) {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+function relativeTaskDueAt(value: string, now = new Date()) {
+  const normalized = normalizeText(value)
+  const numericDeadline = [
+    ...normalized.matchAll(
+      /\b(?:(?:en|dentro de)\s+|(?:durante\s+)?(?:los\s+)?proximos\s+)(\d{1,3})\s+dias?\b/g,
+    ),
+  ].at(-1)?.[1]
+  let days: number | null = null
+
+  if (numericDeadline) {
+    days = Number(numericDeadline)
+  } else if (/\bpasado manana\b/.test(normalized)) {
+    days = 2
+  } else if (/\bmanana\b/.test(normalized)) {
+    days = 1
+  } else if (/\bhoy\b/.test(normalized)) {
+    days = 0
+  }
+
+  if (days === null || !Number.isInteger(days) || days < 0 || days > 365)
+    return null
+
+  const dueAt = new Date(now)
+  dueAt.setDate(dueAt.getDate() + days)
+  dueAt.setHours(23, 59, 0, 0)
+  return dueAt.toISOString()
+}
+
+function taskDescriptionLooksLikeTranscript(
+  description: string,
+  facts: string,
+) {
+  const normalizedDescription = normalizeText(description)
+  const normalizedFacts = normalizeText(facts)
+  if (!normalizedDescription) return true
+  if (/\r|\n/u.test(description)) return true
+  if (normalizedDescription === normalizedFacts) return true
+  const normalizedFactLines = facts
+    .split(/\r?\n/u)
+    .map(normalizeText)
+    .filter(Boolean)
+  if (normalizedFactLines.includes(normalizedDescription)) return true
+  return /^(?:podrias|puedes|me ayudas|ayudame|me gustaria|quiero|tengo que|debo|necesito)\b/.test(
+    normalizedDescription,
+  )
+}
+
+function finishTaskSentence(value: string, maxLength = 240) {
+  const cleaned = normalizeTaskWording(value).replace(/[.!?]+$/u, '')
+  if (cleaned.length + 1 <= maxLength) return `${cleaned}.`
+  const shortened = cleaned.slice(0, maxLength - 2)
+  const lastSpace = shortened.lastIndexOf(' ')
+  return `${shortened.slice(0, Math.max(lastSpace, 1)).trim()}…`
+}
+
+function naturalTaskDescription(
+  title: string,
+  courseName: string | null,
+  facts: string,
+) {
+  const normalizedTitle = normalizeText(title)
+  const normalizedFacts = normalizeText(facts)
+  const courseAlreadyInTitle = Boolean(
+    courseName && normalizedTitle.includes(normalizeText(courseName)),
+  )
+  const assessment = [
+    ['examen', 'el examen'],
+    ['prueba', 'la prueba'],
+    ['certamen', 'el certamen'],
+    ['control', 'el control'],
+    ['evaluacion', 'la evaluación'],
+  ].find(([keyword]) =>
+    new RegExp(`\\b${keyword}\\b`).test(normalizedFacts),
+  )?.[1]
+
+  let description = title
+  if (assessment && !normalizedTitle.includes(normalizeText(assessment))) {
+    description += ` para ${assessment}`
+    if (courseName) description += ` de ${courseName}`
+  } else if (courseName && !courseAlreadyInTitle) {
+    description += ` para ${courseName}`
+  }
+
+  return finishTaskSentence(description)
+}
+
+type PolishTaskDraftOptions = {
+  currentPrompt?: string
+  fallbackTitle?: string
+  previousDraft?: DucoTaskDraft | null
+}
+
+function preferFallbackTaskTitle(candidate: string, fallback: string) {
+  const normalizedCandidate = normalizeText(normalizeTaskWording(candidate))
+  const normalizedFallback = normalizeText(normalizeTaskWording(fallback))
+  const isGeneric = new Set([
+    'nueva tarea academica',
+    'pendiente academico',
+    'tarea',
+    'pendiente',
+    'actividad',
+  ]).has(normalizedCandidate)
+  return (
+    isGeneric ||
+    normalizedCandidate.length < 3 ||
+    (normalizedFallback.includes(normalizedCandidate) &&
+      normalizedFallback.length >= normalizedCandidate.length + 6)
+  )
+}
+
+function polishTaskDraft(
+  draft: DucoTaskDraft,
+  facts: string,
+  options: PolishTaskDraftOptions = {},
+): DucoTaskDraft {
+  const inferredTitle = options.fallbackTitle || taskTitle(facts)
+  const titleSource =
+    !draft.title || preferFallbackTaskTitle(draft.title, inferredTitle)
+      ? inferredTitle
+      : draft.title
+  const normalizedTitle = normalizeTaskWording(
+    stripRelativeDeadline(titleSource),
+  )
+  const title =
+    `${normalizedTitle.charAt(0).toUpperCase()}${normalizedTitle.slice(1)}`.slice(
+      0,
+      160,
+    )
+  const promptCourse = options.currentPrompt
+    ? taskCourseName(options.currentPrompt)
+    : null
+  const courseName = formatCourseName(
+    promptCourse ??
+      options.previousDraft?.courseName ??
+      taskCourseName(facts) ??
+      draft.courseName,
+  )
+  const dueAt =
+    relativeTaskDueAt(options.currentPrompt ?? '') ??
+    (options.currentPrompt &&
+    /\b(?:vence|entrega|para|antes de|fecha|plazo)\b/i.test(
+      normalizeText(options.currentPrompt),
+    )
+      ? validTaskDueAt(draft.dueAt)
+      : null) ??
+    validTaskDueAt(options.previousDraft?.dueAt) ??
+    relativeTaskDueAt(facts) ??
+    validTaskDueAt(draft.dueAt)
+  const description = taskDescriptionLooksLikeTranscript(
+    draft.description,
+    facts,
+  )
+    ? naturalTaskDescription(title, courseName, facts)
+    : finishTaskSentence(draft.description, 500)
+
+  return {
+    ...draft,
+    title,
+    description,
+    courseName,
+    dueAt,
+  }
 }
 
 function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
+  const activeDraft = input.activeTaskDraft
+  if (
+    activeDraft &&
+    (referencesActiveTaskDraft(input.prompt) ||
+      isSimpleDraftAffirmation(input.prompt))
+  ) {
+    const facts = userMessages(input).join('\n').trim().slice(-1_000)
+    return {
+      reply:
+        'El borrador quedó guardado para que lo revises. La tarea todavía no se ha creado; puedes modificar sus datos antes de confirmar.',
+      action: {
+        type: 'create_task',
+        label: 'Revisar y crear',
+        draft: polishTaskDraft(activeDraft.draft, facts, {
+          currentPrompt: input.prompt,
+          previousDraft: activeDraft.draft,
+        }),
+        draftId: activeDraft.id,
+        draftStatus: 'ready_for_review',
+        task: null,
+      },
+      provider: 'local',
+    }
+  }
+
+  const recoveredContext = wantsRecoveredTaskDraft(input)
+    ? recoverableTaskContext(input)
+    : null
+  if (recoveredContext) {
+    const normalizedFacts = normalizeText(recoveredContext.facts)
+    const draft = polishTaskDraft(
+      {
+        title: taskTitle(recoveredContext.source),
+        description: recoveredContext.facts,
+        courseName: taskCourseName(recoveredContext.facts),
+        dueAt: null,
+        priority: /\b(urgente|hoy|manana|vence pronto)\b/.test(normalizedFacts)
+          ? 'high'
+          : 'medium',
+      },
+      recoveredContext.facts,
+      { currentPrompt: input.prompt },
+    )
+    return {
+      reply:
+        'El borrador quedó guardado para que lo revises. La tarea todavía no se ha creado; puedes modificar sus datos antes de confirmar.',
+      action: {
+        type: 'create_task',
+        label: 'Revisar y crear',
+        draft,
+        draftId: null,
+        draftStatus: 'ready_for_review',
+        task: null,
+      },
+      provider: 'local',
+    }
+  }
+
   if (!isTaskIntent(input.prompt)) return null
   const normalized = normalizeText(input.prompt)
-  const draft: DucoTaskDraft = {
-    title: taskTitle(input.prompt),
-    description: input.prompt.trim().slice(0, 1_000),
-    courseName: taskCourseName(input.prompt),
-    dueAt: null,
-    priority: /\b(urgente|hoy|manana|vence pronto)\b/.test(normalized)
-      ? 'high'
-      : 'medium',
-  }
+  const source = taskSourceText(input)
+  const facts = userMessages(input).join('\n').trim().slice(-1_000)
+  const draft = polishTaskDraft(
+    {
+      title: taskTitle(source),
+      description: facts,
+      courseName: taskCourseName(facts),
+      dueAt: null,
+      priority: /\b(urgente|hoy|manana|vence pronto)\b/.test(normalized)
+        ? 'high'
+        : 'medium',
+    },
+    facts,
+    { currentPrompt: input.prompt },
+  )
   return {
     reply:
       'Puedo ayudarte a entender los contenidos y a dividir el trabajo en pasos, pero no realizar una entrega completa por ti. También puedo registrar este trabajo en “Próximas tareas” para que lo organices; revisa y completa el borrador antes de crearlo.',
     action: {
       type: 'create_task',
-      label: 'Crear pendiente',
+      label: 'Revisar y crear',
       draft,
+      draftId: null,
+      draftStatus: 'ready_for_review',
       task: null,
     },
     provider: 'local',
@@ -508,7 +953,7 @@ function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
 }
 
 function deterministicWorkflow(input: BuildDucoReplyInput) {
-  return safetyDecision(input) ?? requestDecision(input) ?? taskDecision(input)
+  return safetyDecision(input) ?? requestDecision(input)
 }
 
 function buildModelInput(input: BuildDucoReplyInput) {
@@ -526,8 +971,19 @@ function buildModelInput(input: BuildDucoReplyInput) {
         `- ${task.title}; prioridad=${task.priority}; estado=${task.status}; vence=${task.dueDate ?? 'sin fecha'}`,
     )
     .join('\n')
+  const activeDraft = input.activeTaskDraft
+    ? [
+        `id=${input.activeTaskDraft.id}`,
+        `estado=${input.activeTaskDraft.status}`,
+        `titulo=${input.activeTaskDraft.draft.title}`,
+        `descripcion=${input.activeTaskDraft.draft.description}`,
+        `asignatura=${input.activeTaskDraft.draft.courseName ?? 'sin asignatura'}`,
+        `vence=${input.activeTaskDraft.draft.dueAt ?? 'sin fecha'}`,
+        `prioridad=${input.activeTaskDraft.draft.priority}`,
+      ].join('; ')
+    : '(sin borrador activo)'
 
-  return `Contexto reciente:\n${conversation || '(sin mensajes anteriores)'}\n\nTareas pendientes:\n${tasks || '(sin tareas pendientes)'}\n\nMensaje actual del estudiante:\n${input.prompt}`
+  return `Contexto reciente:\n${conversation || '(sin mensajes anteriores)'}\n\nBorrador de tarea activo validado:\n${activeDraft}\n\nTareas pendientes:\n${tasks || '(sin tareas pendientes)'}\n\nMensaje actual del estudiante:\n${input.prompt}`
 }
 
 function parseModelOutput(value: unknown, provider: 'ollama' | 'openai') {
@@ -545,18 +1001,24 @@ function parseModelOutput(value: unknown, provider: 'ollama' | 'openai') {
   if (output.action === 'create_task') {
     if (output.taskTitle.length < 2)
       throw new Error('DUCO AI returned an incomplete task draft')
+    const parsedDueAt = output.taskDueAt ? new Date(output.taskDueAt) : null
     return {
       reply: output.reply,
       action: {
         type: 'create_task',
-        label: 'Crear pendiente',
+        label: 'Revisar y crear',
         draft: {
           title: output.taskTitle,
           description: output.taskDescription,
           courseName: output.taskCourseName || null,
-          dueAt: output.taskDueAt || null,
+          dueAt:
+            parsedDueAt && !Number.isNaN(parsedDueAt.getTime())
+              ? parsedDueAt.toISOString()
+              : null,
           priority: output.taskPriority,
         },
+        draftId: null,
+        draftStatus: 'ready_for_review',
         task: null,
       },
       provider,
@@ -659,20 +1121,150 @@ async function queryOpenAi(input: BuildDucoReplyInput) {
   return parseModelOutput(outputText, 'openai')
 }
 
-function stripUnvalidatedAction(result: DucoAiResult): DucoAiResult {
-  // Los botones se habilitan únicamente por las reglas deterministas anteriores.
-  // El modelo conserva libertad para conversar, pero no para saltarse requisitos.
-  return result.action ? { ...result, action: null } : result
+function falselyClaimsDraft(reply: string) {
+  const normalized = normalizeText(reply)
+  const mutationBeforeResource =
+    /\b(?:prepare|preparado|deje|dejado|guarde|guardado|registre|registrado|agende|agendado|quedo|esta|listo|lista)\b.{0,80}\b(?:borrador|pendiente|tarea|actividad)\b/.test(
+      normalized,
+    )
+  const resourceBeforeMutation =
+    /\b(?:borrador|pendiente|tarea|actividad)\b.{0,80}\b(?:quedo|esta|fue)\b.{0,40}\b(?:guardad|preparad|registrad|agendad|list|cread)\w*/.test(
+      normalized,
+    )
+  return mutationBeforeResource || resourceBeforeMutation
+}
+
+function safeReplyWithoutAction(result: DucoAiResult) {
+  return falselyClaimsDraft(result.reply)
+    ? {
+        ...result,
+        reply:
+          'Todavía no existe un borrador listo para revisión porque falta confirmar la acción o identificar la tarea. Dime “guardar como tarea” junto con lo que debes hacer, o continúa con los datos que faltan.',
+        action: null,
+      }
+    : { ...result, action: null }
+}
+
+function mergeTaskDraft(
+  current: DucoTaskDraft,
+  proposed: DucoTaskDraft,
+  prompt: string,
+): DucoTaskDraft {
+  const normalized = normalizeText(prompt)
+  const changesCourse =
+    hasCourseDetails(prompt) ||
+    /\b(?:es|examen|prueba|certamen|control)\s+de\s+[a-z0-9]/.test(normalized)
+  const changesDueAt =
+    /\b(?:vence|entrega|para|antes de|fecha|plazo)\b.{0,30}\b(?:hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|\d{1,2}(?:[/-]\d{1,2})?)\b/.test(
+      normalized,
+    ) || /\ben\s+\d{1,3}\s+dias?\b/.test(normalized)
+  const changesPriority =
+    /\b(?:urgente|prioridad\s+(?:alta|media|baja)|poco urgente)\b/.test(
+      normalized,
+    )
+  const genericTitles = new Set([
+    'Nueva tarea académica',
+    'Pendiente académico',
+  ])
+
+  return {
+    title:
+      genericTitles.has(current.title) && proposed.title
+        ? proposed.title
+        : current.title,
+    description: current.description || proposed.description,
+    courseName:
+      changesCourse && proposed.courseName
+        ? proposed.courseName
+        : current.courseName,
+    dueAt: changesDueAt && proposed.dueAt ? proposed.dueAt : current.dueAt,
+    priority: changesPriority ? proposed.priority : current.priority,
+  }
+}
+
+function validatesTaskAction(input: BuildDucoReplyInput) {
+  return (
+    isTaskIntent(input.prompt) ||
+    Boolean(
+      input.activeTaskDraft &&
+      (referencesActiveTaskDraft(input.prompt) ||
+        isSimpleDraftAffirmation(input.prompt)),
+    )
+  )
+}
+
+function validateModelResult(
+  input: BuildDucoReplyInput,
+  result: DucoAiResult,
+): DucoAiResult {
+  if (result.action?.type === 'create_task' && validatesTaskAction(input)) {
+    const continuesActiveDraft = Boolean(
+      input.activeTaskDraft &&
+      (referencesActiveTaskDraft(input.prompt) ||
+        isSimpleDraftAffirmation(input.prompt)),
+    )
+    const proposedDraft =
+      continuesActiveDraft && input.activeTaskDraft
+        ? mergeTaskDraft(
+            input.activeTaskDraft.draft,
+            result.action.draft,
+            input.prompt,
+          )
+        : result.action.draft
+    const facts = userMessages(input).join('\n').trim().slice(-1_000)
+    const draft = polishTaskDraft(proposedDraft, facts, {
+      currentPrompt: input.prompt,
+      fallbackTitle: continuesActiveDraft
+        ? undefined
+        : taskTitle(taskSourceText(input)),
+      previousDraft: continuesActiveDraft ? input.activeTaskDraft?.draft : null,
+    })
+    return {
+      ...result,
+      reply:
+        'El borrador quedó guardado para que lo revises. La tarea todavía no se ha creado; puedes modificar sus datos antes de confirmar.',
+      action: {
+        ...result.action,
+        label: 'Revisar y crear',
+        draft,
+        draftId: continuesActiveDraft ? input.activeTaskDraft?.id : null,
+        draftStatus: 'ready_for_review',
+        task: null,
+      },
+    }
+  }
+
+  if (result.action) {
+    const fallback = taskDecision(input)
+    return fallback
+      ? { ...fallback, provider: result.provider }
+      : safeReplyWithoutAction(result)
+  }
+
+  const fallback = taskDecision(input)
+  return fallback
+    ? { ...fallback, provider: result.provider }
+    : safeReplyWithoutAction(result)
+}
+
+function enforceActionReplyInvariant(result: DucoAiResult) {
+  return result.action ? result : safeReplyWithoutAction(result)
 }
 
 export async function buildDucoAiReply(
   input: BuildDucoReplyInput,
 ): Promise<DucoAiResult> {
   const workflow = deterministicWorkflow(input)
-  if (workflow) return workflow
+  if (workflow) return enforceActionReplyInvariant(workflow)
 
   if (env.DUCO_AI_PROVIDER === 'local') {
-    return { reply: input.localReply, action: null, provider: 'local' }
+    return enforceActionReplyInvariant(
+      taskDecision(input) ?? {
+        reply: input.localReply,
+        action: null,
+        provider: 'local',
+      },
+    )
   }
 
   try {
@@ -680,12 +1272,18 @@ export async function buildDucoAiReply(
       env.DUCO_AI_PROVIDER === 'openai'
         ? await queryOpenAi(input)
         : await queryOllama(input)
-    return stripUnvalidatedAction(result)
+    return enforceActionReplyInvariant(validateModelResult(input, result))
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error'
     console.warn(
       `[DUCO] ${env.DUCO_AI_PROVIDER} unavailable; using local fallback: ${reason}`,
     )
-    return { reply: input.localReply, action: null, provider: 'local' }
+    return enforceActionReplyInvariant(
+      taskDecision(input) ?? {
+        reply: input.localReply,
+        action: null,
+        provider: 'local',
+      },
+    )
   }
 }

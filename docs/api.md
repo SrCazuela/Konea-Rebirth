@@ -509,18 +509,77 @@ Una notificación contiene `id`, `type`, `title`, `body`, `href`, `resourceId`,
 `href` usa referencias internas como `user:<uuid>`, `post:<uuid>`,
 `chat:<uuid>` o `report:<uuid>`; no debe abrirse como URL externa.
 
-## DUCO local
+## DUCO
 
-| Método   | Ruta             | Entrada                   | Respuesta                                            |
-| -------- | ---------------- | ------------------------- | ---------------------------------------------------- |
-| `GET`    | `/duco/messages` | —                         | `{messages}`, hasta 100 en orden cronológico         |
-| `POST`   | `/duco/messages` | `{content}` o `{message}` | `201 {userMessage, assistantMessage, openTaskCount}` |
-| `DELETE` | `/duco/messages` | —                         | `{deletedCount}`                                     |
+Todas las rutas exigen sesión. El proveedor se configura en la API con
+`DUCO_AI_PROVIDER=local|ollama|openai`; `local` usa reglas determinísticas,
+`ollama` ejecuta el modelo configurado en el equipo y `openai` usa el modelo de
+`OPENAI_MODEL` (OpenAI Luna en la configuración de referencia).
 
-Cada mensaje contiene `id`, `role` (`user | assistant`), `content` y
-`createdAt`. La entrada admite 1–2.000 caracteres. DUCO responde localmente a
-saludos y consultas de tareas/organización usando tareas no completadas del
-usuario; no llama a una API externa.
+| Método   | Ruta                        | Entrada                           | Respuesta                                                        |
+| -------- | --------------------------- | --------------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/duco/messages`            | —                                 | `{messages}`, hasta 100 en orden cronológico                     |
+| `POST`   | `/duco/messages`            | `{content}` o `{message}`         | `201 {userMessage, assistantMessage, openTaskCount, aiProvider}` |
+| `DELETE` | `/duco/messages`            | —                                 | `{deletedCount}`                                                 |
+| `GET`    | `/duco/drafts`              | —                                 | `{drafts}`, borradores activos y vigentes                        |
+| `DELETE` | `/duco/drafts/:draftId`     | —                                 | `{draft}` con estado `cancelled`                                 |
+| `POST`   | `/duco/tasks`               | borrador y datos finales editados | `201 {task, action}`                                             |
+| `GET`    | `/duco/requests`            | —                                 | `{requests}` propias                                             |
+| `POST`   | `/duco/requests`            | borrador de solicitud revisado    | `201 {request}`                                                  |
+| `GET`    | `/duco/requests/all`        | rol de moderación                 | `{requests}`                                                     |
+| `PATCH`  | `/duco/requests/:requestId` | rol de moderación y `{status}`    | `{request}`                                                      |
+
+Cada mensaje contiene `id`, `role` (`user | assistant`), `content`, `action` y
+`createdAt`. La entrada admite 1–2.000 caracteres. `aiProvider` informa qué
+proveedor produjo realmente la respuesta y puede ser `local` cuando el
+proveedor generativo no está disponible.
+
+El modelo solo interpreta la conversación y propone una salida estructurada.
+La API valida que cualquier acción esté respaldada por los mensajes del
+estudiante; una respuesta del modelo no crea una tarea ni envía una solicitud
+por sí sola.
+
+### Borradores de tareas
+
+Una acción `create_task` incluye `draft`, `draftId`, `draftStatus` y `task`. El
+borrador contiene `title`, `description`, `courseName`, `dueAt` y `priority`.
+Cuando está listo para revisión, `task` continúa siendo `null` y la interfaz
+muestra el formulario editable.
+
+Los borradores se persisten durante 30 días. Su ciclo admite
+`collecting_information`, `ready_for_review`, `confirmed`, `cancelled` y
+`expired`; `GET /duco/drafts` devuelve únicamente los estados activos
+(`collecting_information` o `ready_for_review`) cuya fecha `expiresAt` todavía
+no venció. Cada elemento también incluye `kind`, `payload`, `sourceMessageId`,
+`completedResourceId`, `createdAt` y `updatedAt`.
+
+`DELETE /duco/drafts/:draftId` descarta el borrador de forma lógica cambiando
+su estado a `cancelled`; no elimina una tarea ya confirmada. Borrar el historial
+con `DELETE /duco/messages` tampoco borra los borradores de tareas, por lo que
+pueden recuperarse desde `/duco/drafts`.
+
+Para confirmar un borrador, el cliente envía los valores ya revisados:
+
+```json
+{
+  "draftId": "uuid",
+  "title": "Estudiar para el examen de Inglés",
+  "description": "Repasar el verbo to be",
+  "courseName": "Inglés",
+  "dueAt": "2026-09-06T18:00:00-03:00",
+  "priority": "medium"
+}
+```
+
+`POST /duco/tasks` exige `draftId` o, para clientes anteriores,
+`sourceMessageId`. La operación crea el pendiente y marca el borrador como
+`confirmed` dentro de la misma transacción. Repetir la confirmación, confirmar
+un borrador cancelado/expirado o usar uno ajeno produce conflicto o no
+encontrado según corresponda.
+
+Las solicitudes institucionales siguen el mismo principio de revisión humana:
+DUCO puede proponer un formulario `manage_request`, pero solo
+`POST /duco/requests` lo envía después de que el usuario revisa sus campos.
 
 ## Reportes
 

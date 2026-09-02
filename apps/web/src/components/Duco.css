@@ -888,6 +888,274 @@
   background: #ebf8f1;
 }
 
+.duco-task-draft-card {
+  width: min(100%, 560px);
+  padding: 15px;
+  border: 1px solid #d9caec;
+  border-radius: 15px;
+  color: #3a3044;
+  background:
+    radial-gradient(circle at 100% 0, rgb(126 76 194 / 9%), transparent 11rem),
+    #fdfbff;
+  box-shadow: 0 9px 24px rgb(55 32 82 / 7%);
+}
+
+.duco-task-draft-card > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.duco-task-draft-card__mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(145deg, #8350cb, #673ab7);
+}
+
+.duco-task-draft-card__mark .duco-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.duco-task-draft-card > header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.duco-task-draft-card__eyebrow,
+.duco-task-draft-card h4,
+.duco-task-draft-card__description,
+.duco-task-draft-card__note {
+  margin: 0;
+}
+
+.duco-task-draft-card__eyebrow {
+  color: #7650aa;
+  font-size: 0.59rem;
+  font-weight: 820;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.duco-task-draft-card h4 {
+  margin-top: 3px;
+  font-size: 0.79rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.duco-task-draft-card__status {
+  padding: 5px 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #67409d;
+  background: #eee5fa;
+  font-size: 0.56rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.duco-task-draft-card__description {
+  margin-top: 11px;
+  color: #6a6073;
+  font-size: 0.69rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.duco-task-draft-card__details {
+  margin-top: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.duco-task-draft-card__details span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #62546e;
+  background: #f1edf5;
+  font-size: 0.58rem;
+  font-weight: 650;
+}
+
+.duco-task-draft-card__note {
+  margin-top: 11px;
+  color: #7c7086;
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.duco-task-draft-card > footer {
+  margin-top: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duco-message__request-action .duco-task-draft-card > footer button,
+.duco-task-draft-card > footer button {
+  min-height: 36px;
+  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.67rem;
+  font-weight: 760;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.duco-message__request-action .duco-task-draft-card__review,
+.duco-task-draft-card__review {
+  border: 1px solid #7141b9;
+  color: #fff;
+  background: linear-gradient(145deg, #8050cb, #673ab7);
+}
+
+.duco-message__request-action .duco-task-draft-card__discard,
+.duco-task-draft-card__discard {
+  border: 1px solid #dfd5e7;
+  color: #6f6577;
+  background: #fff;
+}
+
+.duco-message__request-action
+  .duco-task-draft-card
+  > footer
+  button:hover:not(:disabled),
+.duco-task-draft-card > footer button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.duco-task-draft-card > footer button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.duco-task-draft-card > footer .duco-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.duco-task-draft-card--collecting_information {
+  border-style: dashed;
+}
+
+.duco-task-draft-card--confirmed {
+  border-color: #c7e7d7;
+  background: #f4fcf8;
+}
+
+.duco-task-draft-card--confirmed .duco-task-draft-card__mark {
+  background: #3f906d;
+}
+
+.duco-task-draft-card--confirmed .duco-task-draft-card__status {
+  color: #277452;
+  background: #dff4e9;
+}
+
+.duco-task-draft-card--cancelled,
+.duco-task-draft-card--expired {
+  border-color: #e2dce6;
+  background: #faf9fb;
+  box-shadow: none;
+}
+
+.duco-task-draft-card--cancelled .duco-task-draft-card__mark,
+.duco-task-draft-card--expired .duco-task-draft-card__mark {
+  color: #756b7d;
+  background: #e9e5ec;
+}
+
+.duco-task-draft-card--cancelled .duco-task-draft-card__status,
+.duco-task-draft-card--expired .duco-task-draft-card__status {
+  color: #756b7d;
+  background: #ece8ef;
+}
+
+.duco-orphan-drafts {
+  width: min(100%, 690px);
+  margin: 24px auto 0;
+  padding-top: 18px;
+  border-top: 1px solid #e9e1ef;
+}
+
+.duco-orphan-drafts > header {
+  margin-bottom: 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #5f477d;
+}
+
+.duco-orphan-drafts > header > .duco-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.duco-orphan-drafts h3,
+.duco-orphan-drafts p {
+  margin: 0;
+}
+
+.duco-orphan-drafts h3 {
+  font-size: 0.75rem;
+}
+
+.duco-orphan-drafts > header p {
+  margin-top: 2px;
+  color: #8b8292;
+  font-size: 0.6rem;
+}
+
+.duco-orphan-drafts__list {
+  display: grid;
+  gap: 10px;
+}
+
+.duco-orphan-drafts__list .duco-task-draft-card {
+  width: 100%;
+}
+
+.duco-drafts-error {
+  width: min(100%, 690px);
+  margin: 18px auto 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #efccd2;
+  border-radius: 11px;
+  color: #9e3041;
+  background: #fff5f6;
+  font-size: 0.65rem;
+}
+
+.duco-drafts-error button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid #e5bcc3;
+  border-radius: 8px;
+  color: inherit;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 720;
+}
+
 .duco-message__failure {
   margin: 7px 3px 0;
   display: flex;

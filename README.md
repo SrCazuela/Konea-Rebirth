@@ -31,8 +31,9 @@ El repositorio implementa estos dominios:
   que expiran, crean una conexión y abren un chat directo.
 - **Actividad y convivencia:** notificaciones, reportes, reglas locales de
   contenido y cola de aprobación de publicaciones para moderación.
-- **DUCO local:** historial privado y orientación determinística basada en las
-  tareas pendientes del usuario, sin enviar datos a una IA externa.
+- **DUCO:** asistente de organización con proveedor configurable (`local`,
+  Ollama u OpenAI Luna), historial privado, contexto de tareas y borradores
+  persistentes que el usuario siempre revisa antes de crear o enviar algo.
 
 La API contiene el alcance completo anterior que se decidió rescatar. No se
 copiaron secretos, adaptadores rotos ni controles que en el proyecto legacy eran
@@ -85,12 +86,25 @@ Después de crear `.env` e instalar las dependencias por primera vez, ejecuta
 `iniciar.bat` con doble clic. El iniciador comprueba las herramientas, abre
 Docker Desktop y Ollama si todavía no responden, espera el healthcheck de
 PostgreSQL, aplica todas las migraciones pendientes y levanta la API y la web.
+Cuando `DUCO_AI_PROVIDER=openai`, también valida la clave y el acceso al modelo
+configurado mediante el catálogo de modelos, sin generar texto ni consumir
+tokens. Si Konea ya está abierta y ambos servicios responden, el iniciador lo
+reconoce como un estado correcto en vez de fallar por los puertos ocupados.
+Si solo la API o la web quedó activa, reutiliza el servicio sano y levanta el
+que falta.
+
+Para preparar Docker, la base de datos, las migraciones, la cuenta de desarrollo
+y el proveedor de IA sin iniciar la API ni la web, usa:
+
+```powershell
+.\iniciar.bat -PrepareOnly
+```
 
 El modelo de Ollama no se descarga silenciosamente porque ocupa varios GB. Si
 falta el modelo configurado, el iniciador muestra el comando `ollama pull` que
 debes ejecutar una sola vez. `Ctrl+C` detiene API y web; PostgreSQL y Ollama
-permanecen activos para que el siguiente arranque sea más rápido. Si Windows
-pregunta si deseas terminar el trabajo por lotes, responde `S`.
+permanecen activos para que el siguiente arranque sea más rápido. Windows puede
+preguntar si deseas terminar el trabajo por lotes; responde `S`.
 
 ### Inicio manual
 
@@ -126,28 +140,49 @@ de Konea ni el comportamiento de la aplicación.
 
 ### Variables de entorno
 
-| Variable                 | Uso                                         | Valor local de referencia |
-| ------------------------ | ------------------------------------------- | ------------------------- |
-| `POSTGRES_DB`            | Base creada por Compose                     | `konea`                   |
-| `POSTGRES_USER`          | Usuario local de PostgreSQL                 | `konea`                   |
-| `POSTGRES_PASSWORD`      | Contraseña local                            | reemplazar el ejemplo     |
-| `POSTGRES_PORT`          | Puerto publicado por Docker                 | `5432`                    |
-| `DATABASE_URL`           | Conexión usada por API y migraciones        | PostgreSQL local          |
-| `NODE_ENV`               | `development`, `test` o `production`        | `development`             |
-| `API_HOST`               | Interfaz donde escucha Express              | `127.0.0.1`               |
-| `API_PORT`               | Puerto HTTP de Express                      | `3000`                    |
-| `CORS_ORIGIN`            | Orígenes web permitidos, separados por coma | `http://localhost:5173`   |
-| `SESSION_TTL_DAYS`       | Vigencia de una sesión, entre 1 y 30 días   | `7`                       |
-| `POSTS_REQUIRE_APPROVAL` | Activa la cola para posts de estudiantes    | `false`                   |
-| `DUCO_AI_PROVIDER`       | Proveedor de DUCO: local, Ollama u OpenAI   | `ollama`                  |
-| `OLLAMA_BASE_URL`        | Dirección del servicio local de Ollama      | `http://127.0.0.1:11434`  |
-| `OLLAMA_MODEL`           | Modelo local utilizado por DUCO             | `qwen3.5:4b`              |
-| `DUCO_AI_TIMEOUT_MS`     | Tiempo máximo de respuesta de la IA         | `120000`                  |
-| `OPENAI_API_KEY`         | Clave privada; solo cuando se usa OpenAI    | sin valor                 |
-| `OPENAI_MODEL`           | Modelo utilizado con el proveedor OpenAI    | `gpt-5.6-luna`            |
-| `VITE_API_URL`           | Prefijo/base consumido por la web           | `/api/v1`                 |
+| Variable                 | Uso                                         | Valor local de referencia   |
+| ------------------------ | ------------------------------------------- | --------------------------- |
+| `POSTGRES_DB`            | Base creada por Compose                     | `konea`                     |
+| `POSTGRES_USER`          | Usuario local de PostgreSQL                 | `konea`                     |
+| `POSTGRES_PASSWORD`      | Contraseña local                            | reemplazar el ejemplo       |
+| `POSTGRES_PORT`          | Puerto publicado por Docker                 | `5432`                      |
+| `DATABASE_URL`           | Conexión usada por API y migraciones        | PostgreSQL local            |
+| `NODE_ENV`               | `development`, `test` o `production`        | `development`               |
+| `API_HOST`               | Interfaz donde escucha Express              | `127.0.0.1`                 |
+| `API_PORT`               | Puerto HTTP de Express                      | `3000`                      |
+| `CORS_ORIGIN`            | Orígenes web permitidos, separados por coma | `http://localhost:5173`     |
+| `SESSION_TTL_DAYS`       | Vigencia de una sesión, entre 1 y 30 días   | `7`                         |
+| `POSTS_REQUIRE_APPROVAL` | Activa la cola para posts de estudiantes    | `false`                     |
+| `DUCO_AI_PROVIDER`       | Proveedor de DUCO: local, Ollama u OpenAI   | `ollama`                    |
+| `OLLAMA_BASE_URL`        | Dirección del servicio local de Ollama      | `http://127.0.0.1:11434`    |
+| `OLLAMA_MODEL`           | Modelo local utilizado por DUCO             | `qwen3.5:4b`                |
+| `DUCO_AI_TIMEOUT_MS`     | Tiempo máximo de respuesta de la IA         | `120000`                    |
+| `OPENAI_API_KEY`         | Clave privada; solo cuando se usa OpenAI    | sin valor                   |
+| `OPENAI_MODEL`           | Modelo utilizado con el proveedor OpenAI    | `gpt-5.6-luna`              |
+| `OPENAI_BASE_URL`        | Base de la API compatible con OpenAI        | `https://api.openai.com/v1` |
+| `VITE_API_URL`           | Prefijo/base consumido por la web           | `/api/v1`                   |
 
 No uses las credenciales de ejemplo en producción ni subas `.env` a GitHub.
+
+## DUCO y borradores revisables
+
+`DUCO_AI_PROVIDER` permite elegir entre tres modos sin cambiar la interfaz:
+
+- `local`: reglas determinísticas y fallback sin modelo generativo;
+- `ollama`: modelo generativo ejecutado en el equipo mediante Ollama;
+- `openai`: modelo configurado en `OPENAI_MODEL`, actualmente OpenAI Luna.
+
+Ollama y OpenAI interpretan el contexto y devuelven una respuesta estructurada,
+pero no tienen permiso directo para escribir acciones de negocio. La API
+valida la intención, descarta acciones que no estén respaldadas por lo dicho
+por el estudiante y persiste la propuesta como borrador. La clave de OpenAI
+solo vive en la API; nunca se envía al navegador. Si se selecciona `openai`, el
+contexto necesario para responder sí se transmite al endpoint configurado.
+
+Los borradores de tareas permanecen en PostgreSQL durante 30 días. El usuario
+puede retomarlos aunque borre el historial, revisar y modificar sus campos,
+confirmarlos para crear el pendiente o descartarlos. DUCO nunca crea una tarea,
+envía una solicitud institucional ni contacta a otra persona por sí solo.
 
 ## Roles y moderación
 
@@ -251,8 +286,9 @@ archivos, notificaciones, DUCO y reportes.
   aislado por institución.
 - No hay recuperación/verificación de correo, segundo factor, antivirus de
   archivos ni panel de administración de cuentas.
-- DUCO es un asistente local de reglas; no es un modelo generativo ni debe
-  presentarse como asesoría académica oficial.
+- Las respuestas generativas de DUCO pueden equivocarse y no constituyen
+  asesoría académica o institucional oficial. Las acciones sensibles se
+  validan en la API y siempre requieren revisión y confirmación del usuario.
 
 ## Migración futura a Supabase y Hostinger
 

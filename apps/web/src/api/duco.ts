@@ -22,6 +22,12 @@ export type DucoRequestUrgency = 'low' | 'medium' | 'high'
 export type DucoRequestStatus =
   'pending' | 'reviewing' | 'resolved' | 'rejected'
 export type DucoTaskPriority = 'low' | 'medium' | 'high'
+export type DucoDraftStatus =
+  | 'collecting_information'
+  | 'ready_for_review'
+  | 'confirmed'
+  | 'cancelled'
+  | 'expired'
 
 export type DucoRequestDraft = {
   category: DucoRequestCategory
@@ -49,6 +55,8 @@ export type DucoCreateTaskAction = {
   type: 'create_task'
   label: string
   draft: DucoTaskDraft
+  draftId?: string | null
+  draftStatus?: DucoDraftStatus
   task?: { id: string } | null
 }
 
@@ -74,6 +82,18 @@ export type DucoMessage = {
   action: DucoMessageAction | null
   request: Pick<DucoSupportRequest, 'id' | 'status'> | null
   createdAt: string
+}
+
+export type DucoDraft = {
+  id: string
+  kind: string
+  status: DucoDraftStatus
+  payload: Partial<DucoTaskDraft>
+  sourceMessageId: string | null
+  completedResourceId: string | null
+  expiresAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type DucoReply = {
@@ -166,13 +186,36 @@ export async function getDucoSupportRequests(signal?: AbortSignal) {
   return response.requests
 }
 
+export async function getDucoDrafts(signal?: AbortSignal) {
+  const response = await ducoRequest<{ drafts: DucoDraft[] }>('/duco/drafts', {
+    signal,
+  })
+  return response.drafts
+}
+
+export async function cancelDucoDraft(draftId: string) {
+  const response = await ducoRequest<{ draft?: DucoDraft } | undefined>(
+    `/duco/drafts/${encodeURIComponent(draftId)}`,
+    { method: 'DELETE' },
+  )
+  return response?.draft
+}
+
 export async function createDucoTask(
-  sourceMessageId: string,
+  reference: {
+    draftId?: string | null
+    sourceMessageId?: string | null
+  },
   draft: DucoTaskDraft,
 ) {
   const response = await ducoRequest<{ task: { id: string } }>('/duco/tasks', {
     method: 'POST',
-    body: JSON.stringify({ sourceMessageId, ...draft }),
+    body: JSON.stringify({
+      ...(reference.draftId
+        ? { draftId: reference.draftId }
+        : { sourceMessageId: reference.sourceMessageId }),
+      ...draft,
+    }),
   })
   return response.task
 }

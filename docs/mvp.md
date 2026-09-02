@@ -19,8 +19,9 @@ La pregunta que responde el MVP es:
 - **Moderador:** revisa contenido y reportes sin recibir acceso a secretos o
   contraseñas.
 - **Administrador:** incluye moderación y eliminación administrativa de posts.
-- **DUCO local:** responde al usuario autenticado a partir de sus propias tareas
-  pendientes, sin integración de terceros.
+- **DUCO:** organiza el contexto académico del usuario mediante reglas locales,
+  Ollama o OpenAI Luna; toda acción propuesta se valida en la API y requiere
+  confirmación humana.
 
 ## Funciones implementadas
 
@@ -84,13 +85,19 @@ La pregunta que responde el MVP es:
 - Centro de revisión de publicaciones con aprobación o rechazo motivado.
 - Reglas locales mínimas de convivencia antes de guardar posts/comentarios.
 
-### 6. DUCO local
+### 6. DUCO
 
 - Conversación individual persistida en PostgreSQL.
 - Resumen y priorización de tareas pendientes asignadas al usuario.
 - Historial recuperable y opción de borrarlo.
-- Respuestas determinísticas y transparentes; ningún contenido sale hacia un
-  proveedor de IA.
+- Proveedor configurable: reglas determinísticas (`local`), IA generativa en el
+  equipo (`ollama`) u OpenAI Luna (`openai`).
+- Interpretación generativa con salida estructurada y acciones validadas por el
+  backend antes de mostrarse.
+- Borradores de tareas persistentes durante 30 días, recuperables aunque se
+  borre la conversación.
+- Formulario editable para revisar, confirmar o descartar cada borrador. DUCO no
+  crea tareas, envía solicitudes ni contacta personas por sí solo.
 
 ## Reglas de aceptación relevantes
 
@@ -111,6 +118,8 @@ La pregunta que responde el MVP es:
 | Archivo disfrazado con MIME permitido              | Rechazado por firma binaria                                            |
 | Usuario reporta un recurso invisible               | Se responde como no disponible                                         |
 | `POSTS_REQUIRE_APPROVAL=true` y publica estudiante | Post `pending` visible al autor y moderación                           |
+| DUCO propone guardar una tarea                     | Persiste un borrador; no crea el pendiente sin confirmación            |
+| Usuario borra el chat con un borrador activo       | El historial desaparece y el borrador sigue recuperable                |
 
 Estos casos están respaldados por pruebas de integración en `apps/api/src`.
 
@@ -127,11 +136,13 @@ B y moderador; opcionalmente un profesor.
 4. Crear un grupo, enviar un PDF etiquetado, asignar una tarea y votar una
    encuesta.
 5. Mostrar cómo aumentan no leídos y notificaciones en la otra sesión.
-6. Preguntar a DUCO “organiza mis tareas” y comprobar que usa la tarea creada.
-7. Reportar una publicación y, con la cuenta moderadora, revisar el reporte.
-8. Con aprobación activada, crear un post como estudiante y resolverlo en el
+6. Contar a DUCO que hay un examen, pedir guardarlo, revisar el formulario y
+   confirmar que recién entonces aparece en próximos pendientes.
+7. Preguntar a DUCO “organiza mis tareas” y comprobar que usa la tarea creada.
+8. Reportar una publicación y, con la cuenta moderadora, revisar el reporte.
+9. Con aprobación activada, crear un post como estudiante y resolverlo en el
    centro de moderación.
-9. Cerrar sesión y mostrar que las rutas privadas quedan protegidas.
+10. Cerrar sesión y mostrar que las rutas privadas quedan protegidas.
 
 Dos navegadores o una ventana normal y otra privada facilitan la demostración
 multiusuario.
@@ -174,7 +185,9 @@ red externa.
   las sesiones.
 - No hay notificaciones push, búsqueda global indexada ni paginación del feed.
 - El filtro local de texto es una defensa básica, no moderación inteligente.
-- DUCO no usa un LLM y sus recomendaciones no son asesoría oficial.
+- DUCO puede usar un LLM, pero sus respuestas pueden equivocarse y no son
+  asesoría académica o institucional oficial. La API limita las acciones y la
+  persona usuaria siempre revisa y confirma.
 - La API admite reportar cinco tipos de recurso; la interfaz puede exponer
   primero los casos de post y comentario.
 
@@ -186,5 +199,5 @@ red externa.
    si web y API dejan de compartir sitio.
 4. Sustituir polling por WebSocket/SSE y añadir notificaciones push.
 5. Agregar aislamiento por institución, políticas de retención y auditoría.
-6. Integrar IA solo mediante un adaptador configurable, consentimiento y
-   evaluación de privacidad; DUCO local debe seguir disponible como fallback.
+6. Evaluar privacidad, costo y calidad de los proveedores generativos, mantener
+   el modo local como fallback y ampliar las pruebas de seguridad de DUCO.

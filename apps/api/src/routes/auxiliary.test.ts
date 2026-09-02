@@ -5,9 +5,18 @@ import cookieParser from 'cookie-parser'
 import express, { type ErrorRequestHandler } from 'express'
 import { eq, inArray } from 'drizzle-orm'
 import request from 'supertest'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { closeDatabaseConnection, db } from '../db/client.js'
 import {
+  assistantMessages,
   chats,
   chatParticipants,
   notifications,
@@ -29,6 +38,62 @@ function testAccount(label: string) {
     username: `${label}_${suffix}`,
     displayName: `${label} ${suffix}`,
   }
+}
+
+type TaskDraftPayload = {
+  title: string
+  description: string
+  courseName: string | null
+  dueAt: string | null
+  priority: 'low' | 'medium' | 'high'
+}
+
+function expectDueInCalendarDays(
+  dueAt: string | null,
+  requestedAt: Date,
+  days: number,
+) {
+  expect(dueAt).toEqual(expect.any(String))
+  const actual = new Date(dueAt!)
+  expect(Number.isNaN(actual.getTime())).toBe(false)
+  const expected = new Date(requestedAt)
+  expected.setDate(expected.getDate() + days)
+  expect([actual.getFullYear(), actual.getMonth(), actual.getDate()]).toEqual([
+    expected.getFullYear(),
+    expected.getMonth(),
+    expected.getDate(),
+  ])
+}
+
+function expectNaturalDescription(
+  description: string,
+  requiredTerms: RegExp,
+  sourcePrompts: string[],
+) {
+  expect(description).toMatch(requiredTerms)
+  expect(description.length).toBeLessThanOrEqual(240)
+  expect(description).not.toMatch(/[\r\n]/u)
+  for (const prompt of sourcePrompts) expect(description).not.toContain(prompt)
+}
+
+function expectPolishedEnglishExamDraft(
+  draft: TaskDraftPayload,
+  requestedAt: Date,
+) {
+  expect(draft).toMatchObject({
+    title: 'Estudiar el verbo to be',
+    courseName: 'Inglés',
+    priority: 'medium',
+  })
+  expectNaturalDescription(
+    draft.description,
+    /verbo to be.*examen|examen.*verbo to be/iu,
+    [
+      'Tengo un examen en 4 días.',
+      'Es de Inglés y tengo que estudiar el verbo to be.',
+    ],
+  )
+  expectDueInCalendarDays(draft.dueAt, requestedAt, 4)
 }
 
 function createAuxiliaryTestApp() {
@@ -151,6 +216,15 @@ describe.sequential('auxiliary backend routes', () => {
 
     if (!notification) throw new Error('Test notification was not created')
     notificationId = notification.id
+  })
+
+  afterEach(async () => {
+    const response = await studentAgent.get('/api/v1/duco/drafts')
+    expect(response.status).toBe(200)
+
+    for (const draft of response.body.drafts as Array<{ id: string }>) {
+      await studentAgent.delete(`/api/v1/duco/drafts/${draft.id}`).expect(200)
+    }
   })
 
   afterAll(async () => {
@@ -451,7 +525,9 @@ END:VCALENDAR\r
       role: 'assistant',
       action: {
         type: 'create_task',
-        label: 'Crear pendiente',
+        label: 'Revisar y crear',
+        draftId: expect.any(String),
+        draftStatus: 'ready_for_review',
         draft: {
           priority: 'medium',
           courseName: 'Fundamentos de Matemáticas',
@@ -463,9 +539,22 @@ END:VCALENDAR\r
       'no realizar una entrega completa',
     )
 
-    const sourceMessageId = reply.body.assistantMessage.id
+    const draftId = reply.body.assistantMessage.action.draftId
+    const savedDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    expect(savedDrafts.status).toBe(200)
+    expect(savedDrafts.body.drafts).toEqual([
+      expect.objectContaining({
+        id: draftId,
+        kind: 'task',
+        status: 'ready_for_review',
+        payload: expect.objectContaining({
+          courseName: 'Fundamentos de Matemáticas',
+        }),
+      }),
+    ])
+
     const creation = await studentAgent.post('/api/v1/duco/tasks').send({
-      sourceMessageId,
+      draftId,
       title: 'Guía de algoritmos matemáticos',
       description: 'Resolver y revisar la guía antes de la próxima clase.',
       courseName: 'Fundamentos de Matemáticas',
@@ -479,10 +568,14 @@ END:VCALENDAR\r
       priority: 'high',
       status: 'pending',
     })
-    expect(creation.body.action.task).toEqual({ id: creation.body.task.id })
+    expect(creation.body.action).toMatchObject({
+      draftId,
+      draftStatus: 'confirmed',
+      task: { id: creation.body.task.id },
+    })
 
     const duplicate = await studentAgent.post('/api/v1/duco/tasks').send({
-      sourceMessageId,
+      draftId,
       title: 'No debe duplicarse',
       description: '',
       courseName: null,
@@ -502,6 +595,9 @@ END:VCALENDAR\r
       ]),
     )
 
+    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    expect(noActiveDrafts.body.drafts).toEqual([])
+
     await studentAgent.delete('/api/v1/duco/messages').expect(200)
   })
 
@@ -515,7 +611,9 @@ END:VCALENDAR\r
       role: 'assistant',
       action: {
         type: 'create_task',
-        label: 'Crear pendiente',
+        label: 'Revisar y crear',
+        draftId: expect.any(String),
+        draftStatus: 'ready_for_review',
         draft: {
           title: 'Nueva tarea académica',
           priority: 'medium',
@@ -525,7 +623,337 @@ END:VCALENDAR\r
     })
     expect(reply.body.assistantMessage.content).toContain('Próximas tareas')
 
+    const draftId = reply.body.assistantMessage.action.draftId
+    const cancellation = await studentAgent.delete(
+      `/api/v1/duco/drafts/${draftId}`,
+    )
+    expect(cancellation.status).toBe(200)
+    expect(cancellation.body.draft).toMatchObject({
+      id: draftId,
+      status: 'cancelled',
+    })
+
+    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    expect(noActiveDrafts.body.drafts).toEqual([])
+
     await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  })
+
+  it('keeps one DUCO task draft after clearing history and confirms it only once', async () => {
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    const requestedAt = new Date()
+    const firstReply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Tengo un examen en 4 días.',
+    })
+    expect(firstReply.status).toBe(201)
+    expect(firstReply.body.assistantMessage.action).toBeNull()
+
+    const secondReply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Es de Inglés y tengo que estudiar el verbo to be.',
+    })
+    expect(secondReply.status).toBe(201)
+    expect(secondReply.body.assistantMessage.action).toMatchObject({
+      type: 'create_task',
+      label: 'Revisar y crear',
+      draftId: expect.any(String),
+      draftStatus: 'ready_for_review',
+      draft: {
+        courseName: 'Inglés',
+        priority: 'medium',
+      },
+      task: null,
+    })
+    expectPolishedEnglishExamDraft(
+      secondReply.body.assistantMessage.action.draft,
+      requestedAt,
+    )
+
+    const draftId = secondReply.body.assistantMessage.action.draftId
+    const finalReply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'Sí por favor, me gustaría guardarlo como tarea.',
+    })
+    expect(finalReply.status).toBe(201)
+    expect(finalReply.body.assistantMessage).toMatchObject({
+      action: {
+        type: 'create_task',
+        label: 'Revisar y crear',
+        draftId,
+        draftStatus: 'ready_for_review',
+        draft: {
+          courseName: 'Inglés',
+          priority: 'medium',
+        },
+        task: null,
+      },
+    })
+    expectPolishedEnglishExamDraft(
+      finalReply.body.assistantMessage.action.draft,
+      requestedAt,
+    )
+    expect(finalReply.body.assistantMessage.content).toContain(
+      'El borrador quedó guardado',
+    )
+    expect(finalReply.body.assistantMessage.content).toContain(
+      'todavía no se ha creado',
+    )
+
+    const beforeClear = await studentAgent.get('/api/v1/duco/drafts')
+    expect(beforeClear.status).toBe(200)
+    expect(beforeClear.body.drafts).toEqual([
+      expect.objectContaining({
+        id: draftId,
+        kind: 'task',
+        status: 'ready_for_review',
+        payload: expect.objectContaining({ courseName: 'Inglés' }),
+      }),
+    ])
+
+    const cleared = await studentAgent.delete('/api/v1/duco/messages')
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.deletedCount).toBe(6)
+    const emptyHistory = await studentAgent.get('/api/v1/duco/messages')
+    expect(emptyHistory.body.messages).toEqual([])
+
+    const afterClear = await studentAgent.get('/api/v1/duco/drafts')
+    expect(afterClear.status).toBe(200)
+    expect(afterClear.body.drafts).toEqual([
+      expect.objectContaining({
+        id: draftId,
+        status: 'ready_for_review',
+        sourceMessageId: null,
+      }),
+    ])
+
+    const creation = await studentAgent.post('/api/v1/duco/tasks').send({
+      draftId,
+      title: 'Estudiar verbo to be para examen de Inglés',
+      description: 'Repasar el verbo to be antes del examen.',
+      courseName: 'Inglés',
+      dueAt: null,
+      priority: 'medium',
+    })
+    expect(creation.status).toBe(201)
+    expect(creation.body.task).toMatchObject({
+      title: 'Estudiar verbo to be para examen de Inglés',
+      priority: 'medium',
+      status: 'pending',
+    })
+    expect(creation.body.action).toMatchObject({
+      draftId,
+      draftStatus: 'confirmed',
+      task: { id: creation.body.task.id },
+    })
+
+    const duplicate = await studentAgent.post('/api/v1/duco/tasks').send({
+      draftId,
+      title: 'No debe duplicarse',
+      description: null,
+      courseName: null,
+      dueAt: null,
+      priority: 'low',
+    })
+    expect(duplicate.status).toBe(409)
+    expect(duplicate.body.error.code).toBe('DUCO_TASK_ALREADY_CREATED')
+
+    const dashboard = await studentAgent.get('/api/v1/academic')
+    expect(
+      dashboard.body.tasks.filter(
+        (task: { title: string }) =>
+          task.title === 'Estudiar verbo to be para examen de Inglés',
+      ),
+    ).toHaveLength(1)
+
+    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    expect(noActiveDrafts.body.drafts).toEqual([])
+  })
+
+  it('recovers a reviewable task draft from legacy user facts when no active draft exists', async () => {
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    const baseTime = Date.now() - 10_000
+    await db.insert(assistantMessages).values([
+      {
+        userId: studentId,
+        role: 'user',
+        content: 'Tengo un examen en 4 días.',
+        createdAt: new Date(baseTime),
+      },
+      {
+        userId: studentId,
+        role: 'assistant',
+        content: 'Cuéntame la asignatura y qué necesitas estudiar.',
+        action: null,
+        createdAt: new Date(baseTime + 1),
+      },
+      {
+        userId: studentId,
+        role: 'user',
+        content: 'Es de Inglés y tengo que estudiar el verbo to be.',
+        createdAt: new Date(baseTime + 2),
+      },
+      {
+        userId: studentId,
+        role: 'assistant',
+        content:
+          '¿Quieres que prepare nuevamente una sugerencia para un examen de Historia?',
+        action: null,
+        createdAt: new Date(baseTime + 3),
+      },
+    ])
+
+    const noDraftsBeforeReview = await studentAgent.get('/api/v1/duco/drafts')
+    expect(noDraftsBeforeReview.status).toBe(200)
+    expect(noDraftsBeforeReview.body.drafts).toEqual([])
+
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'bien, me gustaría revisar el borrador',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage).toMatchObject({
+      action: {
+        type: 'create_task',
+        label: 'Revisar y crear',
+        draftId: expect.any(String),
+        draftStatus: 'ready_for_review',
+        draft: {
+          courseName: 'Inglés',
+          priority: 'medium',
+        },
+        task: null,
+      },
+    })
+    expect(reply.body.assistantMessage.content).toContain(
+      'El borrador quedó guardado',
+    )
+
+    const action = reply.body.assistantMessage.action
+    expectPolishedEnglishExamDraft(action.draft, new Date())
+    expect(JSON.stringify(action.draft)).toContain('Inglés')
+    expect(JSON.stringify(action.draft)).toContain('verbo to be')
+    expect(JSON.stringify(action.draft)).not.toContain('Historia')
+
+    const savedDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    expect(savedDrafts.status).toBe(200)
+    expect(savedDrafts.body.drafts).toEqual([
+      expect.objectContaining({
+        id: action.draftId,
+        kind: 'task',
+        status: 'ready_for_review',
+        payload: action.draft,
+      }),
+    ])
+
+    const history = await studentAgent.get('/api/v1/duco/messages')
+    expect(history.status).toBe(200)
+    expect(history.body.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      action: {
+        type: 'create_task',
+        draftId: action.draftId,
+        draftStatus: 'ready_for_review',
+      },
+    })
+  })
+
+  it('builds a concise draft for a different course and relative deadline', async () => {
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    const content =
+      'Tengo que preparar una presentación sobre seguridad informática para la asignatura Ciberseguridad en 2 días.'
+    const requestedAt = new Date()
+    const reply = await studentAgent
+      .post('/api/v1/duco/messages')
+      .send({ content })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage.action).toMatchObject({
+      type: 'create_task',
+      draftId: expect.any(String),
+      draftStatus: 'ready_for_review',
+      draft: {
+        courseName: 'Ciberseguridad',
+        priority: 'medium',
+      },
+      task: null,
+    })
+
+    const draft = reply.body.assistantMessage.action.draft as TaskDraftPayload
+    expect(draft.title).toMatch(
+      /^Preparar (?:una )?presentación sobre seguridad informática$/u,
+    )
+    expectNaturalDescription(
+      draft.description,
+      /presentación.*seguridad informática/iu,
+      [content],
+    )
+    expectDueInCalendarDays(draft.dueAt, requestedAt, 2)
+  })
+
+  it('accepts a simple affirmation only when user messages contain task facts', async () => {
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    const baseTime = Date.now() - 10_000
+    await db.insert(assistantMessages).values([
+      {
+        userId: studentId,
+        role: 'user',
+        content: 'Tengo que preparar una presentación para Biología.',
+        createdAt: new Date(baseTime),
+      },
+      {
+        userId: studentId,
+        role: 'assistant',
+        content:
+          '¿Quieres que prepare nuevamente una sugerencia para una tarea de Química?',
+        action: null,
+        createdAt: new Date(baseTime + 1),
+      },
+    ])
+
+    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+      content: 'SI',
+    })
+
+    expect(reply.status).toBe(201)
+    expect(reply.body.assistantMessage.action).toMatchObject({
+      type: 'create_task',
+      label: 'Revisar y crear',
+      draftId: expect.any(String),
+      draftStatus: 'ready_for_review',
+      draft: {
+        courseName: 'Biología',
+        priority: 'medium',
+      },
+      task: null,
+    })
+    expect(
+      JSON.stringify(reply.body.assistantMessage.action.draft),
+    ).not.toContain('Química')
+
+    const draftId = reply.body.assistantMessage.action.draftId
+    await studentAgent.delete(`/api/v1/duco/drafts/${draftId}`).expect(200)
+    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+
+    await db.insert(assistantMessages).values({
+      userId: studentId,
+      role: 'assistant',
+      content:
+        '¿Quieres que prepare nuevamente una sugerencia para un examen de Química?',
+      action: null,
+    })
+
+    const assistantOnlyReply = await studentAgent
+      .post('/api/v1/duco/messages')
+      .send({ content: 'SI' })
+
+    expect(assistantOnlyReply.status).toBe(201)
+    expect(assistantOnlyReply.body.assistantMessage.action).toBeNull()
+    const noAssistantInventedDraft = await studentAgent.get(
+      '/api/v1/duco/drafts',
+    )
+    expect(noAssistantInventedDraft.body.drafts).toEqual([])
   })
 
   it('does not confuse academic help with listing existing tasks', async () => {

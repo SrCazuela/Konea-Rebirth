@@ -54,8 +54,21 @@ function Test-NativeCommand {
     [string[]]$Arguments
   )
 
-  & $FilePath @Arguments *> $null
-  return $LASTEXITCODE -eq 0
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Algunos ejecutables escriben diagnósticos esperables en stderr mientras
+    # todavía están arrancando. En una prueba booleana eso significa "false",
+    # no un error fatal para todo el iniciador.
+    $ErrorActionPreference = 'Continue'
+    & $FilePath @Arguments *> $null
+    return $LASTEXITCODE -eq 0
+  }
+  catch {
+    return $false
+  }
+  finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+  }
 }
 
 function Get-DotEnvValue {
@@ -236,6 +249,72 @@ function Wait-ForOllama {
   throw 'Ollama no respondio dentro de 45 segundos.'
 }
 
+function Test-KoneaHealthEndpoint {
+  param(
+    [string]$Uri,
+    [int]$TimeoutSeconds = 3
+  )
+
+  try {
+    $Response = Invoke-RestMethod `
+      -Uri $Uri `
+      -Method Get `
+      -TimeoutSec $TimeoutSeconds
+    return $Response.status -eq 'ok' -and $Response.service -eq 'konea-api'
+  }
+  catch {
+    return $false
+  }
+}
+
+function Assert-OpenAiConfiguration {
+  param(
+    [string]$ApiKey,
+    [string]$Model,
+    [string]$BaseUrl
+  )
+
+  $ModelUrl = '{0}/models/{1}' -f @(
+    $BaseUrl.TrimEnd('/'),
+    [Uri]::EscapeDataString($Model)
+  )
+
+  try {
+    $Response = Invoke-RestMethod `
+      -Uri $ModelUrl `
+      -Method Get `
+      -Headers @{ Authorization = "Bearer $ApiKey" } `
+      -TimeoutSec 20
+  }
+  catch {
+    $StatusCode = 0
+    if ($null -ne $_.Exception.Response) {
+      try {
+        $StatusCode = [int]$_.Exception.Response.StatusCode
+      }
+      catch {
+        $StatusCode = 0
+      }
+    }
+
+    switch ($StatusCode) {
+      401 { throw 'OpenAI rechazo OPENAI_API_KEY. Reemplaza la clave en .env.' }
+      403 { throw "El proyecto de OpenAI no tiene permiso para usar '$Model'." }
+      404 { throw "OpenAI no encontro el modelo '$Model' para este proyecto." }
+      429 { throw 'OpenAI rechazo la comprobacion por limite o saldo. Revisa Usage y Billing.' }
+      default {
+        throw "No se pudo verificar OpenAI en $BaseUrl. Revisa Internet y OPENAI_BASE_URL."
+      }
+    }
+  }
+
+  if ($null -eq $Response -or $Response.id -ne $Model) {
+    throw "OpenAI respondio, pero no confirmo el modelo '$Model'."
+  }
+
+  Write-Host "IA remota lista: OpenAI / $Model" -ForegroundColor Green
+}
+
 function Assert-PortAvailable {
   param(
     [int]$Port,
@@ -262,6 +341,29 @@ function Assert-PortAvailable {
     }
 
   throw "El puerto $Port de $ServiceName ya esta ocupado por $($ProcessDescriptions -join ', '). Deten ese proceso y vuelve a ejecutar iniciar.bat."
+}
+
+function Stop-ProcessTree {
+  param($Process)
+
+  if ($null -eq $Process) {
+    return
+  }
+
+  $Process.Refresh()
+  if ($Process.HasExited) {
+    return
+  }
+
+  $TaskKillPath = Join-Path $env:SystemRoot 'System32\taskkill.exe'
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    & $TaskKillPath /PID $Process.Id /T /F *> $null
+  }
+  finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+  }
 }
 
 try {
@@ -383,7 +485,22 @@ try {
       if ([string]::IsNullOrWhiteSpace($OpenAiKey)) {
         throw 'DUCO_AI_PROVIDER=openai requiere OPENAI_API_KEY en .env.'
       }
-      Write-Host 'IA configurada con OpenAI.' -ForegroundColor Green
+
+      $OpenAiModel = Get-DotEnvValue -Name 'OPENAI_MODEL'
+      if ([string]::IsNullOrWhiteSpace($OpenAiModel)) {
+        $OpenAiModel = 'gpt-5.6-luna'
+      }
+
+      $OpenAiBaseUrl = Get-DotEnvValue -Name 'OPENAI_BASE_URL'
+      if ([string]::IsNullOrWhiteSpace($OpenAiBaseUrl)) {
+        $OpenAiBaseUrl = 'https://api.openai.com/v1'
+      }
+
+      Write-Host "Verificando acceso a OpenAI / $OpenAiModel..."
+      Assert-OpenAiConfiguration `
+        -ApiKey $OpenAiKey `
+        -Model $OpenAiModel `
+        -BaseUrl $OpenAiBaseUrl
     }
     'local' {
       Write-Host 'DUCO usara su modo local deterministico; no requiere un servicio externo.' -ForegroundColor Green
@@ -403,26 +520,152 @@ try {
     throw "API_PORT='$ApiPortText' no es un puerto valido."
   }
 
-  Assert-PortAvailable -Port $ApiPort -ServiceName 'la API'
-  Assert-PortAvailable -Port 5173 -ServiceName 'la web'
-
   if ($PrepareOnly) {
     Write-Host ''
     Write-Host 'Preparacion completada. Los servidores se omitieron por -PrepareOnly.' -ForegroundColor Green
     return
   }
 
+  $ApiHealthUrl = "http://127.0.0.1:$ApiPort/api/v1/health"
+  $WebUrl = 'http://localhost:5173/'
+  $WebHealthUrl = "${WebUrl}api/v1/health"
+  $ApiIsRunning = Test-KoneaHealthEndpoint -Uri $ApiHealthUrl
+  $WebIsRunning = Test-KoneaHealthEndpoint -Uri $WebHealthUrl
+
+  if ($ApiIsRunning -and $WebIsRunning) {
+    Write-Host ''
+    Write-Host 'Konea ya estaba en ejecucion y ambos servicios responden correctamente.' -ForegroundColor Green
+    Write-Host "Web: $WebUrl"
+    Write-Host "API: $ApiHealthUrl"
+    return
+  }
+
+  if (-not $ApiIsRunning) {
+    Assert-PortAvailable -Port $ApiPort -ServiceName 'la API'
+  }
+  else {
+    Write-Host 'La API ya esta activa; se reutilizara esta instancia.' -ForegroundColor Green
+  }
+
+  if (-not $WebIsRunning) {
+    Assert-PortAvailable -Port 5173 -ServiceName 'la web'
+  }
+  else {
+    Write-Host 'La web ya esta activa; se reutilizara esta instancia.' -ForegroundColor Green
+  }
+
   Write-Host ''
-  Write-Host 'Konea quedara disponible en http://localhost:5173' -ForegroundColor Green
+  Write-Host 'Iniciando los servidores de Konea...'
   Write-Host 'Para detener API y web, presiona Ctrl+C en esta ventana.'
-  Write-Host 'PostgreSQL y Ollama permaneceran activos para el siguiente inicio.'
+  if ($Provider -eq 'ollama') {
+    Write-Host 'PostgreSQL y Ollama permaneceran activos para el siguiente inicio.'
+  }
+  else {
+    Write-Host 'PostgreSQL permanecera activo para el siguiente inicio.'
+  }
   Write-Host ''
 
-  & $NpmPath run dev
-  $DevelopmentExitCode = $LASTEXITCODE
-  if ($DevelopmentExitCode -ne 0) {
-    throw "Los servidores terminaron con codigo $DevelopmentExitCode."
+  $ApiProcess = $null
+  $WebProcess = $null
+  try {
+    $ApiEntryPoint = Join-Path $ProjectRoot 'node_modules\tsx\dist\cli.mjs'
+    $WebEntryPoint = Join-Path $ProjectRoot 'node_modules\vite\bin\vite.js'
+    $ApiDirectory = Join-Path $ProjectRoot 'apps\api'
+    $WebDirectory = Join-Path $ProjectRoot 'apps\web'
+
+    if (-not $ApiIsRunning) {
+      $ApiProcess = Start-Process `
+        -FilePath $NodePath `
+        -ArgumentList @('--no-maglev', "`"$ApiEntryPoint`"", 'watch', 'src/server.ts') `
+        -WorkingDirectory $ApiDirectory `
+        -NoNewWindow `
+        -PassThru
+    }
+    if (-not $WebIsRunning) {
+      $WebProcess = Start-Process `
+        -FilePath $NodePath `
+        -ArgumentList @('--no-maglev', "`"$WebEntryPoint`"") `
+        -WorkingDirectory $WebDirectory `
+        -NoNewWindow `
+        -PassThru
+    }
+
+    $ServicesAreReady = $false
+    for ($Attempt = 1; $Attempt -le 120; $Attempt += 1) {
+      Start-Sleep -Milliseconds 500
+      if ($null -ne $ApiProcess) {
+        $ApiProcess.Refresh()
+      }
+      if ($null -ne $WebProcess) {
+        $WebProcess.Refresh()
+      }
+      if ($null -ne $ApiProcess -and $ApiProcess.HasExited) {
+        throw "La API termino antes de estar lista (codigo $($ApiProcess.ExitCode))."
+      }
+      if ($null -ne $WebProcess -and $WebProcess.HasExited) {
+        throw "La web termino antes de estar lista (codigo $($WebProcess.ExitCode))."
+      }
+
+      if (
+        (Test-KoneaHealthEndpoint -Uri $ApiHealthUrl) -and
+        (Test-KoneaHealthEndpoint -Uri $WebHealthUrl)
+      ) {
+        $ServicesAreReady = $true
+        break
+      }
+
+      if ($Attempt % 20 -eq 0) {
+        Write-Host 'Esperando a que API y web esten listas...'
+      }
+    }
+
+    if (-not $ServicesAreReady) {
+      throw 'API y web no respondieron correctamente dentro de 60 segundos.'
+    }
+
+    Write-Host ''
+    Write-Host 'Konea esta lista.' -ForegroundColor Green
+    Write-Host "Web: $WebUrl"
+    Write-Host "API: $ApiHealthUrl"
+    Write-Host ''
+
+    $HealthCheckCounter = 0
+    while ($true) {
+      Start-Sleep -Milliseconds 500
+      if ($null -ne $ApiProcess) {
+        $ApiProcess.Refresh()
+      }
+      if ($null -ne $WebProcess) {
+        $WebProcess.Refresh()
+      }
+      if ($null -ne $ApiProcess -and $ApiProcess.HasExited) {
+        throw "La API termino inesperadamente (codigo $($ApiProcess.ExitCode))."
+      }
+      if ($null -ne $WebProcess -and $WebProcess.HasExited) {
+        throw "La web termino inesperadamente (codigo $($WebProcess.ExitCode))."
+      }
+
+      $HealthCheckCounter += 1
+      if ($HealthCheckCounter -ge 20) {
+        $HealthCheckCounter = 0
+        if (-not (Test-KoneaHealthEndpoint -Uri $ApiHealthUrl)) {
+          throw 'La API dejo de responder correctamente.'
+        }
+        if (-not (Test-KoneaHealthEndpoint -Uri $WebHealthUrl)) {
+          throw 'La web dejo de responder correctamente.'
+        }
+      }
+    }
   }
+  finally {
+    Stop-ProcessTree -Process $ApiProcess
+    Stop-ProcessTree -Process $WebProcess
+  }
+}
+catch [System.Management.Automation.PipelineStoppedException] {
+  Write-Host ''
+  Write-Host 'Konea fue detenida por el usuario.' -ForegroundColor Yellow
+  exit 0
 }
 catch {
   Write-Host ''

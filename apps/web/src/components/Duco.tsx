@@ -9,12 +9,17 @@ import {
 } from 'react'
 import type { KoneaUser } from '../api/auth'
 import {
+  cancelDucoDraft,
   clearDucoMessages,
   createDucoSupportRequest,
   createDucoTask,
+  getDucoDrafts,
   getDucoMessages,
   getDucoSupportRequests,
   sendDucoMessage,
+  type DucoCreateTaskAction,
+  type DucoDraft,
+  type DucoDraftStatus,
   type DucoMessage,
   type DucoRequestCategory,
   type DucoRequestDraft,
@@ -31,6 +36,11 @@ export type DucoProps = {
 
 type MessageStatus = 'sent' | 'pending' | 'failed'
 type VisibleMessage = DucoMessage & { status: MessageStatus }
+type TaskFormState = {
+  draftId: string | null
+  sourceMessageId: string | null
+  draft: DucoTaskDraft
+}
 type DucoPanel = 'conversation' | 'requests'
 type IconName =
   | 'assistant'
@@ -208,6 +218,37 @@ function toDateTimeLocal(value: string | null) {
   return localDate.toISOString().slice(0, 16)
 }
 
+function normalizeTaskDraft(
+  value: Partial<DucoTaskDraft> | null | undefined,
+): DucoTaskDraft {
+  const priority = value?.priority
+  return {
+    title: typeof value?.title === 'string' ? value.title : '',
+    description:
+      typeof value?.description === 'string' ? value.description : '',
+    courseName: typeof value?.courseName === 'string' ? value.courseName : null,
+    dueAt: typeof value?.dueAt === 'string' ? value.dueAt : null,
+    priority:
+      priority === 'low' || priority === 'high' || priority === 'medium'
+        ? priority
+        : 'medium',
+  }
+}
+
+const draftStatusLabels: Record<DucoDraftStatus, string> = {
+  collecting_information: 'En preparación',
+  ready_for_review: 'Listo para revisar',
+  confirmed: 'Pendiente creado',
+  cancelled: 'Borrador descartado',
+  expired: 'Borrador vencido',
+}
+
+const taskPriorityLabels: Record<DucoTaskDraft['priority'], string> = {
+  low: 'Prioridad baja',
+  medium: 'Prioridad media',
+  high: 'Prioridad alta',
+}
+
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
@@ -283,6 +324,92 @@ function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
   )
 }
 
+function TaskDraftCard({
+  draft,
+  status,
+  onReview,
+  onDiscard,
+  discarding = false,
+}: {
+  draft: DucoTaskDraft
+  status: DucoDraftStatus
+  onReview?: () => void
+  onDiscard?: () => void
+  discarding?: boolean
+}) {
+  const canReview = status === 'ready_for_review' && Boolean(onReview)
+  const canDiscard =
+    (status === 'ready_for_review' || status === 'collecting_information') &&
+    Boolean(onDiscard)
+
+  return (
+    <article
+      className={`duco-task-draft-card duco-task-draft-card--${status}`}
+      aria-label={`${draftStatusLabels[status]}: ${draft.title || 'pendiente sin título'}`}
+    >
+      <header>
+        <span className="duco-task-draft-card__mark" aria-hidden="true">
+          <Icon name={status === 'confirmed' ? 'check' : 'tasks'} />
+        </span>
+        <div>
+          <p className="duco-task-draft-card__eyebrow">
+            {status === 'ready_for_review'
+              ? 'Borrador guardado'
+              : draftStatusLabels[status]}
+          </p>
+          <h4>{draft.title || 'Pendiente sin título'}</h4>
+        </div>
+        <span className="duco-task-draft-card__status">
+          {draftStatusLabels[status]}
+        </span>
+      </header>
+
+      {draft.description && (
+        <p className="duco-task-draft-card__description">{draft.description}</p>
+      )}
+
+      <div className="duco-task-draft-card__details">
+        {draft.courseName && <span>{draft.courseName}</span>}
+        <span>{taskPriorityLabels[draft.priority]}</span>
+        {draft.dueAt && <span>Para el {formatDateTime(draft.dueAt)}</span>}
+      </div>
+
+      {status === 'collecting_information' && (
+        <p className="duco-task-draft-card__note">
+          DUCO aún está reuniendo los datos necesarios para habilitar la
+          revisión.
+        </p>
+      )}
+
+      {(canReview || canDiscard) && (
+        <footer>
+          {canReview && (
+            <button
+              type="button"
+              className="duco-task-draft-card__review"
+              onClick={onReview}
+            >
+              <Icon name="check" />
+              Revisar y crear
+            </button>
+          )}
+          {canDiscard && (
+            <button
+              type="button"
+              className="duco-task-draft-card__discard"
+              onClick={onDiscard}
+              disabled={discarding}
+            >
+              <Icon name="trash" />
+              {discarding ? 'Descartando…' : 'Descartar'}
+            </button>
+          )}
+        </footer>
+      )}
+    </article>
+  )
+}
+
 export function Duco({
   currentUser,
   initialPanel = 'conversation',
@@ -309,16 +436,35 @@ export function Duco({
   const [requestsRefreshing, setRequestsRefreshing] = useState(false)
   const [requestsError, setRequestsError] = useState('')
   const [requestsLoaded, setRequestsLoaded] = useState(false)
-  const [taskForm, setTaskForm] = useState<{
-    sourceMessageId: string
-    draft: DucoTaskDraft
-  } | null>(null)
+  const [taskForm, setTaskForm] = useState<TaskFormState | null>(null)
   const [taskSubmitting, setTaskSubmitting] = useState(false)
   const [taskError, setTaskError] = useState('')
+  const [taskDrafts, setTaskDrafts] = useState<DucoDraft[]>([])
+  const [draftsLoading, setDraftsLoading] = useState(true)
+  const [draftsError, setDraftsError] = useState('')
+  const [discardingDraftId, setDiscardingDraftId] = useState<string | null>(
+    null,
+  )
   const viewportRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const requestsLoadedRef = useRef(false)
   const requestsRequestRef = useRef(0)
+
+  const loadTaskDrafts = useCallback(async (signal?: AbortSignal) => {
+    setDraftsError('')
+    try {
+      const items = await getDucoDrafts(signal)
+      if (!signal?.aborted) setTaskDrafts(items)
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setDraftsError(
+          readableError(error, 'No pudimos recuperar tus borradores.'),
+        )
+      }
+    } finally {
+      if (!signal?.aborted) setDraftsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     const syncPanelWithHash = () =>
@@ -368,6 +514,18 @@ export function Duco({
       })
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const initialLoad = window.setTimeout(
+      () => void loadTaskDrafts(controller.signal),
+      0,
+    )
+    return () => {
+      controller.abort()
+      window.clearTimeout(initialLoad)
+    }
+  }, [loadTaskDrafts])
 
   const loadSupportRequests = useCallback(
     async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
@@ -440,7 +598,7 @@ export function Duco({
     const viewport = viewportRef.current
     if (!viewport || historyLoading || activePanel !== 'conversation') return
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
-  }, [activePanel, historyLoading, messages, sending])
+  }, [activePanel, historyLoading, messages, sending, taskDrafts])
 
   const sendPrompt = async (rawContent: string) => {
     const content = rawContent.trim()
@@ -471,6 +629,7 @@ export function Duco({
       ])
       setOpenTaskCount(reply.openTaskCount)
       setAnnouncement('DUCO respondió tu mensaje.')
+      void loadTaskDrafts()
     } catch (error) {
       setMessages((current) =>
         current.map((message) =>
@@ -537,16 +696,71 @@ export function Duco({
     )
   }
 
-  const openTaskForm = (message: VisibleMessage) => {
-    if (message.action?.type !== 'create_task' || message.action.task) return
+  const openTaskForm = ({
+    draftId,
+    sourceMessageId,
+    draft: taskDraft,
+  }: TaskFormState) => {
     setTaskError('')
     setTaskForm({
-      sourceMessageId: message.id,
+      draftId,
+      sourceMessageId,
       draft: {
-        ...message.action.draft,
-        dueAt: toDateTimeLocal(message.action.draft.dueAt),
+        ...taskDraft,
+        dueAt: toDateTimeLocal(taskDraft.dueAt),
       },
     })
+  }
+
+  const discardTaskDraft = async (draftItem: DucoDraft) => {
+    if (discardingDraftId) return
+    const confirmed = window.confirm(
+      `¿Quieres descartar el borrador “${normalizeTaskDraft(draftItem.payload).title || 'sin título'}”?`,
+    )
+    if (!confirmed) return
+
+    setDiscardingDraftId(draftItem.id)
+    setDraftsError('')
+    try {
+      const cancelledDraft = await cancelDucoDraft(draftItem.id)
+      setTaskDrafts((current) =>
+        current.map((item) =>
+          item.id === draftItem.id
+            ? {
+                ...item,
+                ...cancelledDraft,
+                status: 'cancelled',
+                updatedAt:
+                  cancelledDraft?.updatedAt ?? new Date().toISOString(),
+              }
+            : item,
+        ),
+      )
+      setMessages((current) =>
+        current.map((message) =>
+          message.action?.type === 'create_task' &&
+          (message.action.draftId === draftItem.id ||
+            (!message.action.draftId &&
+              message.id === draftItem.sourceMessageId))
+            ? {
+                ...message,
+                action: {
+                  ...message.action,
+                  draftId: draftItem.id,
+                  draftStatus: 'cancelled',
+                },
+              }
+            : message,
+        ),
+      )
+      setAnnouncement('Borrador descartado. No se creó ningún pendiente.')
+    } catch (error) {
+      const message = readableError(error, 'No pudimos descartar el borrador.')
+      setDraftsError(message)
+      setAnnouncement(message)
+    } finally {
+      setDiscardingDraftId(null)
+    }
   }
 
   const updateTaskDraft = <Field extends keyof DucoTaskDraft>(
@@ -575,27 +789,55 @@ export function Duco({
         return
       }
 
-      const createdTask = await createDucoTask(taskForm.sourceMessageId, {
-        ...taskForm.draft,
-        title: taskForm.draft.title.trim(),
-        description: taskForm.draft.description.trim(),
-        courseName: taskForm.draft.courseName?.trim() || null,
-        dueAt: dueDate?.toISOString() ?? null,
-      })
+      const createdTask = await createDucoTask(
+        {
+          draftId: taskForm.draftId,
+          sourceMessageId: taskForm.sourceMessageId,
+        },
+        {
+          ...taskForm.draft,
+          title: taskForm.draft.title.trim(),
+          description: taskForm.draft.description.trim(),
+          courseName: taskForm.draft.courseName?.trim() || null,
+          dueAt: dueDate?.toISOString() ?? null,
+        },
+      )
       setMessages((current) =>
         current.map((message) => {
           if (
-            message.id !== taskForm.sourceMessageId ||
-            message.action?.type !== 'create_task'
+            message.action?.type !== 'create_task' ||
+            !(
+              (taskForm.draftId &&
+                message.action.draftId === taskForm.draftId) ||
+              (!taskForm.draftId && message.id === taskForm.sourceMessageId)
+            )
           ) {
             return message
           }
           return {
             ...message,
-            action: { ...message.action, task: createdTask },
+            action: {
+              ...message.action,
+              draftStatus: 'confirmed',
+              task: createdTask,
+            },
           }
         }),
       )
+      if (taskForm.draftId) {
+        setTaskDrafts((current) =>
+          current.map((item) =>
+            item.id === taskForm.draftId
+              ? {
+                  ...item,
+                  status: 'confirmed',
+                  completedResourceId: createdTask.id,
+                  updatedAt: new Date().toISOString(),
+                }
+              : item,
+          ),
+        )
+      }
       setOpenTaskCount((current) => (current ?? 0) + 1)
       setTaskForm(null)
       setAnnouncement(
@@ -693,6 +935,140 @@ export function Duco({
     )
     .sort(byRecentUpdate)
 
+  const storedDraftById = new Map(taskDrafts.map((item) => [item.id, item]))
+  const storedDraftBySourceMessageId = new Map(
+    taskDrafts
+      .filter((item) => item.sourceMessageId)
+      .map((item) => [item.sourceMessageId as string, item]),
+  )
+  const messageTaskDrafts = new Map<
+    string,
+    {
+      action: DucoCreateTaskAction
+      draftId: string | null
+      sourceMessageId: string
+      draft: DucoTaskDraft
+      status: DucoDraftStatus
+      persistentDraft: DucoDraft | null
+    }
+  >()
+  const latestMessageIdByDraftId = new Map<string, string>()
+  const linkedDraftIds = new Set<string>()
+
+  messages.forEach((message) => {
+    if (message.action?.type !== 'create_task') return
+    const action = message.action
+    const persistentDraft = action.draftId
+      ? (storedDraftById.get(action.draftId) ?? null)
+      : (storedDraftBySourceMessageId.get(message.id) ?? null)
+    const draftId = action.draftId ?? persistentDraft?.id ?? null
+    const status = action.task
+      ? 'confirmed'
+      : (persistentDraft?.status ?? action.draftStatus ?? 'ready_for_review')
+    const resolved = {
+      action,
+      draftId,
+      sourceMessageId: message.id,
+      draft: normalizeTaskDraft({
+        ...action.draft,
+        ...persistentDraft?.payload,
+      }),
+      status,
+      persistentDraft,
+    }
+    messageTaskDrafts.set(message.id, resolved)
+    if (draftId) {
+      linkedDraftIds.add(draftId)
+      latestMessageIdByDraftId.set(draftId, message.id)
+    }
+  })
+
+  const orphanTaskDrafts = taskDrafts
+    .filter((item) => item.kind === 'task' && !linkedDraftIds.has(item.id))
+    .sort(
+      (left, right) =>
+        new Date(left.updatedAt).getTime() -
+        new Date(right.updatedAt).getTime(),
+    )
+  const hasConversationContent = hasMessages || orphanTaskDrafts.length > 0
+
+  const renderTaskMessageAction = (message: VisibleMessage) => {
+    const resolved = messageTaskDrafts.get(message.id)
+    if (!resolved) return null
+    if (
+      resolved.draftId &&
+      latestMessageIdByDraftId.get(resolved.draftId) !== message.id
+    ) {
+      return null
+    }
+
+    const isPersistent = Boolean(
+      resolved.draftId || resolved.action.draftStatus,
+    )
+    if (!isPersistent) {
+      return resolved.action.task ? (
+        <span className="duco-request-sent">
+          <Icon name="check" /> Pendiente creado
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() =>
+            openTaskForm({
+              draftId: null,
+              sourceMessageId: message.id,
+              draft: resolved.draft,
+            })
+          }
+        >
+          <Icon name="tasks" />
+          {resolved.action.label}
+        </button>
+      )
+    }
+
+    const persistentDraft =
+      resolved.persistentDraft ??
+      (resolved.draftId
+        ? {
+            id: resolved.draftId,
+            kind: 'task',
+            status: resolved.status,
+            payload: resolved.draft,
+            sourceMessageId: message.id,
+            completedResourceId: resolved.action.task?.id ?? null,
+            expiresAt: null,
+            createdAt: message.createdAt,
+            updatedAt: message.createdAt,
+          }
+        : null)
+
+    return (
+      <TaskDraftCard
+        draft={resolved.draft}
+        status={resolved.status}
+        onReview={
+          resolved.status === 'ready_for_review'
+            ? () =>
+                openTaskForm({
+                  draftId: resolved.draftId,
+                  sourceMessageId: message.id,
+                  draft: resolved.draft,
+                })
+            : undefined
+        }
+        onDiscard={
+          persistentDraft &&
+          (resolved.status === 'ready_for_review' ||
+            resolved.status === 'collecting_information')
+            ? () => void discardTaskDraft(persistentDraft)
+            : undefined
+        }
+        discarding={discardingDraftId === resolved.draftId}
+      />
+    )
+  }
+
   return (
     <section className="duco-layout" aria-label="Asistente académico DUCO">
       <aside className="duco-about">
@@ -703,7 +1079,7 @@ export function Duco({
           <div>
             <span className="duco-mode-pill">
               <span aria-hidden="true" />
-              IA local
+              IA activa
             </span>
             <h2>DUCO</h2>
             <p>Tu compañero para organizar la vida académica.</p>
@@ -757,7 +1133,7 @@ export function Duco({
               <strong>DUCO</strong>
               <small>
                 <span aria-hidden="true" />
-                Disponible en este dispositivo
+                Asistente disponible
               </small>
             </span>
           </div>
@@ -841,7 +1217,7 @@ export function Duco({
               aria-relevant="additions"
               aria-label="Conversación con DUCO"
             >
-              {historyLoading ? (
+              {historyLoading || draftsLoading ? (
                 <div className="duco-loading-history" role="status">
                   <span className="duco-loading-history__mark">
                     <Icon name="assistant" />
@@ -850,7 +1226,7 @@ export function Duco({
                   <span className="duco-loading-history__line duco-loading-history__line--short" />
                   <span className="duco-sr-only">Cargando conversación…</span>
                 </div>
-              ) : historyError && !hasMessages ? (
+              ) : historyError && !hasConversationContent ? (
                 <div className="duco-history-error" role="alert">
                   <span>
                     <Icon name="refresh" />
@@ -862,7 +1238,7 @@ export function Duco({
                     Intentar nuevamente
                   </button>
                 </div>
-              ) : !hasMessages ? (
+              ) : !hasConversationContent ? (
                 <div className="duco-welcome">
                   <span className="duco-welcome__mark">
                     <Icon name="sparkles" />
@@ -887,90 +1263,140 @@ export function Duco({
                   </div>
                 </div>
               ) : (
-                messages.map((message) => (
-                  <article
-                    className={`duco-message duco-message--${message.role}${message.status === 'failed' ? ' duco-message--failed' : ''}`}
-                    key={message.id}
-                  >
-                    {message.role === 'assistant' ? (
-                      <AssistantAvatar />
-                    ) : (
-                      <UserAvatar user={currentUser} />
-                    )}
-                    <div className="duco-message__column">
-                      <div className="duco-message__meta">
-                        <strong>
-                          {message.role === 'assistant'
-                            ? 'DUCO'
-                            : currentUser.displayName}
-                        </strong>
-                        {message.status === 'pending' ? (
-                          <span>Enviando…</span>
-                        ) : (
-                          <time dateTime={message.createdAt}>
-                            {formatTime(message.createdAt)}
-                          </time>
-                        )}
-                      </div>
-                      <div className="duco-message__bubble">
-                        <p>{message.content}</p>
-                      </div>
-                      {message.action && message.status === 'sent' && (
-                        <div className="duco-message__request-action">
-                          {message.action.type === 'manage_request' ? (
-                            message.request ? (
-                              <span className="duco-request-sent">
-                                <Icon name="privacy" />
-                                Solicitud enviada ·{' '}
-                                {requestStatusLabels[message.request.status]}
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openRequestForm(message)}
-                              >
-                                <Icon name="tasks" />
-                                {message.action.label}
-                              </button>
-                            )
-                          ) : message.action.task ? (
-                            <span className="duco-request-sent">
-                              <Icon name="check" /> Pendiente creado
-                            </span>
+                <>
+                  {messages.map((message) => (
+                    <article
+                      className={`duco-message duco-message--${message.role}${message.status === 'failed' ? ' duco-message--failed' : ''}`}
+                      key={message.id}
+                    >
+                      {message.role === 'assistant' ? (
+                        <AssistantAvatar />
+                      ) : (
+                        <UserAvatar user={currentUser} />
+                      )}
+                      <div className="duco-message__column">
+                        <div className="duco-message__meta">
+                          <strong>
+                            {message.role === 'assistant'
+                              ? 'DUCO'
+                              : currentUser.displayName}
+                          </strong>
+                          {message.status === 'pending' ? (
+                            <span>Enviando…</span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => openTaskForm(message)}
-                            >
-                              <Icon name="tasks" />
-                              {message.action.label}
-                            </button>
+                            <time dateTime={message.createdAt}>
+                              {formatTime(message.createdAt)}
+                            </time>
                           )}
                         </div>
-                      )}
-                      {message.status === 'failed' && (
-                        <div className="duco-message__failure" role="alert">
-                          <span>No se pudo enviar.</span>
-                          <button
-                            type="button"
-                            onClick={() => retryMessage(message)}
-                            disabled={sending}
-                          >
-                            <Icon name="refresh" />
-                            Reintentar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => dismissFailedMessage(message.id)}
-                            disabled={sending}
-                          >
-                            Descartar
-                          </button>
+                        <div className="duco-message__bubble">
+                          <p>{message.content}</p>
                         </div>
-                      )}
-                    </div>
-                  </article>
-                ))
+                        {message.action && message.status === 'sent' && (
+                          <div className="duco-message__request-action">
+                            {message.action.type === 'manage_request' ? (
+                              message.request ? (
+                                <span className="duco-request-sent">
+                                  <Icon name="privacy" />
+                                  Solicitud enviada ·{' '}
+                                  {requestStatusLabels[message.request.status]}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openRequestForm(message)}
+                                >
+                                  <Icon name="tasks" />
+                                  {message.action.label}
+                                </button>
+                              )
+                            ) : (
+                              renderTaskMessageAction(message)
+                            )}
+                          </div>
+                        )}
+                        {message.status === 'failed' && (
+                          <div className="duco-message__failure" role="alert">
+                            <span>No se pudo enviar.</span>
+                            <button
+                              type="button"
+                              onClick={() => retryMessage(message)}
+                              disabled={sending}
+                            >
+                              <Icon name="refresh" />
+                              Reintentar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => dismissFailedMessage(message.id)}
+                              disabled={sending}
+                            >
+                              Descartar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+
+                  {orphanTaskDrafts.length > 0 && (
+                    <section
+                      className="duco-orphan-drafts"
+                      aria-labelledby="duco-saved-drafts-title"
+                    >
+                      <header>
+                        <Icon name="tasks" />
+                        <div>
+                          <h3 id="duco-saved-drafts-title">
+                            Borradores guardados
+                          </h3>
+                          <p>
+                            Se mantienen disponibles aunque borres la
+                            conversación.
+                          </p>
+                        </div>
+                      </header>
+                      <div className="duco-orphan-drafts__list">
+                        {orphanTaskDrafts.map((item) => {
+                          const taskDraft = normalizeTaskDraft(item.payload)
+                          return (
+                            <TaskDraftCard
+                              key={item.id}
+                              draft={taskDraft}
+                              status={item.status}
+                              onReview={
+                                item.status === 'ready_for_review'
+                                  ? () =>
+                                      openTaskForm({
+                                        draftId: item.id,
+                                        sourceMessageId: item.sourceMessageId,
+                                        draft: taskDraft,
+                                      })
+                                  : undefined
+                              }
+                              onDiscard={
+                                item.status === 'ready_for_review' ||
+                                item.status === 'collecting_information'
+                                  ? () => void discardTaskDraft(item)
+                                  : undefined
+                              }
+                              discarding={discardingDraftId === item.id}
+                            />
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+
+              {draftsError && (
+                <div className="duco-drafts-error" role="alert">
+                  <span>{draftsError}</span>
+                  <button type="button" onClick={() => void loadTaskDrafts()}>
+                    Reintentar
+                  </button>
+                </div>
               )}
 
               {sending && (
