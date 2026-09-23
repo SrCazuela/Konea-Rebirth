@@ -4,7 +4,8 @@ import { readFile, rm } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Router, type NextFunction, type Request, type Response } from 'express'
-import { and, eq, isNull, or } from 'drizzle-orm'
+import { and, eq, gte, isNull, or, sql } from 'drizzle-orm'
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit'
 import multer, { MulterError } from 'multer'
 import { db } from '../db/client.js'
 import {
@@ -24,6 +25,41 @@ import {
 import { getPostForUser } from '../services/post-service.js'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+const MAX_USER_UPLOAD_BYTES = 100 * 1024 * 1024
+
+function authenticatedUserKey(request: Request) {
+  const userId: unknown = request.res?.locals.currentUser?.id
+  return typeof userId === 'string'
+    ? `user:${userId}`
+    : `ip:${ipKeyGenerator(request.ip ?? 'unknown')}`
+}
+
+const uploadIpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1_000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_UPLOADS',
+      message: 'Demasiadas cargas de archivos. Intenta nuevamente mas tarde.',
+    },
+  },
+})
+
+const uploadUserLimiter = rateLimit({
+  windowMs: 60 * 60 * 1_000,
+  limit: 20,
+  keyGenerator: authenticatedUserKey,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_UPLOADS',
+      message: 'Alcanzaste el limite temporal de cargas de archivos.',
+    },
+  },
+})
 
 const acceptedFiles = {
   'application/pdf': { extension: '.pdf', signature: 'pdf' },
@@ -169,12 +205,35 @@ async function finishUpload(request: Request, response: Response) {
   const originalName = basename(file.originalname).slice(0, 255)
 
   try {
-    await db.insert(uploadedFiles).values({
-      ownerId: currentUser.id,
-      storedName: file.filename,
-      originalName,
-      mimeType: file.mimetype,
-      size: file.size,
+    await db.transaction(async (transaction) => {
+      // Serializa las cargas del mismo usuario para que dos peticiones
+      // concurrentes no puedan superar la cuota al leer el mismo total.
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`upload-quota:${currentUser.id}`}))`,
+      )
+      const [usage] = await transaction
+        .select({
+          total: sql<number>`coalesce(sum(${uploadedFiles.size}), 0)`,
+        })
+        .from(uploadedFiles)
+        .where(eq(uploadedFiles.ownerId, currentUser.id))
+      const usedBytes = Number(usage?.total ?? 0)
+
+      if (usedBytes + file.size > MAX_USER_UPLOAD_BYTES) {
+        throw new ApiError(
+          413,
+          'UPLOAD_QUOTA_EXCEEDED',
+          'Alcanzaste la cuota total de 100 MB de archivos.',
+        )
+      }
+
+      await transaction.insert(uploadedFiles).values({
+        ownerId: currentUser.id,
+        storedName: file.filename,
+        originalName,
+        mimeType: file.mimetype,
+        size: file.size,
+      })
     })
   } catch (error) {
     await rm(file.path, { force: true })
@@ -242,6 +301,7 @@ async function canAccessUpload(fileName: string, response: Response) {
       db
         .select({ id: messages.id })
         .from(messages)
+        .innerJoin(chats, eq(chats.id, messages.chatId))
         .innerJoin(
           chatParticipants,
           and(
@@ -250,7 +310,16 @@ async function canAccessUpload(fileName: string, response: Response) {
             isNull(chatParticipants.archivedAt),
           ),
         )
-        .where(eq(messages.fileUrl, fileUrl))
+        .where(
+          and(
+            eq(messages.fileUrl, fileUrl),
+            or(
+              eq(chats.type, 'direct'),
+              eq(chatParticipants.role, 'owner'),
+              gte(messages.createdAt, chatParticipants.joinedAt),
+            ),
+          ),
+        )
         .limit(1),
       db
         .select({ id: chats.id })
@@ -278,6 +347,16 @@ async function canAccessUpload(fileName: string, response: Response) {
   ) {
     return true
   }
+
+  const [projectReference] = await db
+    .select({ userId: profiles.userId })
+    .from(profiles)
+    .where(
+      sql`${profiles.projects} @> ${JSON.stringify([{ imageUrl: fileUrl }])}::jsonb`,
+    )
+    .limit(1)
+
+  if (projectReference) return true
 
   if (currentUser.role === 'moderator' || currentUser.role === 'admin') {
     const [reportedPrivateResource] = await db
@@ -311,7 +390,12 @@ export const uploadsRouter = Router()
 
 uploadsRouter.use(requireAuthentication)
 
-uploadsRouter.post('/files', receiveSingleFile)
+uploadsRouter.post(
+  '/files',
+  uploadIpLimiter,
+  uploadUserLimiter,
+  receiveSingleFile,
+)
 
 uploadsRouter.get('/files/:fileName', async (request, response) => {
   const fileName = parseStoredFileName(request.params.fileName)
@@ -324,7 +408,7 @@ uploadsRouter.get('/files/:fileName', async (request, response) => {
   try {
     const file = await readFile(join(UPLOAD_DIRECTORY, fileName))
     response.set({
-      'Cache-Control': 'private, max-age=3600',
+      'Cache-Control': 'private, no-store',
       'Content-Type': mimeType,
       'X-Content-Type-Options': 'nosniff',
     })

@@ -14,6 +14,22 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     envDir: repositoryRoot,
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(moduleId) {
+            if (
+              moduleId.includes('/node_modules/react/') ||
+              moduleId.includes('/node_modules/react-dom/') ||
+              moduleId.includes('/node_modules/scheduler/')
+            ) {
+              return 'react-vendor'
+            }
+            if (moduleId.includes('/node_modules/qrcode/')) return 'qrcode'
+          },
+        },
+      },
+    },
     server: {
       port: 5173,
       proxy: {

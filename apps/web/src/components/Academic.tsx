@@ -8,9 +8,12 @@ import {
 import {
   createAcademicCourse,
   createAcademicTask,
+  deactivateAcademicCourse,
   deleteAcademicTask,
   getAcademicDashboard,
+  updateAcademicCourse,
   updateAcademicTask,
+  type AcademicCourse,
   type AcademicDashboard,
   type AcademicTask,
 } from '../api/academic'
@@ -21,6 +24,36 @@ const dateFormatter = new Intl.DateTimeFormat('es-CL', {
   dateStyle: 'medium',
   timeStyle: 'short',
 })
+const allDayDateFormatter = new Intl.DateTimeFormat('es-CL', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+})
+
+type CourseDraft = {
+  name: string
+  code: string
+  section: string
+  term: string
+}
+type TaskDraft = Pick<
+  AcademicTask,
+  'title' | 'description' | 'courseId' | 'priority' | 'status'
+> & { dueAt: string }
+
+const emptyCourseDraft: CourseDraft = {
+  name: '',
+  code: '',
+  section: '',
+  term: '',
+}
+const emptyTaskDraft: TaskDraft = {
+  title: '',
+  description: '',
+  courseId: '',
+  dueAt: '',
+  priority: 'medium',
+  status: 'pending',
+}
 
 function readableError(error: unknown) {
   return error instanceof Error && error.message
@@ -28,28 +61,47 @@ function readableError(error: unknown) {
     : 'No pudimos completar la acción.'
 }
 
+function toLocalDateTimeInput(value: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function formatAgendaDate(value: string | null, allDay: boolean) {
+  if (!value) return 'Sin fecha límite'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
+  return allDay
+    ? `${allDayDateFormatter.format(date)} · Todo el día`
+    : dateFormatter.format(date)
+}
+
+const statusLabels: Record<AcademicTask['status'], string> = {
+  pending: 'Pendiente',
+  in_progress: 'En progreso',
+  completed: 'Completada',
+}
+
 export function Academic() {
   const [dashboard, setDashboard] = useState<AcademicDashboard | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [courseFormOpen, setCourseFormOpen] = useState(false)
   const [taskFormOpen, setTaskFormOpen] = useState(false)
-  const [courseDraft, setCourseDraft] = useState({
-    name: '',
-    code: '',
-    section: '',
-    term: '',
-  })
-  const [taskDraft, setTaskDraft] = useState({
-    title: '',
-    description: '',
-    courseId: '',
-    dueAt: '',
-    priority: 'medium' as AcademicTask['priority'],
-  })
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [agendaView, setAgendaView] = useState<'open' | 'completed'>('open')
+  const [courseDraft, setCourseDraft] = useState<CourseDraft>(emptyCourseDraft)
+  const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft)
 
   const load = useCallback(async () => {
+    setRefreshing(true)
     try {
       setError('')
       setDashboard(await getAcademicDashboard())
@@ -57,6 +109,7 @@ export function Academic() {
       setError(readableError(loadError))
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [])
 
@@ -64,7 +117,10 @@ export function Academic() {
     let cancelled = false
     getAcademicDashboard()
       .then((result) => {
-        if (!cancelled) setDashboard(result)
+        if (!cancelled) {
+          setDashboard(result)
+          setError('')
+        }
       })
       .catch((loadError: unknown) => {
         if (!cancelled) setError(readableError(loadError))
@@ -77,42 +133,143 @@ export function Academic() {
     }
   }, [])
 
-  const agenda = useMemo(() => {
+  const openAgenda = useMemo(() => {
     if (!dashboard) return []
     const courseNames = new Map(
-      dashboard.courses.map((course) => [course.id, course.name]),
+      [...dashboard.courses, ...dashboard.archivedCourses].map((course) => [
+        course.id,
+        course.name,
+      ]),
     )
     return [
-      ...dashboard.tasks.map((task) => ({
-        id: task.id,
-        kind: 'task' as const,
-        title: task.title,
-        description: task.description,
-        date: task.dueAt,
-        course: task.courseId ? (courseNames.get(task.courseId) ?? null) : null,
-        priority: task.priority,
-        status: task.status,
-      })),
+      ...dashboard.tasks
+        .filter((task) => task.status !== 'completed')
+        .map((task) => ({
+          id: task.id,
+          kind: 'task' as const,
+          title: task.title,
+          description: task.description,
+          date: task.dueAt,
+          allDay: false,
+          course: task.courseId
+            ? (courseNames.get(task.courseId) ?? 'Materia archivada')
+            : null,
+          priority: task.priority,
+          status: task.status,
+          task,
+        })),
       ...dashboard.events.map((event) => ({
         id: event.id,
         kind: 'ava' as const,
         title: event.title,
         description: event.description,
         date: event.startsAt,
+        allDay: event.allDay,
         course: event.courseName,
         priority: 'medium' as const,
         status: 'pending' as const,
+        task: null,
       })),
     ].sort((a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999'))
   }, [dashboard])
 
+  const completedAgenda = useMemo(() => {
+    if (!dashboard) return []
+    const courseNames = new Map(
+      [...dashboard.courses, ...dashboard.archivedCourses].map((course) => [
+        course.id,
+        course.name,
+      ]),
+    )
+    return dashboard.tasks
+      .filter((task) => task.status === 'completed')
+      .map((task) => ({
+        id: task.id,
+        kind: 'task' as const,
+        title: task.title,
+        description: task.description,
+        date: task.dueAt,
+        allDay: false,
+        course: task.courseId
+          ? (courseNames.get(task.courseId) ?? 'Materia archivada')
+          : null,
+        priority: task.priority,
+        status: task.status,
+        task,
+      }))
+      .sort((a, b) => b.task.updatedAt.localeCompare(a.task.updatedAt))
+  }, [dashboard])
+
+  const visibleAgenda = agendaView === 'open' ? openAgenda : completedAgenda
+
+  const closeCourseForm = () => {
+    setCourseFormOpen(false)
+    setEditingCourseId(null)
+    setCourseDraft(emptyCourseDraft)
+  }
+
+  const startNewCourse = () => {
+    if (courseFormOpen && !editingCourseId) {
+      closeCourseForm()
+      return
+    }
+    setEditingCourseId(null)
+    setCourseDraft(emptyCourseDraft)
+    setCourseFormOpen(true)
+  }
+
+  const startEditingCourse = (course: AcademicCourse) => {
+    setEditingCourseId(course.id)
+    setCourseDraft({
+      name: course.name,
+      code: course.code ?? '',
+      section: course.section ?? '',
+      term: course.term ?? '',
+    })
+    setCourseFormOpen(true)
+  }
+
+  const closeTaskForm = () => {
+    setTaskFormOpen(false)
+    setEditingTaskId(null)
+    setTaskDraft(emptyTaskDraft)
+  }
+
+  const startNewTask = () => {
+    if (taskFormOpen && !editingTaskId) {
+      closeTaskForm()
+      return
+    }
+    setEditingTaskId(null)
+    setTaskDraft(emptyTaskDraft)
+    setTaskFormOpen(true)
+  }
+
+  const startEditingTask = (task: AcademicTask) => {
+    setEditingTaskId(task.id)
+    setTaskDraft({
+      title: task.title,
+      description: task.description ?? '',
+      courseId: task.courseId ?? '',
+      dueAt: toLocalDateTimeInput(task.dueAt),
+      priority: task.priority,
+      status: task.status,
+    })
+    setTaskFormOpen(true)
+  }
+
   const submitCourse = async (event: FormEvent) => {
     event.preventDefault()
-    setBusyId('course')
+    const operationId = editingCourseId ?? 'course'
+    setBusyId(operationId)
+    setError('')
     try {
-      await createAcademicCourse(courseDraft)
-      setCourseDraft({ name: '', code: '', section: '', term: '' })
-      setCourseFormOpen(false)
+      if (editingCourseId) {
+        await updateAcademicCourse(editingCourseId, courseDraft)
+      } else {
+        await createAcademicCourse(courseDraft)
+      }
+      closeCourseForm()
       await load()
     } catch (submitError) {
       setError(readableError(submitError))
@@ -123,23 +280,26 @@ export function Academic() {
 
   const submitTask = async (event: FormEvent) => {
     event.preventDefault()
-    setBusyId('task')
+    const operationId = editingTaskId ?? 'task'
+    setBusyId(operationId)
+    setError('')
     try {
-      await createAcademicTask({
+      const payload = {
         title: taskDraft.title,
-        description: taskDraft.description,
+        description: taskDraft.description ?? '',
         courseId: taskDraft.courseId || null,
         dueAt: taskDraft.dueAt ? new Date(taskDraft.dueAt).toISOString() : null,
         priority: taskDraft.priority,
-      })
-      setTaskDraft({
-        title: '',
-        description: '',
-        courseId: '',
-        dueAt: '',
-        priority: 'medium',
-      })
-      setTaskFormOpen(false)
+      }
+      if (editingTaskId) {
+        await updateAcademicTask(editingTaskId, {
+          ...payload,
+          status: taskDraft.status,
+        })
+      } else {
+        await createAcademicTask(payload)
+      }
+      closeTaskForm()
       await load()
     } catch (submitError) {
       setError(readableError(submitError))
@@ -153,6 +313,7 @@ export function Academic() {
     status: AcademicTask['status'],
   ) => {
     setBusyId(taskId)
+    setError('')
     try {
       await updateAcademicTask(taskId, { status })
       await load()
@@ -163,11 +324,33 @@ export function Academic() {
     }
   }
 
+  const removeCourse = async (course: AcademicCourse) => {
+    if (
+      !window.confirm(
+        `¿Quieres desactivar “${course.name}”? Sus tareas seguirán en tu historial.`,
+      )
+    )
+      return
+    setBusyId(course.id)
+    setError('')
+    try {
+      await deactivateAcademicCourse(course.id)
+      if (editingCourseId === course.id) closeCourseForm()
+      await load()
+    } catch (courseError) {
+      setError(readableError(courseError))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const removeTask = async (taskId: string) => {
-    if (!window.confirm('¿Quieres eliminar esta tarea personal?')) return
+    if (!window.confirm('¿Quieres eliminar definitivamente esta tarea?')) return
     setBusyId(taskId)
+    setError('')
     try {
       await deleteAcademicTask(taskId)
+      if (editingTaskId === taskId) closeTaskForm()
       await load()
     } catch (taskError) {
       setError(readableError(taskError))
@@ -178,31 +361,48 @@ export function Academic() {
 
   if (loading)
     return (
-      <div className="academic-loading">Preparando tu espacio académico…</div>
+      <div className="academic-loading" role="status" aria-live="polite">
+        Preparando tu espacio académico…
+      </div>
+    )
+
+  if (!dashboard)
+    return (
+      <div className="academic-load-failure" role="alert">
+        <p>{error || 'No pudimos cargar tu espacio académico.'}</p>
+        <button type="button" disabled={refreshing} onClick={() => void load()}>
+          {refreshing ? 'Reintentando…' : 'Reintentar'}
+        </button>
+      </div>
     )
 
   return (
-    <section className="academic-layout">
+    <section className="academic-layout" aria-busy={refreshing || !!busyId}>
       {error && (
-        <p className="academic-error" role="alert">
-          {error}
-        </p>
+        <div className="academic-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError('')}>
+            Cerrar
+          </button>
+        </div>
       )}
       <div className="academic-summary">
         <div>
           <span>Materias activas</span>
-          <strong>{dashboard?.courses.length ?? 0}</strong>
+          <strong>{dashboard.courses.length}</strong>
         </div>
         <div>
           <span>Tareas abiertas</span>
           <strong>
-            {dashboard?.tasks.filter((t) => t.status !== 'completed').length ??
-              0}
+            {
+              dashboard.tasks.filter((task) => task.status !== 'completed')
+                .length
+            }
           </strong>
         </div>
         <div>
-          <span>Eventos de AVA</span>
-          <strong>{dashboard?.events.length ?? 0}</strong>
+          <span>Eventos próximos de AVA</span>
+          <strong>{dashboard.events.length}</strong>
         </div>
         <div className="academic-sync">
           <AvaCalendarSync onSynchronized={() => void load()} />
@@ -218,21 +418,26 @@ export function Academic() {
             </div>
             <button
               type="button"
-              onClick={() => setCourseFormOpen((value) => !value)}
+              aria-expanded={courseFormOpen}
+              onClick={startNewCourse}
             >
-              + Añadir materia
+              {courseFormOpen && !editingCourseId
+                ? 'Cerrar'
+                : '+ Añadir materia'}
             </button>
           </header>
           {courseFormOpen && (
             <form className="academic-form" onSubmit={submitCourse}>
+              <h3>{editingCourseId ? 'Editar materia' : 'Nueva materia'}</h3>
               <label>
                 Nombre
                 <input
                   required
+                  autoFocus
                   maxLength={300}
                   value={courseDraft.name}
-                  onChange={(e) =>
-                    setCourseDraft({ ...courseDraft, name: e.target.value })
+                  onChange={(event) =>
+                    setCourseDraft({ ...courseDraft, name: event.target.value })
                   }
                 />
               </label>
@@ -241,9 +446,12 @@ export function Academic() {
                   Código
                   <input
                     maxLength={80}
-                    value={courseDraft.code}
-                    onChange={(e) =>
-                      setCourseDraft({ ...courseDraft, code: e.target.value })
+                    value={courseDraft.code ?? ''}
+                    onChange={(event) =>
+                      setCourseDraft({
+                        ...courseDraft,
+                        code: event.target.value,
+                      })
                     }
                   />
                 </label>
@@ -251,11 +459,11 @@ export function Academic() {
                   Sección
                   <input
                     maxLength={80}
-                    value={courseDraft.section}
-                    onChange={(e) =>
+                    value={courseDraft.section ?? ''}
+                    onChange={(event) =>
                       setCourseDraft({
                         ...courseDraft,
-                        section: e.target.value,
+                        section: event.target.value,
                       })
                     }
                   />
@@ -266,26 +474,39 @@ export function Academic() {
                 <input
                   maxLength={100}
                   placeholder="Ej. Segundo semestre 2026"
-                  value={courseDraft.term}
-                  onChange={(e) =>
-                    setCourseDraft({ ...courseDraft, term: e.target.value })
+                  value={courseDraft.term ?? ''}
+                  onChange={(event) =>
+                    setCourseDraft({ ...courseDraft, term: event.target.value })
                   }
                 />
               </label>
-              <button disabled={busyId === 'course'}>
-                {busyId === 'course' ? 'Guardando…' : 'Guardar materia'}
-              </button>
+              <div className="academic-form-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={closeCourseForm}
+                >
+                  Cancelar
+                </button>
+                <button disabled={busyId === (editingCourseId ?? 'course')}>
+                  {busyId === (editingCourseId ?? 'course')
+                    ? 'Guardando…'
+                    : editingCourseId
+                      ? 'Guardar cambios'
+                      : 'Guardar materia'}
+                </button>
+              </div>
             </form>
           )}
           <div className="academic-course-list">
-            {!dashboard?.courses.length ? (
+            {!dashboard.courses.length ? (
               <p className="academic-empty">
                 AVA no informó materias. Puedes añadirlas manualmente.
               </p>
             ) : (
               dashboard.courses.map((course) => (
                 <article key={course.id}>
-                  <span className="academic-course-mark">
+                  <span className="academic-course-mark" aria-hidden="true">
                     {course.name.slice(0, 2).toUpperCase()}
                   </span>
                   <div>
@@ -300,7 +521,33 @@ export function Academic() {
                         .join(' · ') || 'Sin detalles adicionales'}
                     </p>
                   </div>
-                  <small>{course.source === 'ava' ? 'AVA' : 'Manual'}</small>
+                  {course.source === 'ava' ? (
+                    <small title="Se actualiza mediante la sincronización con AVA">
+                      AVA · Solo lectura
+                    </small>
+                  ) : (
+                    <div className="academic-course-actions">
+                      {course.source === 'ava_extension' && (
+                        <small title="Importada desde el DOM visible de AVA">
+                          AVA experimental
+                        </small>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busyId === course.id}
+                        onClick={() => startEditingCourse(course)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === course.id}
+                        onClick={() => void removeCourse(course)}
+                      >
+                        Desactivar
+                      </button>
+                    </div>
+                  )}
                 </article>
               ))
             )}
@@ -311,38 +558,70 @@ export function Academic() {
           <header>
             <div>
               <span>Planificación</span>
-              <h2>Próximas tareas</h2>
+              <h2>
+                {agendaView === 'open'
+                  ? 'Próximas tareas'
+                  : 'Historial de tareas'}
+              </h2>
             </div>
             <button
               type="button"
-              onClick={() => setTaskFormOpen((value) => !value)}
+              aria-expanded={taskFormOpen}
+              onClick={startNewTask}
             >
-              + Crear tarea
+              {taskFormOpen && !editingTaskId ? 'Cerrar' : '+ Crear tarea'}
             </button>
           </header>
+          <div className="academic-agenda-tabs" aria-label="Filtrar tareas">
+            <button
+              type="button"
+              aria-pressed={agendaView === 'open'}
+              onClick={() => setAgendaView('open')}
+            >
+              Pendientes (
+              {openAgenda.filter((item) => item.kind === 'task').length})
+            </button>
+            <button
+              type="button"
+              aria-pressed={agendaView === 'completed'}
+              onClick={() => setAgendaView('completed')}
+            >
+              Completadas ({completedAgenda.length})
+            </button>
+          </div>
           {taskFormOpen && (
             <form className="academic-form" onSubmit={submitTask}>
+              <h3>{editingTaskId ? 'Editar tarea' : 'Nueva tarea'}</h3>
               <label>
                 Título
                 <input
                   required
+                  autoFocus
                   maxLength={160}
                   value={taskDraft.title}
-                  onChange={(e) =>
-                    setTaskDraft({ ...taskDraft, title: e.target.value })
+                  onChange={(event) =>
+                    setTaskDraft({ ...taskDraft, title: event.target.value })
                   }
                 />
               </label>
               <label>
                 Materia
                 <select
-                  value={taskDraft.courseId}
-                  onChange={(e) =>
-                    setTaskDraft({ ...taskDraft, courseId: e.target.value })
+                  value={taskDraft.courseId ?? ''}
+                  onChange={(event) =>
+                    setTaskDraft({ ...taskDraft, courseId: event.target.value })
                   }
                 >
                   <option value="">Sin materia</option>
-                  {dashboard?.courses.map((course) => (
+                  {taskDraft.courseId &&
+                    dashboard.archivedCourses
+                      .filter((course) => course.id === taskDraft.courseId)
+                      .map((course) => (
+                        <option key={course.id} value={course.id} disabled>
+                          {course.name} (desactivada)
+                        </option>
+                      ))}
+                  {dashboard.courses.map((course) => (
                     <option key={course.id} value={course.id}>
                       {course.name}
                     </option>
@@ -351,12 +630,12 @@ export function Academic() {
               </label>
               <div>
                 <label>
-                  Fecha
+                  Fecha y hora
                   <input
                     type="datetime-local"
                     value={taskDraft.dueAt}
-                    onChange={(e) =>
-                      setTaskDraft({ ...taskDraft, dueAt: e.target.value })
+                    onChange={(event) =>
+                      setTaskDraft({ ...taskDraft, dueAt: event.target.value })
                     }
                   />
                 </label>
@@ -364,10 +643,11 @@ export function Academic() {
                   Prioridad
                   <select
                     value={taskDraft.priority}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       setTaskDraft({
                         ...taskDraft,
-                        priority: e.target.value as AcademicTask['priority'],
+                        priority: event.target
+                          .value as AcademicTask['priority'],
                       })
                     }
                   >
@@ -377,35 +657,72 @@ export function Academic() {
                   </select>
                 </label>
               </div>
+              {editingTaskId && (
+                <label>
+                  Estado
+                  <select
+                    value={taskDraft.status}
+                    onChange={(event) =>
+                      setTaskDraft({
+                        ...taskDraft,
+                        status: event.target.value as AcademicTask['status'],
+                      })
+                    }
+                  >
+                    <option value="pending">Pendiente</option>
+                    <option value="in_progress">En progreso</option>
+                    <option value="completed">Completada</option>
+                  </select>
+                </label>
+              )}
               <label>
                 Descripción
                 <textarea
                   maxLength={1000}
                   rows={3}
-                  value={taskDraft.description}
-                  onChange={(e) =>
-                    setTaskDraft({ ...taskDraft, description: e.target.value })
+                  value={taskDraft.description ?? ''}
+                  onChange={(event) =>
+                    setTaskDraft({
+                      ...taskDraft,
+                      description: event.target.value,
+                    })
                   }
                 />
               </label>
-              <button disabled={busyId === 'task'}>
-                {busyId === 'task' ? 'Guardando…' : 'Guardar tarea'}
-              </button>
+              <div className="academic-form-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={closeTaskForm}
+                >
+                  Cancelar
+                </button>
+                <button disabled={busyId === (editingTaskId ?? 'task')}>
+                  {busyId === (editingTaskId ?? 'task')
+                    ? 'Guardando…'
+                    : editingTaskId
+                      ? 'Guardar cambios'
+                      : 'Guardar tarea'}
+                </button>
+              </div>
             </form>
           )}
-          <div className="academic-agenda-list">
-            {!agenda.length ? (
+          <div className="academic-agenda-list" aria-live="polite">
+            {!visibleAgenda.length ? (
               <p className="academic-empty">
-                No hay eventos ni tareas. Crea tu primer pendiente.
+                {agendaView === 'open'
+                  ? 'No hay eventos ni tareas pendientes.'
+                  : 'Aún no tienes tareas completadas.'}
               </p>
             ) : (
-              agenda.map((item) => (
+              visibleAgenda.map((item) => (
                 <article
                   className={`academic-agenda-item academic-agenda-item--${item.status}`}
                   key={`${item.kind}-${item.id}`}
                 >
                   <span
                     className={`academic-priority academic-priority--${item.priority}`}
+                    aria-hidden="true"
                   />
                   <div>
                     <div>
@@ -416,16 +733,29 @@ export function Academic() {
                       </small>
                       <h3>{item.title}</h3>
                     </div>
+                    {item.kind === 'task' && (
+                      <span
+                        className={`academic-status academic-status--${item.status}`}
+                      >
+                        {statusLabels[item.status]}
+                      </span>
+                    )}
                     {item.description && <p>{item.description}</p>}
-                    <time>
-                      {item.date
-                        ? dateFormatter.format(new Date(item.date))
-                        : 'Sin fecha límite'}
+                    <time dateTime={item.date ?? undefined}>
+                      {formatAgendaDate(item.date, item.allDay)}
                     </time>
                   </div>
-                  {item.kind === 'task' && (
+                  {item.kind === 'task' && item.task && (
                     <div className="academic-task-actions">
                       <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => startEditingTask(item.task)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
                         disabled={busyId === item.id}
                         onClick={() =>
                           void changeTaskStatus(
@@ -439,6 +769,7 @@ export function Academic() {
                         {item.status === 'completed' ? 'Reabrir' : 'Completar'}
                       </button>
                       <button
+                        type="button"
                         disabled={busyId === item.id}
                         onClick={() => void removeTask(item.id)}
                       >

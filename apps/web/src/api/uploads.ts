@@ -8,6 +8,9 @@ export const ACCEPTED_IMAGE_TYPES = [
   'image/gif',
 ] as const
 
+const localUploadPathPattern =
+  /^\/api\/v1\/uploads\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:gif|jpe?g|pdf|png|webp)$/
+
 export type UploadedFile = {
   name: string
   originalName: string
@@ -97,10 +100,37 @@ export function uploadImage(
   })
 }
 
+function isSafeHttpUrl(url: URL) {
+  const isLocalHttp =
+    url.protocol === 'http:' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  return (
+    (url.protocol === 'https:' || isLocalHttp) && !url.username && !url.password
+  )
+}
+
+export function safeExternalUrl(value: string | null | undefined) {
+  if (!value) return null
+
+  try {
+    const url = new URL(value)
+    return isSafeHttpUrl(url) ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function absoluteUploadUrl(url: string) {
-  if (/^https?:\/\//i.test(url)) return url
-  const apiOrigin = /^https?:\/\//i.test(apiBaseUrl)
-    ? new URL(apiBaseUrl).origin
-    : window.location.origin
-  return new URL(url, apiOrigin).toString()
+  try {
+    if (!/^https?:\/\//i.test(url) && !localUploadPathPattern.test(url)) {
+      return ''
+    }
+    const apiOrigin = /^https?:\/\//i.test(apiBaseUrl)
+      ? new URL(apiBaseUrl).origin
+      : window.location.origin
+    const resolvedUrl = new URL(url, apiOrigin)
+    return isSafeHttpUrl(resolvedUrl) ? resolvedUrl.toString() : ''
+  } catch {
+    return ''
+  }
 }

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useModalDialog } from '../hooks/useModalDialog'
+import { releaseCamera } from './qr-camera'
 import './QrScanner.css'
 
 type QrScannerProps = {
@@ -39,6 +41,10 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
     'starting',
   )
   const [error, setError] = useState('')
+  const dialogRef = useModalDialog<HTMLElement>({
+    open: true,
+    onClose,
+  })
 
   useEffect(() => {
     onDetectedRef.current = onDetected
@@ -50,7 +56,7 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
     const stop = () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
       timerRef.current = null
-      streamRef.current?.getTracks().forEach((track) => track.stop())
+      releaseCamera(streamRef.current, videoRef.current)
       streamRef.current = null
     }
 
@@ -86,9 +92,16 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
 
         streamRef.current = stream
         const video = videoRef.current
-        if (!video) return
+        if (!video) {
+          stop()
+          return
+        }
         video.srcObject = stream
         await video.play()
+        if (cancelled) {
+          stop()
+          return
+        }
         setStatus('scanning')
 
         const detector = new Detector({ formats: ['qr_code'] })
@@ -112,6 +125,7 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
         }
         void scan()
       } catch (cameraError) {
+        stop()
         if (!cancelled) {
           setStatus('error')
           setError(cameraErrorMessage(cameraError))
@@ -127,12 +141,20 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
   }, [])
 
   return (
-    <div className="qr-scanner-backdrop" role="presentation">
+    <div
+      className="qr-scanner-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <section
+        ref={dialogRef}
         className="qr-scanner-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="qr-scanner-title"
+        tabIndex={-1}
       >
         <header>
           <div>

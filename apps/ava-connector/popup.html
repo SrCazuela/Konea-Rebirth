@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conector AVA · Konea</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <span aria-hidden="true">K</span>
+        <div>
+          <small>Conector experimental</small>
+          <h1>Importar desde AVA</h1>
+        </div>
+      </header>
+
+      <p class="privacy">
+        Solo lee textos y fechas visibles. Nunca accede a contraseñas, cookies,
+        notas, mensajes ni entregas.
+      </p>
+
+      <section id="status" role="status">Revisando la pestaña activa…</section>
+      <form id="preview" hidden>
+        <section>
+          <div class="section-title">
+            <h2>Materias</h2>
+            <span id="course-count">0</span>
+          </div>
+          <div id="courses" class="items"></div>
+        </section>
+        <section>
+          <div class="section-title">
+            <h2>Actividades con fecha</h2>
+            <span id="activity-count">0</span>
+          </div>
+          <div id="activities" class="items"></div>
+        </section>
+        <p class="hint">
+          Revisa la selección. Konea volverá a pedir tu confirmación antes de
+          guardar cualquier dato.
+        </p>
+        <button id="export" type="submit">Exportar para Konea</button>
+      </form>
+      <button id="retry" type="button" hidden>Volver a intentar</button>
+      <button id="open-konea" type="button" hidden>
+        Abrir Konea para importar
+      </button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

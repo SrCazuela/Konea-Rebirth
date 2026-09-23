@@ -10,6 +10,10 @@ import {
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
 import {
+  httpOrLocalUploadUrlSchema,
+  httpUrlSchema,
+} from '../http/url-schemas.js'
+import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
@@ -21,20 +25,11 @@ const optionalText = (maximumLength: number) =>
     .transform((value) => value || null)
     .optional()
 
-const profileMediaUrl = z
-  .string()
-  .trim()
-  .max(2_048)
-  .refine(
-    (value) =>
-      value.startsWith('/api/v1/uploads/files/') ||
-      z.url().safeParse(value).success,
-    'Debe ser una URL válida o un archivo subido a Konea.',
-  )
-
-const optionalUrl = z
-  .union([z.string().trim().url().max(2_048), z.literal(''), z.null()])
+const nullableUrl = z
+  .union([httpUrlSchema, z.literal(''), z.null()])
   .transform((value) => value || null)
+
+const optionalUrl = nullableUrl.optional()
 
 const educationSchema = z
   .strictObject({
@@ -58,10 +53,10 @@ const projectSchema = z.strictObject({
   id: z.string().uuid(),
   title: z.string().trim().min(2).max(120),
   description: z.string().trim().min(2).max(1_000),
-  url: optionalUrl,
-  repositoryUrl: optionalUrl,
+  url: nullableUrl,
+  repositoryUrl: nullableUrl,
   imageUrl: z
-    .union([profileMediaUrl, z.literal(''), z.null()])
+    .union([httpOrLocalUploadUrlSchema, z.literal(''), z.null()])
     .transform((value) => value || null),
   technologies: z.array(z.string().trim().min(1).max(30)).max(12),
 })
@@ -74,7 +69,7 @@ const achievementSchema = z.strictObject({
     .union([z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), z.null()])
     .transform((value) => value || null),
   description: z.string().trim().max(600),
-  credentialUrl: optionalUrl,
+  credentialUrl: nullableUrl,
 })
 
 const uniqueEntryIds = <T extends { id: string }>(entries: T[]) =>
@@ -94,18 +89,15 @@ const updateProfileSchema = z.strictObject({
   institution: optionalText(160),
   career: optionalText(160),
   avatarUrl: z
-    .union([profileMediaUrl, z.literal(''), z.null()])
+    .union([httpOrLocalUploadUrlSchema, z.literal(''), z.null()])
     .transform((value) => value || null)
     .optional(),
   coverUrl: z
-    .union([profileMediaUrl, z.literal(''), z.null()])
+    .union([httpOrLocalUploadUrlSchema, z.literal(''), z.null()])
     .transform((value) => value || null)
     .optional(),
   campus: optionalText(160),
-  website: z
-    .union([z.string().trim().url().max(2_048), z.literal(''), z.null()])
-    .transform((value) => value || null)
-    .optional(),
+  website: optionalUrl,
   education: z
     .array(educationSchema)
     .max(6)

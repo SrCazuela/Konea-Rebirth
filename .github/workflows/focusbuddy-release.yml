@@ -1,0 +1,99 @@
+name: FocusBuddy Release
+
+on:
+  push:
+    tags:
+      - 'focusbuddy-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Build and publish Windows installer
+    runs-on: windows-latest
+    env:
+      FOCUSBUDDY_APP_URL: ${{ vars.FOCUSBUDDY_APP_URL }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate the public Konea URL
+        shell: pwsh
+        run: |
+          $package = Get-Content -LiteralPath 'apps/focusbuddy/package.json' -Raw | ConvertFrom-Json
+          $expectedTag = "focusbuddy-v$($package.version)"
+          if ($env:GITHUB_REF_NAME -cne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' must exactly match package version '$expectedTag'."
+          }
+
+          $candidate = $env:FOCUSBUDDY_APP_URL
+          if ([string]::IsNullOrWhiteSpace($candidate)) {
+            throw 'Repository variable FOCUSBUDDY_APP_URL is required for a public FocusBuddy release.'
+          }
+
+          $parsed = $null
+          if (-not [Uri]::TryCreate($candidate, [UriKind]::Absolute, [ref]$parsed)) {
+            throw 'FOCUSBUDDY_APP_URL must be an absolute URL.'
+          }
+          if ($parsed.Scheme -ne 'https' -or [string]::IsNullOrWhiteSpace($parsed.Host)) {
+            throw 'FOCUSBUDDY_APP_URL must use HTTPS and include a host.'
+          }
+          if (-not [string]::IsNullOrEmpty($parsed.UserInfo)) {
+            throw 'FOCUSBUDDY_APP_URL must not contain embedded credentials.'
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test FocusBuddy
+        run: npm run test --workspace @konea/focusbuddy
+
+      - name: Validate FocusBuddy sources
+        run: npm run build --workspace @konea/focusbuddy
+
+      - name: Build and verify the NSIS installer
+        run: npm run dist:focusbuddy
+
+      - name: Prepare stable release assets
+        id: assets
+        shell: pwsh
+        run: |
+          $releaseDirectory = Join-Path $PWD 'apps/focusbuddy/release'
+          $sourceInstaller = Get-ChildItem -LiteralPath $releaseDirectory -File -Filter 'Konea-FocusBuddy-*-x64.exe' |
+            Where-Object { $_.Name -ne 'Konea-FocusBuddy-Windows-x64.exe' } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if ($null -eq $sourceInstaller) {
+            throw 'electron-builder did not produce the expected Windows x64 installer.'
+          }
+
+          $stableInstaller = Join-Path $releaseDirectory 'Konea-FocusBuddy-Windows-x64.exe'
+          $checksumFile = "$stableInstaller.sha256"
+          Copy-Item -LiteralPath $sourceInstaller.FullName -Destination $stableInstaller -Force
+          $checksum = (Get-FileHash -LiteralPath $stableInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $checksumFile -Value "$checksum  Konea-FocusBuddy-Windows-x64.exe" -Encoding ascii
+
+          "installer=$stableInstaller" >> $env:GITHUB_OUTPUT
+          "checksum=$checksumFile" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $installer = '${{ steps.assets.outputs.installer }}'
+          $checksum = '${{ steps.assets.outputs.checksum }}'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer $checksum --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag $installer $checksum --generate-notes --title "Konea FocusBuddy $tag" --repo $env:GITHUB_REPOSITORY
+          }

@@ -148,6 +148,174 @@
   gap: 7px;
 }
 
+.ava-sync-dialog > form h4 {
+  margin: 0 0 4px;
+  color: #5d5068;
+  font-size: 0.75rem;
+}
+
+.ava-dom-import {
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid #d9c8eb;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fbf8ff, #f6effe);
+}
+
+.ava-dom-import > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ava-dom-import > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ava-dom-import > header strong {
+  color: #453253;
+  font-size: 0.76rem;
+}
+
+.ava-dom-import > header span,
+.ava-dom-import > p,
+.ava-dom-import__notice {
+  color: #766781;
+  font-size: 0.65rem;
+}
+
+.ava-dom-import > header a {
+  flex: 0 0 auto;
+  color: #673ab7;
+  font-size: 0.67rem;
+  font-weight: 750;
+}
+
+.ava-dom-import > p {
+  margin: 9px 0 10px;
+  line-height: 1.5;
+}
+
+.ava-dom-import__file {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px dashed #9671c6;
+  border-radius: 11px;
+  color: #6435ad;
+  background: rgb(255 255 255 / 75%);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.ava-dom-import__file:hover {
+  border-style: solid;
+  background: #fff;
+}
+
+.ava-dom-import__preview {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dfd2ec;
+}
+
+.ava-dom-import__preview > p {
+  margin: 0 0 10px;
+  color: #65566f;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.ava-dom-import fieldset {
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 9px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dfd3e9;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 70%);
+}
+
+.ava-dom-import legend {
+  padding: 0 4px;
+  color: #5f4e6d;
+  font-size: 0.67rem;
+  font-weight: 750;
+}
+
+.ava-dom-import fieldset > label {
+  padding: 7px 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ava-dom-import fieldset > label > input {
+  width: auto;
+  min-height: 0;
+  margin-top: 2px;
+  padding: 0;
+  accent-color: #7141ba;
+}
+
+.ava-dom-import fieldset > label > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.ava-dom-import fieldset strong {
+  overflow: hidden;
+  color: #43364d;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ava-dom-import fieldset small,
+.ava-dom-import__notice {
+  color: #807188;
+  line-height: 1.4;
+}
+
+.ava-dom-import__actions {
+  margin-top: 11px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ava-dom-import__actions button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid #d9cce4;
+  border-radius: 9px;
+  color: #66566f;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.67rem;
+  font-weight: 750;
+}
+
+.ava-dom-import__actions button:last-child {
+  border-color: #7141ba;
+  color: #fff;
+  background: #7141ba;
+}
+
+.ava-dom-import__notice {
+  margin-top: 10px;
+  display: block;
+}
+
 .ava-sync-dialog form label {
   color: #51475c;
   font-size: 0.72rem;

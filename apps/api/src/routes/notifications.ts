@@ -85,7 +85,7 @@ notificationsRouter.post('/read-all', async (_request, response) => {
       ),
     )
 
-  response.json({ updated: true })
+  response.json({ updated: true, unreadCount: 0 })
 })
 
 notificationsRouter.patch(
@@ -120,6 +120,9 @@ notificationsRouter.patch(
       eq(notifications.id, updated.id),
     )
 
-    response.json({ notification })
+    response.json({
+      notification,
+      unreadCount: await getUnreadCount(currentUser.id),
+    })
   },
 )

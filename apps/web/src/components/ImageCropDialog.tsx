@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 type ImageCropDialogProps = {
   file: File
@@ -28,7 +29,6 @@ export function ImageCropDialog({
     start: Point
     offset: Point
   } | null>(null)
-  const [imageUrl, setImageUrl] = useState('')
   const [naturalSize, setNaturalSize] = useState<Size>({ width: 0, height: 0 })
   const [viewportSize, setViewportSize] = useState<Size>({
     width: 0,
@@ -36,11 +36,20 @@ export function ImageCropDialog({
   })
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
+  const dialogRef = useModalDialog<HTMLElement>({
+    open: true,
+    onClose: onCancel,
+  })
 
   useEffect(() => {
-    const url = URL.createObjectURL(file)
-    setImageUrl(url)
-    return () => URL.revokeObjectURL(url)
+    const image = imageRef.current
+    if (!image) return
+    const imageUrl = URL.createObjectURL(file)
+    image.src = imageUrl
+    return () => {
+      image.removeAttribute('src')
+      URL.revokeObjectURL(imageUrl)
+    }
   }, [file])
 
   useEffect(() => {
@@ -77,17 +86,7 @@ export function ImageCropDialog({
     x: Math.max(-limit.x, Math.min(limit.x, point.x)),
     y: Math.max(-limit.y, Math.min(limit.y, point.y)),
   })
-
-  useEffect(() => {
-    setOffset((current) => clamp(current))
-    // The limits intentionally recalculate when the viewport, image or zoom changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    displayed.width,
-    displayed.height,
-    viewportSize.width,
-    viewportSize.height,
-  ])
+  const visibleOffset = clamp(offset)
 
   const createCroppedFile = async () => {
     const image = imageRef.current
@@ -99,8 +98,10 @@ export function ImageCropDialog({
     const context = canvas.getContext('2d')
     if (!context) return
 
-    const displayedLeft = (viewportSize.width - displayed.width) / 2 + offset.x
-    const displayedTop = (viewportSize.height - displayed.height) / 2 + offset.y
+    const displayedLeft =
+      (viewportSize.width - displayed.width) / 2 + visibleOffset.x
+    const displayedTop =
+      (viewportSize.height - displayed.height) / 2 + visibleOffset.y
     const sourceX = Math.max(0, -displayedLeft / scale)
     const sourceY = Math.max(0, -displayedTop / scale)
     const sourceWidth = Math.min(
@@ -134,12 +135,20 @@ export function ImageCropDialog({
   }
 
   return (
-    <div className="portal-image-crop-backdrop" role="presentation">
+    <div
+      className="portal-image-crop-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel()
+      }}
+    >
       <section
+        ref={dialogRef}
         className="portal-image-crop-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-crop-title"
+        tabIndex={-1}
       >
         <div className="portal-image-crop-dialog__heading">
           <div>
@@ -164,7 +173,7 @@ export function ImageCropDialog({
             dragRef.current = {
               pointerId: event.pointerId,
               start: { x: event.clientX, y: event.clientY },
-              offset,
+              offset: visibleOffset,
             }
           }}
           onPointerMove={(event) => {
@@ -181,25 +190,22 @@ export function ImageCropDialog({
             dragRef.current = null
           }}
         >
-          {imageUrl && (
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt="Vista previa del recorte"
-              draggable={false}
-              onLoad={(event) =>
-                setNaturalSize({
-                  width: event.currentTarget.naturalWidth,
-                  height: event.currentTarget.naturalHeight,
-                })
-              }
-              style={{
-                width: displayed.width || undefined,
-                height: displayed.height || undefined,
-                transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
-              }}
-            />
-          )}
+          <img
+            ref={imageRef}
+            alt="Vista previa del recorte"
+            draggable={false}
+            onLoad={(event) =>
+              setNaturalSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              })
+            }
+            style={{
+              width: displayed.width || undefined,
+              height: displayed.height || undefined,
+              transform: `translate(calc(-50% + ${visibleOffset.x}px), calc(-50% + ${visibleOffset.y}px))`,
+            }}
+          />
           <span className="portal-image-crop-viewport__guide" />
         </div>
         <label className="portal-image-crop-zoom">

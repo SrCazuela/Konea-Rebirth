@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Konea · Conector AVA experimental",
+  "description": "Exporta materias y actividades visibles de AVA para revisarlas antes de importarlas en Konea.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "109",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "action": {
+    "default_title": "Capturar AVA para Konea",
+    "default_popup": "popup.html"
+  }
+}

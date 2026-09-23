@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import { useState, type FormEvent, type MouseEvent } from 'react'
 import { ApiClientError, login, register, type KoneaUser } from '../api/auth'
+import { useModalDialog } from '../hooks/useModalDialog'
 import './AuthDialog.css'
 
 export type AuthMode = 'login' | 'register'
@@ -45,20 +46,11 @@ export function AuthDialog({
     Record<string, string[] | undefined> | undefined
   >()
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    function closeWithEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !submitting) onClose()
-    }
-
-    window.addEventListener('keydown', closeWithEscape)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeWithEscape)
-    }
-  }, [onClose, submitting])
+  const dialogRef = useModalDialog<HTMLElement>({
+    open: true,
+    onClose,
+    closeDisabled: submitting,
+  })
 
   function switchMode(nextMode: AuthMode) {
     setError(null)
@@ -118,10 +110,12 @@ export function AuthDialog({
   return (
     <div className="dialog-backdrop" onMouseDown={closeFromBackdrop}>
       <section
+        ref={dialogRef}
         className="auth-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-dialog-title"
+        tabIndex={-1}
       >
         <button
           className="dialog-close"

@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto'
-import { and, desc, eq, gt, isNull } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
@@ -51,6 +51,9 @@ async function createPersonalCode(ownerId: string) {
     try {
       return await db.transaction(async (transaction) => {
         const now = new Date()
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`qr-owner:${ownerId}`}))`,
+        )
         await transaction
           .update(qrCodes)
           .set({ usedAt: now, usedById: ownerId })
@@ -128,27 +131,29 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
         'No puedes usar tu propio código.',
       )
     }
-    if (code.usedAt) {
+    if (code.usedAt && code.usedById !== currentUser.id) {
       throw new ApiError(
         409,
         'QR_CODE_ALREADY_USED',
         'El código QR ya fue utilizado.',
       )
     }
-    if (code.expiresAt <= new Date()) {
+    if (!code.usedAt && code.expiresAt <= new Date()) {
       throw new ApiError(410, 'QR_CODE_EXPIRED', 'El código QR expiró.')
     }
 
-    const [claimed] = await transaction
-      .update(qrCodes)
-      .set({ usedAt: new Date(), usedById: currentUser.id })
-      .where(and(eq(qrCodes.id, code.id), isNull(qrCodes.usedAt)))
-      .returning({ id: qrCodes.id })
+    const [claimed] = code.usedAt
+      ? []
+      : await transaction
+          .update(qrCodes)
+          .set({ usedAt: new Date(), usedById: currentUser.id })
+          .where(and(eq(qrCodes.id, code.id), isNull(qrCodes.usedAt)))
+          .returning({ id: qrCodes.id })
 
     // Si el UPDATE no afectó filas significa que el código fue canjeado
     // concurrentemente. Verificamos si lo canjeo el mismo usuario (idempotente)
     // o fue otro (error).
-    let redemptionRepeated = false
+    let redemptionRepeated = Boolean(code.usedAt)
     if (!claimed) {
       const [latest] = await transaction
         .select({ usedById: qrCodes.usedById })
@@ -187,9 +192,11 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       resourceId: result.chatId,
     })
   }
-  response.status(result.created ? 201 : 200).json({
-    chatId: result.chatId,
-    created: result.created,
-    redemptionRepeated: result.redemptionRepeated,
-  })
+  response
+    .status(!result.redemptionRepeated && result.created ? 201 : 200)
+    .json({
+      chatId: result.chatId,
+      created: result.created,
+      redemptionRepeated: result.redemptionRepeated,
+    })
 })

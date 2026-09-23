@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KoneaUser } from '../api/auth'
 import {
   cancelConnectionRequest,
@@ -11,6 +11,8 @@ import {
   type PublicUserRole,
 } from '../api/network'
 import type { Post } from '../api/portal'
+import { absoluteUploadUrl } from '../api/uploads'
+import { SafeExternalLink } from './SafeExternalLink'
 import './Network.css'
 
 type NetworkProps = {
@@ -72,7 +74,13 @@ function NetworkAvatar({
 }) {
   const className = `network-avatar network-avatar--${size}`
   if (user.avatarUrl) {
-    return <img className={className} src={user.avatarUrl} alt="" />
+    return (
+      <img
+        className={className}
+        src={absoluteUploadUrl(user.avatarUrl)}
+        alt=""
+      />
+    )
   }
   return (
     <span className={className} aria-hidden="true">
@@ -219,7 +227,7 @@ function PublicPost({ post }: { post: Post }) {
       <p>{post.content}</p>
       {post.imageUrl && (
         <img
-          src={post.imageUrl}
+          src={absoluteUploadUrl(post.imageUrl)}
           alt="Adjunto de la publicación"
           loading="lazy"
         />
@@ -277,7 +285,11 @@ function Portfolio({ person }: { person: PublicUser }) {
           {person.projects.map((project) => (
             <article className="network-project-card" key={project.id}>
               {project.imageUrl && (
-                <img src={project.imageUrl} alt="" loading="lazy" />
+                <img
+                  src={absoluteUploadUrl(project.imageUrl)}
+                  alt=""
+                  loading="lazy"
+                />
               )}
               <div>
                 <h3>{project.title}</h3>
@@ -291,18 +303,14 @@ function Portfolio({ person }: { person: PublicUser }) {
                 )}
                 <div className="network-project-links">
                   {project.url && (
-                    <a href={project.url} target="_blank" rel="noreferrer">
+                    <SafeExternalLink href={project.url}>
                       Ver proyecto
-                    </a>
+                    </SafeExternalLink>
                   )}
                   {project.repositoryUrl && (
-                    <a
-                      href={project.repositoryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
+                    <SafeExternalLink href={project.repositoryUrl}>
                       Repositorio
-                    </a>
+                    </SafeExternalLink>
                   )}
                 </div>
               </div>
@@ -327,13 +335,9 @@ function Portfolio({ person }: { person: PublicUser }) {
                         <small>{achievement.description}</small>
                       )}
                       {achievement.credentialUrl && (
-                        <a
-                          href={achievement.credentialUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <SafeExternalLink href={achievement.credentialUrl}>
                           Ver credencial
-                        </a>
+                        </SafeExternalLink>
                       )}
                     </div>
                   </article>
@@ -374,7 +378,9 @@ function PublicProfile({
           className={`network-profile-cover${person.coverUrl ? ' network-profile-cover--image' : ''}`}
           style={
             person.coverUrl
-              ? { backgroundImage: `url("${person.coverUrl}")` }
+              ? {
+                  backgroundImage: `url("${absoluteUploadUrl(person.coverUrl)}")`,
+                }
               : undefined
           }
         />
@@ -425,9 +431,9 @@ function PublicProfile({
             {person.campus && <span>{person.campus}</span>}
             {person.career && <span>{person.career}</span>}
             {person.website && (
-              <a href={person.website} target="_blank" rel="noreferrer">
+              <SafeExternalLink href={person.website}>
                 Sitio web
-              </a>
+              </SafeExternalLink>
             )}
           </div>
           {person.connectionStatus === 'requested' && (
@@ -481,23 +487,43 @@ export function Network({
   const [selectedPosts, setSelectedPosts] = useState<Post[]>([])
   const [profileLoading, setProfileLoading] = useState(Boolean(initialUserId))
   const [profileError, setProfileError] = useState('')
+  const latestSearchRequestRef = useRef(0)
 
-  const loadConnections = useCallback(async (search = '') => {
-    setLoading(true)
-    setError('')
-    try {
-      setPeople(await listConnections(search))
-    } catch (loadError) {
-      setError(readableError(loadError, 'No pudimos cargar tus conexiones.'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const loadConnections = useCallback(
+    async (search: string, requestId: number) => {
+      try {
+        const loadedPeople = await listConnections(search)
+        if (requestId !== latestSearchRequestRef.current) return
+        setPeople(loadedPeople)
+      } catch (loadError) {
+        if (requestId !== latestSearchRequestRef.current) return
+        setError(readableError(loadError, 'No pudimos cargar tus conexiones.'))
+      } finally {
+        if (requestId === latestSearchRequestRef.current) setLoading(false)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
-    if (selectedUserId) return
-    const timeout = window.setTimeout(() => void loadConnections(query), 250)
-    return () => window.clearTimeout(timeout)
+    if (selectedUserId) {
+      latestSearchRequestRef.current += 1
+      return
+    }
+
+    const requestId = ++latestSearchRequestRef.current
+    const timeout = window.setTimeout(() => {
+      if (requestId !== latestSearchRequestRef.current) return
+      setLoading(true)
+      setError('')
+      void loadConnections(query, requestId)
+    }, 250)
+    return () => {
+      window.clearTimeout(timeout)
+      if (latestSearchRequestRef.current === requestId) {
+        latestSearchRequestRef.current += 1
+      }
+    }
   }, [loadConnections, query, selectedUserId])
 
   useEffect(() => {
@@ -591,6 +617,7 @@ export function Network({
     setSelectedPosts([])
     setProfileError('')
     setNotice('')
+    setLoading(true)
     onProfileChange?.(null)
   }
 
@@ -652,7 +679,12 @@ export function Network({
         <input
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            latestSearchRequestRef.current += 1
+            setLoading(true)
+            setError('')
+            setQuery(event.target.value)
+          }}
           maxLength={80}
           placeholder="Buscar entre mis conexiones…"
           autoComplete="off"

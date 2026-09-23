@@ -1,4 +1,14 @@
-import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { Router } from 'express'
 import { z } from 'zod'
@@ -50,6 +60,15 @@ const createReportSchema = z.strictObject({
 })
 
 const updateReportSchema = z.strictObject({ status: reportStatusSchema })
+
+type ReportStatus = z.infer<typeof reportStatusSchema>
+
+const validReportTransitions: Record<ReportStatus, readonly ReportStatus[]> = {
+  pending: ['reviewing', 'resolved', 'dismissed'],
+  reviewing: ['pending', 'resolved', 'dismissed'],
+  resolved: ['reviewing'],
+  dismissed: ['reviewing'],
+}
 
 const reporterProfiles = alias(profiles, 'reporter_profiles')
 const assigneeProfiles = alias(profiles, 'report_assignee_profiles')
@@ -300,6 +319,7 @@ async function resourceIsVisible(
       const [message] = await db
         .select({ id: messages.id, senderId: messages.senderId })
         .from(messages)
+        .innerJoin(chats, eq(chats.id, messages.chatId))
         .innerJoin(
           chatParticipants,
           eq(messages.chatId, chatParticipants.chatId),
@@ -309,6 +329,11 @@ async function resourceIsVisible(
             eq(messages.id, resourceId),
             eq(chatParticipants.userId, currentUser.id),
             isNull(chatParticipants.archivedAt),
+            or(
+              eq(chats.type, 'direct'),
+              eq(chatParticipants.role, 'owner'),
+              gte(messages.createdAt, chatParticipants.joinedAt),
+            ),
           ),
         )
         .limit(1)
@@ -363,39 +388,45 @@ reportsRouter.post('/', async (request, response) => {
     )
   }
 
-  const [existing] = await db
-    .select({ id: reports.id })
-    .from(reports)
-    .where(
-      and(
-        eq(reports.reporterId, currentUser.id),
-        eq(reports.resourceType, input.resourceType),
-        eq(reports.resourceId, input.resourceId),
-        inArray(reports.status, ['pending', 'reviewing']),
-      ),
+  const created = await db.transaction(async (transaction) => {
+    const reportKey = `${currentUser.id}:${input.resourceType}:${input.resourceId}`
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${reportKey}))`,
     )
-    .limit(1)
+    const [existing] = await transaction
+      .select({ id: reports.id })
+      .from(reports)
+      .where(
+        and(
+          eq(reports.reporterId, currentUser.id),
+          eq(reports.resourceType, input.resourceType),
+          eq(reports.resourceId, input.resourceId),
+          inArray(reports.status, ['pending', 'reviewing']),
+        ),
+      )
+      .limit(1)
 
-  if (existing) {
-    throw new ApiError(
-      409,
-      'REPORT_ALREADY_OPEN',
-      'Ya tienes un reporte abierto para este recurso.',
-    )
-  }
+    if (existing) {
+      throw new ApiError(
+        409,
+        'REPORT_ALREADY_OPEN',
+        'Ya tienes un reporte abierto para este recurso.',
+      )
+    }
 
-  const [created] = await db
-    .insert(reports)
-    .values({
-      reporterId: currentUser.id,
-      resourceType: input.resourceType,
-      resourceId: input.resourceId,
-      reason: input.reason,
-      details: input.details,
-    })
-    .returning({ id: reports.id })
-
-  if (!created) throw new Error('Database did not return the created report')
+    const [inserted] = await transaction
+      .insert(reports)
+      .values({
+        reporterId: currentUser.id,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        reason: input.reason,
+        details: input.details,
+      })
+      .returning({ id: reports.id })
+    if (!inserted) throw new Error('Database did not return the created report')
+    return inserted
+  })
 
   const [report] = await loadReports(eq(reports.id, created.id))
   response.status(201).json({ report })
@@ -414,33 +445,62 @@ reportsRouter.patch('/:reportId', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const reportId = parseReportId(request.params.reportId)
   const input = parseBody(updateReportSchema, request.body)
-  const [updated] = await db
-    .update(reports)
-    .set({
-      status: input.status,
-      assignedToId: input.status === 'pending' ? null : currentUser.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(reports.id, reportId))
-    .returning({
-      id: reports.id,
-      reporterId: reports.reporterId,
-    })
+  const result = await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select 1 from ${reports} where ${reports.id} = ${reportId} for update`,
+    )
+    const [currentReport] = await transaction
+      .select({
+        id: reports.id,
+        reporterId: reports.reporterId,
+        status: reports.status,
+      })
+      .from(reports)
+      .where(eq(reports.id, reportId))
+      .limit(1)
+    if (!currentReport) {
+      throw new ApiError(404, 'REPORT_NOT_FOUND', 'El reporte no existe.')
+    }
+    if (currentReport.status === input.status) {
+      return { report: currentReport, changed: false }
+    }
+    if (!validReportTransitions[currentReport.status].includes(input.status)) {
+      throw new ApiError(
+        409,
+        'REPORT_INVALID_TRANSITION',
+        `No se puede cambiar un reporte ${currentReport.status} a ${input.status}.`,
+      )
+    }
 
-  if (!updated) {
-    throw new ApiError(404, 'REPORT_NOT_FOUND', 'El reporte no existe.')
-  }
-
-  await createNotification({
-    userId: updated.reporterId,
-    actorId: currentUser.id,
-    type: 'moderation',
-    title: 'Reporte actualizado',
-    body: `Tu reporte ahora está ${input.status}.`,
-    href: `report:${updated.id}`,
-    resourceId: updated.id,
+    const [updated] = await transaction
+      .update(reports)
+      .set({
+        status: input.status,
+        assignedToId: input.status === 'pending' ? null : currentUser.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(reports.id, reportId))
+      .returning({
+        id: reports.id,
+        reporterId: reports.reporterId,
+        status: reports.status,
+      })
+    if (!updated) throw new Error('Database did not return the updated report')
+    return { report: updated, changed: true }
   })
 
-  const [report] = await loadReports(eq(reports.id, updated.id))
+  if (result.changed) {
+    await createNotification({
+      userId: result.report.reporterId,
+      actorId: currentUser.id,
+      type: 'moderation',
+      title: 'Reporte actualizado',
+      body: `Tu reporte ahora está ${input.status}.`,
+      href: `report:${result.report.id}`,
+      resourceId: result.report.id,
+    })
+  }
+
+  const [report] = await loadReports(eq(reports.id, result.report.id))
   response.json({ report })
 })

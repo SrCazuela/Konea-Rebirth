@@ -3,6 +3,7 @@ import {
   count,
   desc,
   eq,
+  gte,
   ilike,
   inArray,
   isNull,
@@ -29,6 +30,7 @@ import {
 } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
+import { httpOrLocalUploadUrlSchema } from '../http/url-schemas.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
@@ -55,15 +57,6 @@ import { createNotification } from '../services/notification-service.js'
 import { requireOwnedLocalUpload } from '../services/upload-service.js'
 
 const uuidSchema = z.string().uuid()
-const absoluteOrLocalUrl = z
-  .string()
-  .trim()
-  .max(2_048)
-  .refine(
-    (value) => value.startsWith('/') || z.url().safeParse(value).success,
-    'Debe ser una URL absoluta o una ruta local.',
-  )
-
 function parseId(value: string | undefined) {
   const result = uuidSchema.safeParse(value)
   if (!result.success) {
@@ -92,13 +85,16 @@ function parseQuery<TSchema extends z.ZodType>(
 const directChatSchema = z.strictObject({ userId: uuidSchema })
 const groupChatSchema = z.strictObject({
   name: z.string().trim().min(1).max(120),
-  participantIds: z.array(uuidSchema).max(99).default([]),
-  avatarUrl: absoluteOrLocalUrl.nullable().optional(),
+  participantIds: z
+    .array(uuidSchema)
+    .min(1, 'Selecciona al menos una conexión.')
+    .max(99),
+  avatarUrl: httpOrLocalUploadUrlSchema.nullable().optional(),
 })
 const updateChatSchema = z
   .strictObject({
     name: z.string().trim().min(1).max(120).optional(),
-    avatarUrl: absoluteOrLocalUrl.nullable().optional(),
+    avatarUrl: httpOrLocalUploadUrlSchema.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'Debes enviar al menos un cambio.',
@@ -115,7 +111,7 @@ const sendMessageSchema = z
   .strictObject({
     content: z.string().trim().max(4_000).default(''),
     type: z.enum(['text', 'image', 'file']).default('text'),
-    fileUrl: absoluteOrLocalUrl.optional(),
+    fileUrl: httpOrLocalUploadUrlSchema.optional(),
     fileName: z.string().trim().min(1).max(255).optional(),
     fileSize: z
       .number()
@@ -226,6 +222,12 @@ const messageQuerySchema = z.strictObject({
   beforeId: uuidSchema.optional(),
   q: z.string().trim().max(100).optional(),
   tag: messageTagSchema.optional(),
+})
+const deliveryStatusRequestSchema = z.strictObject({
+  messageIds: z.array(uuidSchema).min(1).max(200),
+})
+const readChatSchema = z.strictObject({
+  lastVisibleMessageId: uuidSchema.optional(),
 })
 const taskCreateSchema = z.strictObject({
   assignedToId: uuidSchema.optional(),
@@ -371,10 +373,17 @@ chatsRouter.post('/groups', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(groupChatSchema, request.body)
   await requireOwnedLocalUpload(currentUser.id, input.avatarUrl, 'image')
-  const participantIds = [
-    currentUser.id,
+  const invitedParticipantIds = [
     ...new Set(input.participantIds.filter((id) => id !== currentUser.id)),
   ]
+  if (invitedParticipantIds.length === 0) {
+    throw new ApiError(
+      400,
+      'GROUP_PARTICIPANT_REQUIRED',
+      'Selecciona al menos una conexión para crear el grupo.',
+    )
+  }
+  const participantIds = [currentUser.id, ...invitedParticipantIds]
   await requireConnections(currentUser.id, participantIds)
   const created = await db.transaction(async (transaction) => {
     await requireActiveUsers(transaction, participantIds)
@@ -661,10 +670,13 @@ chatsRouter.get('/:chatId/messages', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const chatId = parseId(request.params.chatId)
   const query = parseQuery(messageQuerySchema, request.query)
-  await requireActiveParticipant(chatId, currentUser.id)
+  const { chat, participant } = await getChatOrThrow(chatId, currentUser.id)
   await markMessagesDelivered(currentUser.id, chatId)
 
   const conditions = [eq(messages.chatId, chatId)]
+  if (chat.type === 'group' && participant.role !== 'owner') {
+    conditions.push(gte(messages.createdAt, participant.joinedAt))
+  }
   if (query.before) {
     const before = new Date(query.before)
     conditions.push(
@@ -736,6 +748,39 @@ chatsRouter.get('/:chatId/messages', async (request, response) => {
     },
   })
 })
+
+chatsRouter.post(
+  '/:chatId/messages/delivery-statuses',
+  async (request, response) => {
+    const currentUser = getAuthenticatedUser(response)
+    const chatId = parseId(request.params.chatId)
+    const input = parseBody(deliveryStatusRequestSchema, request.body)
+    const { chat, participant } = await getChatOrThrow(chatId, currentUser.id)
+    const messageIds = [...new Set(input.messageIds)]
+    const conditions = [
+      eq(messages.chatId, chatId),
+      eq(messages.senderId, currentUser.id),
+      inArray(messages.id, messageIds),
+    ]
+    if (chat.type === 'group' && participant.role !== 'owner') {
+      conditions.push(gte(messages.createdAt, participant.joinedAt))
+    }
+
+    const visibleMessages = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(...conditions))
+    const visibleMessageIds = visibleMessages.map(({ id }) => id)
+    const deliveryByMessage = await loadDeliveryStatuses(visibleMessageIds)
+
+    response.json({
+      statuses: visibleMessageIds.map((messageId) => ({
+        messageId,
+        status: deliveryByMessage.get(messageId) ?? ('sent' as const),
+      })),
+    })
+  },
+)
 
 chatsRouter.post('/:chatId/messages', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
@@ -823,7 +868,11 @@ chatsRouter.patch('/:chatId/messages/:messageId', async (request, response) => {
     .limit(1)
   if (!existing)
     throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'El mensaje no existe.')
-  if (existing.senderId !== currentUser.id || existing.type === 'poll') {
+  if (
+    existing.senderId !== currentUser.id ||
+    existing.type === 'poll' ||
+    existing.type === 'system'
+  ) {
     throw new ApiError(
       403,
       'MESSAGE_EDIT_DENIED',
@@ -856,6 +905,13 @@ chatsRouter.delete(
       .limit(1)
     if (!existing)
       throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'El mensaje no existe.')
+    if (existing.type === 'system') {
+      throw new ApiError(
+        409,
+        'MESSAGE_IMMUTABLE',
+        'Los mensajes del sistema no se pueden eliminar.',
+      )
+    }
     if (
       existing.senderId !== currentUser.id &&
       participant.role !== 'owner' &&
@@ -875,31 +931,78 @@ chatsRouter.delete(
 chatsRouter.post('/:chatId/read', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const chatId = parseId(request.params.chatId)
-  await requireActiveParticipant(chatId, currentUser.id)
+  const input = parseBody(readChatSchema, request.body ?? {})
+  const { chat, participant } = await getChatOrThrow(chatId, currentUser.id)
   const readAt = new Date()
+
+  const visibilityConditions = [eq(messages.chatId, chatId)]
+  if (chat.type === 'group' && participant.role !== 'owner') {
+    visibilityConditions.push(gte(messages.createdAt, participant.joinedAt))
+  }
+  if (input.lastVisibleMessageId) {
+    visibilityConditions.push(eq(messages.id, input.lastVisibleMessageId))
+  }
+
+  const [boundaryMessage] = await db
+    .select({ id: messages.id, createdAt: messages.createdAt })
+    .from(messages)
+    .where(and(...visibilityConditions))
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(1)
+
+  if (input.lastVisibleMessageId && !boundaryMessage) {
+    throw new ApiError(
+      404,
+      'MESSAGE_NOT_FOUND',
+      'El ultimo mensaje visible no existe en esta conversacion.',
+    )
+  }
+
   const notificationsRead = await db.transaction(async (transaction) => {
-    await transaction
-      .insert(chatReads)
-      .values({ chatId, userId: currentUser.id, lastReadAt: readAt })
-      .onConflictDoUpdate({
-        target: [chatReads.chatId, chatReads.userId],
-        set: { lastReadAt: readAt },
-      })
-    await transaction
-      .update(messageReceipts)
-      .set({ deliveredAt: readAt, readAt })
-      .where(
-        and(
-          eq(messageReceipts.userId, currentUser.id),
-          inArray(
-            messageReceipts.messageId,
-            transaction
-              .select({ id: messages.id })
-              .from(messages)
-              .where(eq(messages.chatId, chatId)),
+    const visibleMessageIds = boundaryMessage
+      ? transaction
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.chatId, chatId),
+              chat.type === 'group' && participant.role !== 'owner'
+                ? gte(messages.createdAt, participant.joinedAt)
+                : undefined,
+              sql`(${messages.createdAt}, ${messages.id}) <= (
+                select ${messages.createdAt}, ${messages.id}
+                from ${messages}
+                where ${messages.id} = ${boundaryMessage.id}
+              )`,
+            ),
+          )
+      : null
+
+    if (boundaryMessage && visibleMessageIds) {
+      await transaction
+        .insert(chatReads)
+        .values({
+          chatId,
+          userId: currentUser.id,
+          lastReadAt: boundaryMessage.createdAt,
+        })
+        .onConflictDoUpdate({
+          target: [chatReads.chatId, chatReads.userId],
+          set: {
+            lastReadAt: sql`greatest(${chatReads.lastReadAt}, ${boundaryMessage.createdAt})`,
+          },
+        })
+      await transaction
+        .update(messageReceipts)
+        .set({ deliveredAt: readAt, readAt })
+        .where(
+          and(
+            eq(messageReceipts.userId, currentUser.id),
+            inArray(messageReceipts.messageId, visibleMessageIds),
           ),
-        ),
-      )
+        )
+    }
+
     return transaction
       .update(notifications)
       .set({ readAt })
@@ -908,14 +1011,23 @@ chatsRouter.post('/:chatId/read', async (request, response) => {
           eq(notifications.userId, currentUser.id),
           eq(notifications.type, 'message'),
           eq(notifications.href, `chat:${chatId}`),
+          visibleMessageIds
+            ? or(
+                eq(notifications.resourceId, chatId),
+                inArray(notifications.resourceId, visibleMessageIds),
+              )
+            : eq(notifications.resourceId, chatId),
           isNull(notifications.readAt),
         ),
       )
       .returning({ id: notifications.id })
   })
+
+  const unreadCount = await getUnreadCountForChat(chatId, currentUser.id)
   response.json({
     readAt,
-    unreadCount: 0,
+    lastVisibleMessageId: boundaryMessage?.id ?? null,
+    unreadCount,
     notificationsRead: notificationsRead.length,
   })
 })

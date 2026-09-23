@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, count, eq, inArray, isNull } from 'drizzle-orm'
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
-import { connections, notifications, users } from '../db/schema.js'
+import { connections, notifications, qrCodes, users } from '../db/schema.js'
 
 function testAccount(label: string) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
@@ -90,6 +90,18 @@ describe.sequential('chat, collaboration and QR API', () => {
   })
 
   it('creates and manages a group with server-side role checks', async () => {
+    const withoutInvitees = await firstAgent
+      .post('/api/v1/chats/groups')
+      .send({ name: 'Grupo vacío', participantIds: [] })
+    expect(withoutInvitees.status).toBe(400)
+    expect(withoutInvitees.body.error.code).toBe('VALIDATION_ERROR')
+
+    const onlyOwner = await firstAgent
+      .post('/api/v1/chats/groups')
+      .send({ name: 'Grupo individual', participantIds: [firstUserId] })
+    expect(onlyOwner.status).toBe(400)
+    expect(onlyOwner.body.error.code).toBe('GROUP_PARTICIPANT_REQUIRED')
+
     const created = await firstAgent.post('/api/v1/chats/groups').send({
       name: 'Proyecto Capstone',
       participantIds: [secondUserId, secondUserId],
@@ -98,6 +110,11 @@ describe.sequential('chat, collaboration and QR API', () => {
     groupChatId = created.body.chat.id
     expect(created.body.chat.type).toBe('group')
     expect(created.body.chat.participants).toHaveLength(2)
+
+    const previousHistory = await firstAgent
+      .post(`/api/v1/chats/${groupChatId}/messages`)
+      .send({ content: 'Mensaje privado anterior al ingreso' })
+    expect(previousHistory.status).toBe(201)
 
     const forbidden = await secondAgent
       .post(`/api/v1/chats/${groupChatId}/participants`)
@@ -109,6 +126,32 @@ describe.sequential('chat, collaboration and QR API', () => {
       .send({ userId: thirdUserId, role: 'member' })
     expect(added.status).toBe(201)
     expect(added.body.participants).toHaveLength(3)
+
+    const hiddenHistory = await thirdAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=anterior`,
+    )
+    expect(hiddenHistory.status).toBe(200)
+    expect(hiddenHistory.body.messages).toHaveLength(0)
+
+    const hiddenReport = await thirdAgent.post('/api/v1/reports').send({
+      resourceType: 'message',
+      resourceId: previousHistory.body.message.id,
+      reason: 'Mensaje anterior no visible',
+    })
+    expect(hiddenReport.status).toBe(404)
+    expect(hiddenReport.body.error.code).toBe('REPORT_RESOURCE_NOT_FOUND')
+
+    const thirdChatList = await thirdAgent.get('/api/v1/chats')
+    const groupForNewMember = thirdChatList.body.chats.find(
+      (chat: { id: string }) => chat.id === groupChatId,
+    )
+    expect(groupForNewMember.lastMessage).toBeNull()
+    expect(groupForNewMember.unreadCount).toBe(0)
+
+    const ownerHistory = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=anterior`,
+    )
+    expect(ownerHistory.body.messages).toHaveLength(1)
 
     const ownerDemotion = await firstAgent
       .post(`/api/v1/chats/${groupChatId}/participants`)
@@ -212,8 +255,28 @@ describe.sequential('chat, collaboration and QR API', () => {
       .limit(1)
     expect(longMessageNotification?.body.length).toBeLessThanOrEqual(500)
 
+    const partialRead = await secondAgent
+      .post(`/api/v1/chats/${directChatId}/read`)
+      .send({ lastVisibleMessageId: sent.body.message.id })
+    expect(partialRead.status).toBe(200)
+    expect(partialRead.body.lastVisibleMessageId).toBe(sent.body.message.id)
+    expect(partialRead.body.unreadCount).toBeGreaterThanOrEqual(1)
+
+    const [laterNotification] = await db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.userId, secondUserId),
+          eq(notifications.resourceId, longMessage.body.message.id),
+        ),
+      )
+      .limit(1)
+    expect(laterNotification?.readAt).toBeNull()
+
     const read = await secondAgent.post(`/api/v1/chats/${directChatId}/read`)
     expect(read.status).toBe(200)
+    expect(read.body.lastVisibleMessageId).toBe(longMessage.body.message.id)
     expect(read.body.unreadCount).toBe(0)
     expect(read.body.notificationsRead).toBeGreaterThan(0)
     const chat = await secondAgent.get(`/api/v1/chats/${directChatId}`)
@@ -223,6 +286,18 @@ describe.sequential('chat, collaboration and QR API', () => {
       `/api/v1/chats/${directChatId}/messages?q=arquitectura`,
     )
     expect(readState.body.messages[0].deliveryStatus).toBe('read')
+
+    const refreshedStatuses = await firstAgent
+      .post(`/api/v1/chats/${directChatId}/messages/delivery-statuses`)
+      .send({ messageIds: [sent.body.message.id] })
+    expect(refreshedStatuses.status).toBe(200)
+    expect(refreshedStatuses.body.statuses).toEqual([
+      { messageId: sent.body.message.id, status: 'read' },
+    ])
+    await thirdAgent
+      .post(`/api/v1/chats/${directChatId}/messages/delivery-statuses`)
+      .send({ messageIds: [sent.body.message.id] })
+      .expect(403)
 
     const notificationRows = await db
       .select()
@@ -314,6 +389,23 @@ describe.sequential('chat, collaboration and QR API', () => {
     expect(created.status).toBe(201)
     const taskId = created.body.task.id
 
+    const systemHistory = await firstAgent.get(
+      `/api/v1/chats/${groupChatId}/messages?q=demostraci%C3%B3n`,
+    )
+    const systemMessage = systemHistory.body.messages.find(
+      (message: { type: string }) => message.type === 'system',
+    )
+    expect(systemMessage).toBeDefined()
+    await firstAgent
+      .patch(`/api/v1/chats/${groupChatId}/messages/${systemMessage.id}`)
+      .send({ content: 'Registro alterado' })
+      .expect(403)
+    const immutableDelete = await firstAgent.delete(
+      `/api/v1/chats/${groupChatId}/messages/${systemMessage.id}`,
+    )
+    expect(immutableDelete.status).toBe(409)
+    expect(immutableDelete.body.error.code).toBe('MESSAGE_IMMUTABLE')
+
     const forbiddenEdit = await secondAgent
       .patch(`/api/v1/chats/${groupChatId}/tasks/${taskId}`)
       .send({ title: 'Cambio no autorizado' })
@@ -393,7 +485,12 @@ describe.sequential('chat, collaboration and QR API', () => {
     const repeated = await firstAgent
       .post('/api/v1/qr-codes/redeem')
       .send({ code: generated.body.qrCode.code })
-    expect(repeated.status).toBe(409)
+    expect(repeated.status).toBe(200)
+    expect(repeated.body).toMatchObject({
+      chatId: redeemed.body.chatId,
+      created: false,
+      redemptionRepeated: true,
+    })
 
     const alreadyUsed = await secondAgent
       .post('/api/v1/qr-codes/redeem')
@@ -401,6 +498,20 @@ describe.sequential('chat, collaboration and QR API', () => {
     expect(alreadyUsed.status).toBe(409)
     const current = await thirdAgent.get('/api/v1/qr-codes/current')
     expect(current.body.qrCode).toBeNull()
+
+    const concurrentCodes = await Promise.all([
+      thirdAgent.post('/api/v1/qr-codes/personal'),
+      thirdAgent.post('/api/v1/qr-codes/personal'),
+    ])
+    expect(concurrentCodes.every((response) => response.status === 201)).toBe(
+      true,
+    )
+    const [activeCodes] = await db
+      .select({ total: count() })
+      .from(qrCodes)
+      .where(and(eq(qrCodes.ownerId, thirdUserId), isNull(qrCodes.usedAt)))
+    expect(Number(activeCodes?.total ?? 0)).toBe(1)
+    await thirdAgent.delete('/api/v1/qr-codes/current').expect(204)
   })
 
   it('revokes report access after a participant leaves a chat', async () => {
@@ -438,5 +549,15 @@ describe.sequential('chat, collaboration and QR API', () => {
     })
     expect(report.status).toBe(404)
     expect(report.body.error.code).toBe('REPORT_RESOURCE_NOT_FOUND')
+
+    const restored = await secondAgent
+      .post('/api/v1/chats/direct')
+      .send({ userId: firstUserId })
+    expect(restored.status).toBe(200)
+    expect(restored.body.chat.id).toBe(directChatId)
+    const restoredHistory = await secondAgent.get(
+      `/api/v1/chats/${directChatId}/messages?q=Evidencia`,
+    )
+    expect(restoredHistory.body.messages).toHaveLength(1)
   })
 })

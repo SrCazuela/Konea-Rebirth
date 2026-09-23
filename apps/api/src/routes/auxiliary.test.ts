@@ -22,6 +22,8 @@ import {
   notifications,
   posts,
   profiles,
+  supportRequestEvents,
+  supportRequests,
   tasks,
   users,
 } from '../db/schema.js'
@@ -282,6 +284,7 @@ describe.sequential('auxiliary backend routes', () => {
     expect(download.status).toBe(200)
     expect(download.headers['content-type']).toContain('image/png')
     expect(download.headers['x-content-type-options']).toBe('nosniff')
+    expect(download.headers['cache-control']).toBe('private, no-store')
 
     const privateDownload = await moderatorAgent.get(upload.body.file.url)
     expect(privateDownload.status).toBe(404)
@@ -357,7 +360,7 @@ describe.sequential('auxiliary backend routes', () => {
     })
 
     const markedAll = await studentAgent.post('/api/v1/notifications/read-all')
-    expect(markedAll.body).toEqual({ updated: true })
+    expect(markedAll.body).toEqual({ updated: true, unreadCount: 0 })
 
     const emptyCount = await studentAgent.get(
       '/api/v1/notifications/unread-count',
@@ -378,12 +381,30 @@ CATEGORIES:Proyecto de Título\r
 END:VEVENT\r
 END:VCALENDAR\r
 `
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(calendar, {
-        status: 200,
-        headers: { 'Content-Type': 'text/calendar' },
-      }),
-    )
+    const replacementCalendar = `BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+UID:capstone-presentation@blackboard\r
+DTSTART:20300905T160000Z\r
+SUMMARY:Presentación final Capstone\r
+CATEGORIES:Proyecto de Título\r
+END:VEVENT\r
+END:VCALENDAR\r
+`
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(calendar, {
+          status: 200,
+          headers: { 'Content-Type': 'text/calendar' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(replacementCalendar, {
+          status: 200,
+          headers: { 'Content-Type': 'text/calendar' },
+        }),
+      )
 
     try {
       const sync = await studentAgent.post('/api/v1/ava-calendar/sync').send({
@@ -407,12 +428,20 @@ END:VCALENDAR\r
       expect(stored.body.sync).toMatchObject({ lastEventCount: 1 })
       expect(stored.body.events).toHaveLength(1)
 
+      const replacement = await studentAgent
+        .post('/api/v1/ava-calendar/sync')
+        .send({ calendarUrl })
+      expect(replacement.status).toBe(200)
+      expect(replacement.body.events).toEqual([
+        expect.objectContaining({ title: 'Presentación final Capstone' }),
+      ])
+
       const invalid = await studentAgent
         .post('/api/v1/ava-calendar/sync')
         .send({ calendarUrl: 'https://example.com/private.ics' })
       expect(invalid.status).toBe(400)
       expect(invalid.body.error.code).toBe('INVALID_AVA_CALENDAR_URL')
-      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     } finally {
       fetchMock.mockRestore()
     }
@@ -504,6 +533,7 @@ END:VCALENDAR\r
 
     const history = await studentAgent.get('/api/v1/duco/messages')
     expect(history.status).toBe(200)
+    expect(history.body.openTaskCount).toBe(2)
     expect(
       history.body.messages.map((message: { role: string }) => message.role),
     ).toEqual(['user', 'assistant'])
@@ -512,6 +542,7 @@ END:VCALENDAR\r
     expect(cleared.body).toEqual({ deletedCount: 2 })
     const emptyHistory = await studentAgent.get('/api/v1/duco/messages')
     expect(emptyHistory.body.messages).toEqual([])
+    expect(emptyHistory.body.openTaskCount).toBe(2)
   })
 
   it('lets DUCO suggest and create an editable academic pending item once', async () => {
@@ -1027,6 +1058,13 @@ END:VCALENDAR\r
       subject: 'Cambio de sección para Capstone',
       status: 'pending',
     })
+    expect(creation.body.request.timeline).toHaveLength(1)
+    expect(creation.body.request.timeline[0]).toMatchObject({
+      type: 'created',
+      fromStatus: null,
+      toStatus: 'pending',
+      actor: { id: studentId },
+    })
     const supportRequestId = creation.body.request.id
 
     const duplicate = await studentAgent.post('/api/v1/duco/requests').send({
@@ -1054,6 +1092,17 @@ END:VCALENDAR\r
     expect(
       moderatorList.body.requests.map((item: { id: string }) => item.id),
     ).toContain(supportRequestId)
+    expect(
+      moderatorList.body.requests.find(
+        (item: { id: string }) => item.id === supportRequestId,
+      ).timeline,
+    ).toHaveLength(1)
+
+    await studentAgent.get('/api/v1/duco/requests/all').expect(403)
+    await studentAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'reviewing' })
+      .expect(403)
 
     const updated = await moderatorAgent
       .patch(`/api/v1/duco/requests/${supportRequestId}`)
@@ -1063,6 +1112,62 @@ END:VCALENDAR\r
       id: supportRequestId,
       status: 'reviewing',
       assignedToId: moderatorId,
+    })
+    expect(updated.body.request.timeline.at(-1)).toMatchObject({
+      type: 'status_changed',
+      fromStatus: 'pending',
+      toStatus: 'reviewing',
+      note: null,
+      actor: { id: moderatorId },
+    })
+
+    const closeWithoutResponse = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'resolved' })
+    expect(closeWithoutResponse.status).toBe(400)
+    expect(closeWithoutResponse.body.error.code).toBe(
+      'DUCO_REQUEST_RESPONSE_REQUIRED',
+    )
+
+    const resolutionNote =
+      'Revisamos tu caso. Secretaría confirmó una sección disponible y te contactará hoy.'
+    const resolved = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'resolved', note: resolutionNote })
+    expect(resolved.status).toBe(200)
+    expect(resolved.body.request).toMatchObject({ status: 'resolved' })
+    expect(resolved.body.request.timeline.at(-1)).toMatchObject({
+      type: 'status_changed',
+      fromStatus: 'reviewing',
+      toStatus: 'resolved',
+      note: resolutionNote,
+      actor: { id: moderatorId },
+    })
+
+    const invalidTransition = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'rejected', note: 'Intento de cierre contradictorio.' })
+    expect(invalidTransition.status).toBe(409)
+    expect(invalidTransition.body.error.code).toBe(
+      'DUCO_REQUEST_INVALID_TRANSITION',
+    )
+
+    const reopened = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ status: 'reviewing' })
+    expect(reopened.status).toBe(200)
+
+    const followUpNote =
+      'Actualización: el cambio quedó ingresado y estamos esperando la confirmación final.'
+    const followUp = await moderatorAgent
+      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .send({ note: followUpNote })
+    expect(followUp.status).toBe(200)
+    expect(followUp.body.request.timeline.at(-1)).toMatchObject({
+      type: 'response',
+      fromStatus: null,
+      toStatus: 'reviewing',
+      note: followUpNote,
     })
 
     const moderatorNotifications = await moderatorAgent.get(
@@ -1076,6 +1181,36 @@ END:VCALENDAR\r
       ),
     ).toBe(true)
 
+    const studentNotifications = await studentAgent.get('/api/v1/notifications')
+    expect(
+      studentNotifications.body.notifications.some(
+        (notification: { resourceId: string; body: string }) =>
+          notification.resourceId === supportRequestId &&
+          notification.body.includes(
+            'Actualización: el cambio quedó ingresado',
+          ),
+      ),
+    ).toBe(true)
+
+    const [otherRequest] = await db
+      .insert(supportRequests)
+      .values({
+        requesterId: moderatorId,
+        category: 'technical',
+        subject: 'Solicitud de otra persona',
+        description: 'Esta solicitud no pertenece al estudiante de la prueba.',
+        desiredOutcome: 'Recibir soporte técnico.',
+        urgency: 'low',
+      })
+      .returning()
+    if (!otherRequest) throw new Error('Other support request was not created')
+    await db.insert(supportRequestEvents).values({
+      requestId: otherRequest.id,
+      actorId: moderatorId,
+      type: 'created',
+      toStatus: 'pending',
+    })
+
     await studentAgent.delete('/api/v1/duco/messages').expect(200)
     const ownRequests = await studentAgent.get('/api/v1/duco/requests')
     expect(ownRequests.status).toBe(200)
@@ -1084,6 +1219,16 @@ END:VCALENDAR\r
         (item: { id: string }) => item.id === supportRequestId,
       ),
     ).toMatchObject({ status: 'reviewing', sourceMessageId: null })
+    expect(
+      ownRequests.body.requests.some(
+        (item: { id: string }) => item.id === otherRequest.id,
+      ),
+    ).toBe(false)
+    expect(
+      ownRequests.body.requests
+        .find((item: { id: string }) => item.id === supportRequestId)
+        .timeline.at(-1),
+    ).toMatchObject({ type: 'response', note: followUpNote })
   })
 
   it('asks about immediate safety before offering a wellbeing request', async () => {
@@ -1125,6 +1270,44 @@ END:VCALENDAR\r
       'peligro inmediato',
     )
     await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  })
+
+  it('isolates a request draft and serializes simultaneous confirmations', async () => {
+    const draft = {
+      category: 'technical' as const,
+      subject: 'Problema de acceso a AVA',
+      description:
+        'El portal AVA rechaza el acceso del estudiante desde esta mañana.',
+      desiredOutcome: 'Recuperar el acceso al portal institucional.',
+      urgency: 'medium' as const,
+    }
+    const [sourceMessage] = await db
+      .insert(assistantMessages)
+      .values({
+        userId: studentId,
+        role: 'assistant',
+        content: 'Preparé un formulario editable para revisión.',
+        action: { type: 'manage_request', label: 'Gestionar solicitud', draft },
+      })
+      .returning({ id: assistantMessages.id })
+    const payload = { sourceMessageId: sourceMessage!.id, ...draft }
+
+    const foreignAttempt = await moderatorAgent
+      .post('/api/v1/duco/requests')
+      .send(payload)
+    expect(foreignAttempt.status).toBe(404)
+    expect(foreignAttempt.body.error.code).toBe('DUCO_REQUEST_DRAFT_NOT_FOUND')
+
+    const confirmations = await Promise.all([
+      studentAgent.post('/api/v1/duco/requests').send(payload),
+      studentAgent.post('/api/v1/duco/requests').send(payload),
+    ])
+    expect(confirmations.map((result) => result.status).sort()).toEqual([
+      201, 409,
+    ])
+    expect(
+      confirmations.find((result) => result.status === 409)?.body.error.code,
+    ).toBe('DUCO_REQUEST_ALREADY_SENT')
   })
 
   it('accepts user reports and restricts review state to moderators', async () => {
@@ -1190,5 +1373,49 @@ END:VCALENDAR\r
       status: 'resolved',
       assignedTo: { id: moderatorId },
     })
+
+    const repeatedDecision = await moderatorAgent
+      .patch(`/api/v1/reports/${reportId}`)
+      .send({ status: 'resolved' })
+    expect(repeatedDecision.status).toBe(200)
+    expect(repeatedDecision.body.report.updatedAt).toBe(
+      decision.body.report.updatedAt,
+    )
+
+    const contradictoryDecision = await moderatorAgent
+      .patch(`/api/v1/reports/${reportId}`)
+      .send({ status: 'dismissed' })
+    expect(contradictoryDecision.status).toBe(409)
+    expect(contradictoryDecision.body.error.code).toBe(
+      'REPORT_INVALID_TRANSITION',
+    )
+
+    const [concurrentTarget] = await db
+      .insert(posts)
+      .values({
+        authorId: moderatorId,
+        content: 'Publicación para probar reportes simultáneos.',
+        moderationStatus: 'approved',
+      })
+      .returning({ id: posts.id })
+    const concurrentResults = await Promise.all([
+      studentAgent.post('/api/v1/reports').send({
+        resourceType: 'post',
+        resourceId: concurrentTarget!.id,
+        reason: 'Primer envío simultáneo',
+      }),
+      studentAgent.post('/api/v1/reports').send({
+        resourceType: 'post',
+        resourceId: concurrentTarget!.id,
+        reason: 'Segundo envío simultáneo',
+      }),
+    ])
+    expect(concurrentResults.map((result) => result.status).sort()).toEqual([
+      201, 409,
+    ])
+    expect(
+      concurrentResults.find((result) => result.status === 409)?.body.error
+        .code,
+    ).toBe('REPORT_ALREADY_OPEN')
   })
 })

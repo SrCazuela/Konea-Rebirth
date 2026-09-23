@@ -14,10 +14,7 @@ const DEMO_ADMIN = {
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 function assertLocalDevelopmentDatabase() {
-  if (
-    process.env.NODE_ENV !== 'development' ||
-    env.NODE_ENV !== 'development'
-  ) {
+  if (env.NODE_ENV !== 'development') {
     throw new Error(
       'La cuenta demo solo puede prepararse con NODE_ENV=development.',
     )

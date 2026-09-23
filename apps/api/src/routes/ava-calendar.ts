@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, gte, or, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
@@ -8,12 +8,16 @@ import {
   academicCalendarSyncs,
   academicCourses,
 } from '../db/schema.js'
+import { cleanCourseName, normalizeCourseName } from '../domain/academic.js'
 import { parseBody } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
-import { fetchAvaCalendar } from '../services/ics-calendar-service.js'
+import {
+  calendarDateFloorInTimeZone,
+  fetchAvaCalendar,
+} from '../services/ics-calendar-service.js'
 
 const syncCalendarSchema = z.strictObject({
   calendarUrl: z.string().trim().min(1).max(2_000),
@@ -35,6 +39,27 @@ const syncLimiter = rateLimit({
 
 async function loadCalendar(userId: string) {
   const now = new Date()
+  const currentAllDayDate = calendarDateFloorInTimeZone(now)
+  const upcomingCondition = and(
+    eq(academicCalendarEvents.userId, userId),
+    eq(academicCalendarEvents.active, true),
+    or(
+      and(
+        eq(academicCalendarEvents.allDay, false),
+        or(
+          gte(academicCalendarEvents.startsAt, now),
+          gte(academicCalendarEvents.endsAt, now),
+        ),
+      ),
+      and(
+        eq(academicCalendarEvents.allDay, true),
+        or(
+          gte(academicCalendarEvents.startsAt, currentAllDayDate),
+          gt(academicCalendarEvents.endsAt, currentAllDayDate),
+        ),
+      ),
+    ),
+  )
   const [syncRows, upcomingEvents, countRows] = await Promise.all([
     db
       .select({
@@ -56,25 +81,13 @@ async function loadCalendar(userId: string) {
         allDay: academicCalendarEvents.allDay,
       })
       .from(academicCalendarEvents)
-      .where(
-        and(
-          eq(academicCalendarEvents.userId, userId),
-          eq(academicCalendarEvents.active, true),
-          gte(academicCalendarEvents.startsAt, now),
-        ),
-      )
+      .where(upcomingCondition)
       .orderBy(asc(academicCalendarEvents.startsAt))
       .limit(50),
     db
       .select({ value: count() })
       .from(academicCalendarEvents)
-      .where(
-        and(
-          eq(academicCalendarEvents.userId, userId),
-          eq(academicCalendarEvents.active, true),
-          gte(academicCalendarEvents.startsAt, now),
-        ),
-      ),
+      .where(upcomingCondition),
   ])
 
   return {
@@ -102,13 +115,16 @@ avaCalendarRouter.post('/sync', syncLimiter, async (request, response) => {
       importedEvents
         .filter((event) => event.courseName)
         .map((event) => {
-          const name = event.courseName!.trim().replaceAll(/\s+/g, ' ')
-          return [name.toLocaleLowerCase('es-CL'), name] as const
+          const name = cleanCourseName(event.courseName!)
+          return [normalizeCourseName(name), name] as const
         }),
     ),
   ]
 
   await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`ava-calendar:${currentUser.id}`}))`,
+    )
     await transaction
       .update(academicCourses)
       .set({ active: false, updatedAt: syncedAt })
@@ -135,8 +151,8 @@ avaCalendarRouter.post('/sync', syncLimiter, async (request, response) => {
         .onConflictDoUpdate({
           target: [academicCourses.userId, academicCourses.normalizedName],
           set: {
-            name: sql`excluded.name`,
-            active: true,
+            name: sql`case when ${academicCourses.source} = 'ava' then excluded.name else ${academicCourses.name} end`,
+            active: sql`case when ${academicCourses.source} = 'ava' then true else ${academicCourses.active} end`,
             updatedAt: syncedAt,
           },
         })

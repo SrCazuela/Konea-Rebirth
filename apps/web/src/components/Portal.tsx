@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -56,15 +58,33 @@ import {
   type SupportRequestCategory,
   type SupportRequestStatus,
 } from '../api/support-requests'
-import { uploadImage, validateImage } from '../api/uploads'
-import { Network } from './Network'
-import { Notifications } from './Notifications'
-import { Chat } from './Chat'
-import { Duco } from './Duco'
-import { Academic } from './Academic'
+import { absoluteUploadUrl, uploadImage, validateImage } from '../api/uploads'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { ImageCropDialog } from './ImageCropDialog'
+import { SafeExternalLink } from './SafeExternalLink'
 import { SearchableSelect } from './SearchableSelect'
 import './Portal.css'
+
+const Network = lazy(() =>
+  import('./Network').then((module) => ({ default: module.Network })),
+)
+const Notifications = lazy(() =>
+  import('./Notifications').then((module) => ({
+    default: module.Notifications,
+  })),
+)
+const Chat = lazy(() =>
+  import('./Chat').then((module) => ({ default: module.Chat })),
+)
+const Duco = lazy(() =>
+  import('./Duco').then((module) => ({ default: module.Duco })),
+)
+const Academic = lazy(() =>
+  import('./Academic').then((module) => ({ default: module.Academic })),
+)
+const FocusBuddy = lazy(() =>
+  import('./FocusBuddy').then((module) => ({ default: module.FocusBuddy })),
+)
 
 type PortalView =
   | 'feed'
@@ -72,6 +92,7 @@ type PortalView =
   | 'chat'
   | 'duco'
   | 'academic'
+  | 'focus'
   | 'notifications'
   | 'profile'
   | 'moderation'
@@ -101,6 +122,7 @@ function routeFromHash(hash: string, canModerate: boolean): PortalRoute {
     '#duco': 'duco',
     '#duco-requests': 'duco',
     '#academic': 'academic',
+    '#focusbuddy': 'focus',
     '#profile': 'profile',
     '#notifications': 'notifications',
   }
@@ -174,6 +196,7 @@ function hashForView(view: PortalView) {
     chat: '#chat',
     duco: '#duco',
     academic: '#academic',
+    focus: '#focusbuddy',
     notifications: '#notifications',
     profile: '#profile',
     moderation: '#moderation',
@@ -206,6 +229,7 @@ type IconName =
   | 'chat'
   | 'duco'
   | 'academic'
+  | 'focus'
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', {
   dateStyle: 'medium',
@@ -347,6 +371,12 @@ function PortalIcon({ name }: { name: IconName }) {
         <path d="M8 3v18M8 8h8M8 13h8M8 18h5" />
       </>
     ),
+    focus: (
+      <>
+        <circle cx="12" cy="13" r="8" />
+        <path d="M9 2h6M12 5v3M17.7 7.3 20 5M12 13l3-2" />
+      </>
+    ),
   }
 
   return (
@@ -386,7 +416,14 @@ function Avatar({
   const className = `portal-avatar portal-avatar--${size}`
 
   if (url) {
-    return <img className={className} src={url} alt="" aria-hidden="true" />
+    return (
+      <img
+        className={className}
+        src={absoluteUploadUrl(url)}
+        alt=""
+        aria-hidden="true"
+      />
+    )
   }
 
   return (
@@ -406,6 +443,28 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime())
     ? 'Fecha no disponible'
     : dateFormatter.format(date)
+}
+
+function LinkedPostContent({ content }: { content: string }) {
+  const parts = content.split(/(https?:\/\/[^\s]+)/g)
+
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^https?:\/\//.test(part) ? (
+          <SafeExternalLink
+            className="portal-post__source-link"
+            href={part}
+            key={`${index}-${part}`}
+          >
+            {part}
+          </SafeExternalLink>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  )
 }
 
 function formatMonth(value: string) {
@@ -507,13 +566,7 @@ function ImageLightbox({
   alt: string
   onClose: () => void
 }) {
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+  const dialogRef = useModalDialog<HTMLElement>({ open: true, onClose })
 
   return (
     <div
@@ -524,15 +577,17 @@ function ImageLightbox({
       }}
     >
       <section
+        ref={dialogRef}
         className="portal-image-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Imagen ampliada"
+        tabIndex={-1}
       >
         <button type="button" onClick={onClose} aria-label="Cerrar imagen">
           <PortalIcon name="close" />
         </button>
-        <img src={src} alt={alt} />
+        <img src={absoluteUploadUrl(src)} alt={alt} />
       </section>
     </div>
   )
@@ -551,14 +606,11 @@ function ReportModal({
   const [details, setDetails] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !sending) onClose()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose, sending])
+  const dialogRef = useModalDialog<HTMLElement>({
+    open: true,
+    onClose,
+    closeDisabled: sending,
+  })
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -589,10 +641,12 @@ function ReportModal({
       }}
     >
       <section
+        ref={dialogRef}
         className="portal-report-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-title"
+        tabIndex={-1}
       >
         <header>
           <div>
@@ -708,6 +762,7 @@ function CommentBranch({
   onEditCancel,
   onDelete,
   onReport,
+  onOpenUser,
 }: {
   comment: Comment
   childrenByParent: Map<string, Comment[]>
@@ -723,6 +778,7 @@ function CommentBranch({
   onEditCancel: () => void
   onDelete: (comment: Comment) => void
   onReport: (comment: Comment) => void
+  onOpenUser: (userId: string) => void
 }) {
   const replies = childrenByParent.get(comment.id) ?? []
   const isEditing = editingId === comment.id
@@ -733,13 +789,26 @@ function CommentBranch({
       className={`portal-comment-branch${depth ? ' portal-comment-branch--reply' : ''}`}
     >
       <article className="portal-comment">
-        <Avatar
-          name={comment.author.displayName}
-          url={comment.author.avatarUrl}
-          size="small"
-        />
+        <button
+          className="portal-comment__author-avatar"
+          type="button"
+          onClick={() => onOpenUser(comment.author.id)}
+          aria-label={`Abrir el perfil de ${comment.author.displayName}`}
+        >
+          <Avatar
+            name={comment.author.displayName}
+            url={comment.author.avatarUrl}
+            size="small"
+          />
+        </button>
         <div className="portal-comment__bubble">
-          <strong>{comment.author.displayName}</strong>
+          <button
+            className="portal-comment__author-name"
+            type="button"
+            onClick={() => onOpenUser(comment.author.id)}
+          >
+            {comment.author.displayName}
+          </button>
           {isEditing ? (
             <div className="portal-comment-edit">
               <textarea
@@ -819,6 +888,7 @@ function CommentBranch({
               onEditCancel={onEditCancel}
               onDelete={onDelete}
               onReport={onReport}
+              onOpenUser={onOpenUser}
             />
           ))}
         </div>
@@ -833,12 +903,14 @@ function PostCard({
   onPostUpdate,
   onDelete,
   onCommentCountChange,
+  onOpenUser,
 }: {
   post: Post
   currentUser: KoneaUser
   onPostUpdate: (postId: string, update: Partial<Post>) => void
   onDelete: (postId: string) => Promise<void>
   onCommentCountChange: (postId: string, delta: number) => void
+  onOpenUser: (userId: string) => void
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [comments, setComments] = useState<Comment[] | null>(null)
@@ -1029,13 +1101,20 @@ function PostCard({
   return (
     <article className="portal-card portal-post" id={`post-${post.id}`}>
       <header className="portal-post__header">
-        <Avatar name={post.author.displayName} url={post.author.avatarUrl} />
-        <div className="portal-post__identity">
-          <strong>{post.author.displayName}</strong>
-          <span>
-            @{post.author.username} · {formatDate(post.createdAt)}
+        <button
+          className="portal-post__author"
+          type="button"
+          onClick={() => onOpenUser(post.author.id)}
+          aria-label={`Abrir el perfil de ${post.author.displayName}`}
+        >
+          <Avatar name={post.author.displayName} url={post.author.avatarUrl} />
+          <span className="portal-post__identity">
+            <strong>{post.author.displayName}</strong>
+            <span>
+              @{post.author.username} · {formatDate(post.createdAt)}
+            </span>
           </span>
-        </div>
+        </button>
         {post.contentType === 'announcement' && (
           <span className="portal-content-type">
             <PortalIcon name="megaphone" /> Anuncio
@@ -1064,7 +1143,9 @@ function PostCard({
         </div>
       )}
 
-      <p className="portal-post__content">{post.content}</p>
+      <p className="portal-post__content">
+        <LinkedPostContent content={post.content} />
+      </p>
       {post.imageUrl && (
         <button
           className="portal-post__image-button"
@@ -1074,7 +1155,7 @@ function PostCard({
         >
           <img
             className="portal-post__image"
-            src={post.imageUrl}
+            src={absoluteUploadUrl(post.imageUrl)}
             alt={`Imagen compartida por ${post.author.displayName}`}
             loading="lazy"
           />
@@ -1204,6 +1285,7 @@ function PostCard({
                       label: 'comentario',
                     })
                   }
+                  onOpenUser={onOpenUser}
                 />
               ))}
             </div>
@@ -1291,7 +1373,13 @@ function PostCard({
   )
 }
 
-function FeedView({ user }: { user: KoneaUser }) {
+function FeedView({
+  user,
+  onOpenUser,
+}: {
+  user: KoneaUser
+  onOpenUser: (userId: string) => void
+}) {
   const [posts, setPosts] = useState<Post[]>([])
   const [activeType, setActiveType] = useState<PostContentType>('community')
   const [loading, setLoading] = useState(true)
@@ -1665,6 +1753,7 @@ function FeedView({ user }: { user: KoneaUser }) {
                 onPostUpdate={updatePost}
                 onDelete={handleDelete}
                 onCommentCountChange={changeCommentCount}
+                onOpenUser={onOpenUser}
               />
             ))}
           </div>
@@ -1752,7 +1841,7 @@ function ProfileImageUpload({
       <span>{label}</span>
       <div className="portal-profile-upload__preview">
         {value ? (
-          <img src={value} alt={`Vista previa: ${label}`} />
+          <img src={absoluteUploadUrl(value)} alt={`Vista previa: ${label}`} />
         ) : (
           <span>
             <PortalIcon name="image" /> Sin imagen
@@ -1795,6 +1884,7 @@ function ProfileImageUpload({
       )}
       {pendingFile && (
         <ImageCropDialog
+          key={`${variant}:${pendingFile.name}:${pendingFile.lastModified}`}
           file={pendingFile}
           variant={variant}
           onCancel={() => {
@@ -1809,13 +1899,19 @@ function ProfileImageUpload({
 }
 
 type ProfileActivityTab = 'posts' | 'likes' | 'media'
+type ProfileActivityErrors = {
+  profile: string
+  likes: string
+}
 
 function ProfileView({
   user,
   onUserChange,
+  onOpenUser,
 }: {
   user: KoneaUser
   onUserChange: (user: KoneaUser) => void
+  onOpenUser: (userId: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1832,9 +1928,13 @@ function ProfileView({
   const [profilePosts, setProfilePosts] = useState<Post[]>([])
   const [likedPosts, setLikedPosts] = useState<Post[]>([])
   const [activityLoading, setActivityLoading] = useState(true)
-  const [activityError, setActivityError] = useState('')
+  const [activityErrors, setActivityErrors] = useState<ProfileActivityErrors>({
+    profile: '',
+    likes: '',
+  })
   const [catalog, setCatalog] = useState<ProfileCatalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
+  const activityRequestRef = useRef(0)
   const [form, setForm] = useState<ProfileUpdate>({
     username: user.username,
     displayName: user.displayName,
@@ -1851,54 +1951,47 @@ function ProfileView({
   })
 
   const loadActivity = useCallback(async () => {
+    const requestId = ++activityRequestRef.current
     setActivityLoading(true)
-    setActivityError('')
-    try {
-      const [profileResult, likes] = await Promise.all([
-        getPublicUser(user.id),
-        getLikedPostsByUser(user.id),
-      ])
-      setProfileStats(profileResult.user.stats)
-      setProfilePosts(profileResult.posts)
-      setLikedPosts(likes)
-    } catch (loadError) {
-      setActivityError(
-        readableError(
-          loadError,
-          'No pudimos cargar la actividad de tu perfil.',
-        ),
-      )
-    } finally {
-      setActivityLoading(false)
+    setActivityErrors({ profile: '', likes: '' })
+
+    const [profileResult, likesResult] = await Promise.allSettled([
+      getPublicUser(user.id),
+      getLikedPostsByUser(user.id),
+    ])
+    if (requestId !== activityRequestRef.current) return
+
+    const nextErrors: ProfileActivityErrors = { profile: '', likes: '' }
+    if (profileResult.status === 'fulfilled') {
+      setProfileStats(profileResult.value.user.stats)
+      setProfilePosts(profileResult.value.posts)
+    } else {
+      nextErrors.profile = `Publicaciones y estadísticas: ${readableError(
+        profileResult.reason,
+        'No pudimos cargar estos datos.',
+      )}`
     }
+
+    if (likesResult.status === 'fulfilled') {
+      setLikedPosts(likesResult.value)
+    } else {
+      nextErrors.likes = `Publicaciones que te gustan: ${readableError(
+        likesResult.reason,
+        'No pudimos cargar estos datos.',
+      )}`
+    }
+
+    setActivityErrors(nextErrors)
+    setActivityLoading(false)
   }, [user.id])
 
   useEffect(() => {
-    let cancelled = false
-    Promise.all([getPublicUser(user.id), getLikedPostsByUser(user.id)])
-      .then(([profileResult, likes]) => {
-        if (!cancelled) {
-          setProfileStats(profileResult.user.stats)
-          setProfilePosts(profileResult.posts)
-          setLikedPosts(likes)
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled)
-          setActivityError(
-            readableError(
-              loadError,
-              'No pudimos cargar la actividad de tu perfil.',
-            ),
-          )
-      })
-      .finally(() => {
-        if (!cancelled) setActivityLoading(false)
-      })
+    const initialLoad = window.setTimeout(() => void loadActivity(), 0)
     return () => {
-      cancelled = true
+      window.clearTimeout(initialLoad)
+      activityRequestRef.current += 1
     }
-  }, [user.id])
+  }, [loadActivity])
 
   useEffect(() => {
     let cancelled = false
@@ -2148,6 +2241,10 @@ function ProfileView({
       : activityTab === 'media'
         ? profilePosts.filter((post) => post.imageUrl)
         : profilePosts
+  const activeActivityError =
+    activityTab === 'likes' ? activityErrors.likes : activityErrors.profile
+  const inactiveActivityError =
+    activityTab === 'likes' ? activityErrors.profile : activityErrors.likes
   const uploadsBusy = uploadingAvatar || uploadingCover
 
   return (
@@ -2157,7 +2254,9 @@ function ProfileView({
           className={`portal-profile-cover${user.coverUrl ? ' portal-profile-cover--image' : ''}`}
           style={
             user.coverUrl
-              ? { backgroundImage: `url("${user.coverUrl}")` }
+              ? {
+                  backgroundImage: `url("${absoluteUploadUrl(user.coverUrl)}")`,
+                }
               : undefined
           }
         />
@@ -2184,14 +2283,12 @@ function ProfileView({
             {user.bio || 'Aún no has agregado una presentación.'}
           </p>
           {user.website && (
-            <a
+            <SafeExternalLink
               className="portal-profile-website"
               href={user.website}
-              target="_blank"
-              rel="noreferrer"
             >
               <PortalIcon name="globe" /> Visitar sitio web
-            </a>
+            </SafeExternalLink>
           )}
           {profileStats && (
             <dl className="portal-profile-social-stats">
@@ -2862,7 +2959,7 @@ function ProfileView({
                       {entry.imageUrl && (
                         <img
                           className="portal-own-portfolio__project-image"
-                          src={entry.imageUrl}
+                          src={absoluteUploadUrl(entry.imageUrl)}
                           alt={`Vista previa de ${entry.title}`}
                           loading="lazy"
                         />
@@ -2879,22 +2976,14 @@ function ProfileView({
                       {(entry.url || entry.repositoryUrl) && (
                         <div className="portal-own-portfolio__links">
                           {entry.url && (
-                            <a
-                              href={entry.url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
+                            <SafeExternalLink href={entry.url}>
                               Ver proyecto
-                            </a>
+                            </SafeExternalLink>
                           )}
                           {entry.repositoryUrl && (
-                            <a
-                              href={entry.repositoryUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
+                            <SafeExternalLink href={entry.repositoryUrl}>
                               Repositorio
-                            </a>
+                            </SafeExternalLink>
                           )}
                         </div>
                       )}
@@ -2919,13 +3008,9 @@ function ProfileView({
                       )}
                       {entry.description && <small>{entry.description}</small>}
                       {entry.credentialUrl && (
-                        <a
-                          href={entry.credentialUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <SafeExternalLink href={entry.credentialUrl}>
                           Ver credencial
-                        </a>
+                        </SafeExternalLink>
                       )}
                     </article>
                   ))}
@@ -2949,7 +3034,14 @@ function ProfileView({
             className={activityTab === 'posts' ? 'is-active' : ''}
             onClick={() => setActivityTab('posts')}
           >
-            Publicaciones <span>{profilePosts.length}</span>
+            Publicaciones{' '}
+            <span>
+              {activityLoading
+                ? '…'
+                : activityErrors.profile
+                  ? '—'
+                  : profilePosts.length}
+            </span>
           </button>
           <button
             type="button"
@@ -2958,7 +3050,14 @@ function ProfileView({
             className={activityTab === 'likes' ? 'is-active' : ''}
             onClick={() => setActivityTab('likes')}
           >
-            Me gusta <span>{likedPosts.length}</span>
+            Me gusta{' '}
+            <span>
+              {activityLoading
+                ? '…'
+                : activityErrors.likes
+                  ? '—'
+                  : likedPosts.length}
+            </span>
           </button>
           <button
             type="button"
@@ -2968,14 +3067,25 @@ function ProfileView({
             onClick={() => setActivityTab('media')}
           >
             Multimedia{' '}
-            <span>{profilePosts.filter((post) => post.imageUrl).length}</span>
+            <span>
+              {activityLoading
+                ? '…'
+                : activityErrors.profile
+                  ? '—'
+                  : profilePosts.filter((post) => post.imageUrl).length}
+            </span>
           </button>
         </div>
+        {!activityLoading && !activeActivityError && inactiveActivityError && (
+          <p className="portal-inline-error" role="alert">
+            {inactiveActivityError} Los demás datos siguen disponibles.
+          </p>
+        )}
         {activityLoading ? (
           <div className="portal-loading" role="status">
             <span className="portal-spinner" /> Cargando actividad…
           </div>
-        ) : activityError ? (
+        ) : activeActivityError ? (
           <EmptyState
             icon="refresh"
             title="No pudimos cargar tu actividad"
@@ -2989,7 +3099,7 @@ function ProfileView({
               </button>
             }
           >
-            {activityError}
+            {activeActivityError}
           </EmptyState>
         ) : activityPosts.length ? (
           <div className="portal-post-list">
@@ -3001,6 +3111,7 @@ function ProfileView({
                 onPostUpdate={updateActivityPost}
                 onDelete={deleteActivityPost}
                 onCommentCountChange={changeActivityCommentCount}
+                onOpenUser={onOpenUser}
               />
             ))}
           </div>
@@ -3084,7 +3195,7 @@ function ModerationCard({
       {post.imageUrl && (
         <img
           className="portal-post__image"
-          src={post.imageUrl}
+          src={absoluteUploadUrl(post.imageUrl)}
           alt="Contenido adjunto para moderar"
           loading="lazy"
         />
@@ -3186,7 +3297,7 @@ function ReportResourcePreview({ report }: { report: Report }) {
           <p>{report.resource.content}</p>
           {report.resource.imageUrl && (
             <img
-              src={report.resource.imageUrl}
+              src={absoluteUploadUrl(report.resource.imageUrl)}
               alt="Imagen de la publicación reportada"
               loading="lazy"
             />
@@ -3210,7 +3321,7 @@ function ReportResourcePreview({ report }: { report: Report }) {
           <p>{report.resource.name ?? 'Conversaci\u00f3n directa'}</p>
           {report.resource.avatarUrl && (
             <img
-              src={report.resource.avatarUrl}
+              src={absoluteUploadUrl(report.resource.avatarUrl)}
               alt="Imagen del chat reportado"
               loading="lazy"
             />
@@ -3224,13 +3335,17 @@ function ReportResourcePreview({ report }: { report: Report }) {
           <p>{report.resource.content}</p>
           {report.resource.fileUrl && report.resource.type === 'image' && (
             <img
-              src={report.resource.fileUrl}
+              src={absoluteUploadUrl(report.resource.fileUrl)}
               alt="Imagen del mensaje reportado"
               loading="lazy"
             />
           )}
           {report.resource.fileUrl && report.resource.type === 'file' && (
-            <a href={report.resource.fileUrl} target="_blank" rel="noreferrer">
+            <a
+              href={absoluteUploadUrl(report.resource.fileUrl)}
+              target="_blank"
+              rel="noreferrer"
+            >
               Abrir archivo: {report.resource.fileName ?? 'adjunto'}
             </a>
           )}
@@ -3389,26 +3504,54 @@ const supportRequestStatusLabels: Record<SupportRequestStatus, string> = {
 
 function SupportRequestReviewCard({
   request,
-  onStatusChange,
+  onUpdate,
 }: {
   request: ManagedSupportRequest
-  onStatusChange: (
+  onUpdate: (
     requestId: string,
-    status: SupportRequestStatus,
+    update: { status?: SupportRequestStatus; note?: string },
   ) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [note, setNote] = useState('')
 
   const changeStatus = async (status: SupportRequestStatus) => {
+    const trimmedNote = note.trim()
+    if ((status === 'resolved' || status === 'rejected') && !trimmedNote) {
+      setError('Escribe una respuesta breve antes de cerrar la solicitud.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      await onStatusChange(request.id, status)
+      await onUpdate(request.id, {
+        status,
+        ...(trimmedNote ? { note: trimmedNote } : {}),
+      })
+      setNote('')
     } catch (updateError) {
       setError(
         readableError(updateError, 'No pudimos actualizar esta solicitud.'),
       )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sendResponse = async () => {
+    const trimmedNote = note.trim()
+    if (!trimmedNote) {
+      setError('Escribe una respuesta antes de enviarla.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await onUpdate(request.id, { note: trimmedNote })
+      setNote('')
+    } catch (updateError) {
+      setError(readableError(updateError, 'No pudimos enviar esta respuesta.'))
     } finally {
       setSaving(false)
     }
@@ -3471,6 +3614,61 @@ function SupportRequestReviewCard({
         <span>Actualizada {formatDate(request.updatedAt)}</span>
       </footer>
 
+      <section
+        className="portal-support-timeline"
+        aria-label="Historial de la solicitud"
+      >
+        <h4>Historial y respuestas</h4>
+        <ol>
+          {request.timeline.map((event) => (
+            <li key={event.id}>
+              <span className="portal-support-timeline__dot" />
+              <div>
+                <header>
+                  <strong>
+                    {event.type === 'created'
+                      ? 'Solicitud creada'
+                      : event.type === 'response'
+                        ? 'Respuesta enviada'
+                        : `Estado: ${supportRequestStatusLabels[event.toStatus]}`}
+                  </strong>
+                  <time dateTime={event.createdAt}>
+                    {formatDate(event.createdAt)}
+                  </time>
+                </header>
+                <span>
+                  {event.actor?.displayName ?? 'Cuenta eliminada'}
+                  {event.fromStatus && (
+                    <>
+                      {' '}
+                      · de {supportRequestStatusLabels[event.fromStatus]} a{' '}
+                      {supportRequestStatusLabels[event.toStatus]}
+                    </>
+                  )}
+                </span>
+                {event.note && <p>{event.note}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <div className="portal-support-response-field">
+        <label htmlFor={`support-response-${request.id}`}>
+          Respuesta para el estudiante
+        </label>
+        <textarea
+          id={`support-response-${request.id}`}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          maxLength={1_000}
+          rows={3}
+          disabled={saving}
+          placeholder="Explica qué se revisó, el resultado o los próximos pasos…"
+        />
+        <span>{note.length}/1000</span>
+      </div>
+
       {error && (
         <p className="portal-inline-error" role="alert">
           {error}
@@ -3478,6 +3676,13 @@ function SupportRequestReviewCard({
       )}
 
       <div className="portal-support-review-actions">
+        <button
+          type="button"
+          onClick={() => void sendResponse()}
+          disabled={saving || note.trim().length < 3}
+        >
+          Enviar respuesta
+        </button>
         {request.status === 'pending' && (
           <button
             type="button"
@@ -3521,6 +3726,12 @@ function SupportRequestReviewCard({
   )
 }
 
+type ModerationLoadErrors = {
+  posts: string
+  reports: string
+  requests: string
+}
+
 function ModerationView() {
   const [posts, setPosts] = useState<Post[]>([])
   const [reports, setReports] = useState<Report[]>([])
@@ -3535,62 +3746,67 @@ function ModerationView() {
   const [requestFilter, setRequestFilter] =
     useState<SupportRequestStatus>('pending')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [loadErrors, setLoadErrors] = useState<ModerationLoadErrors>({
+    posts: '',
+    reports: '',
+    requests: '',
+  })
+  const moderationRequestRef = useRef(0)
 
   const loadModeration = useCallback(async () => {
+    const requestId = ++moderationRequestRef.current
     setLoading(true)
-    setError('')
-    try {
-      const [loadedPosts, loadedReports, loadedRequests] = await Promise.all([
+    setLoadErrors({ posts: '', reports: '', requests: '' })
+
+    const [postsResult, reportsResult, requestsResult] =
+      await Promise.allSettled([
         getModerationPosts(),
         getReports(),
         getManagedSupportRequests(),
       ])
-      setPosts(loadedPosts)
-      setReports(loadedReports)
-      setSupportRequests(loadedRequests)
-    } catch (loadError) {
-      setError(
-        readableError(loadError, 'No pudimos cargar el centro de moderación.'),
-      )
-    } finally {
-      setLoading(false)
+    if (requestId !== moderationRequestRef.current) return
+
+    const nextErrors: ModerationLoadErrors = {
+      posts: '',
+      reports: '',
+      requests: '',
     }
+    if (postsResult.status === 'fulfilled') {
+      setPosts(postsResult.value)
+    } else {
+      nextErrors.posts = `Publicaciones: ${readableError(
+        postsResult.reason,
+        'No pudimos cargar la cola.',
+      )}`
+    }
+    if (reportsResult.status === 'fulfilled') {
+      setReports(reportsResult.value)
+    } else {
+      nextErrors.reports = `Reportes: ${readableError(
+        reportsResult.reason,
+        'No pudimos cargar la cola.',
+      )}`
+    }
+    if (requestsResult.status === 'fulfilled') {
+      setSupportRequests(requestsResult.value)
+    } else {
+      nextErrors.requests = `Solicitudes: ${readableError(
+        requestsResult.reason,
+        'No pudimos cargar la cola.',
+      )}`
+    }
+
+    setLoadErrors(nextErrors)
+    setLoading(false)
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-
-    Promise.all([
-      getModerationPosts(),
-      getReports(),
-      getManagedSupportRequests(),
-    ])
-      .then(([loadedPosts, loadedReports, loadedRequests]) => {
-        if (!cancelled) {
-          setPosts(loadedPosts)
-          setReports(loadedReports)
-          setSupportRequests(loadedRequests)
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled) {
-          setError(
-            readableError(
-              loadError,
-              'No pudimos cargar el centro de moderación.',
-            ),
-          )
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
+    const initialLoad = window.setTimeout(() => void loadModeration(), 0)
     return () => {
-      cancelled = true
+      window.clearTimeout(initialLoad)
+      moderationRequestRef.current += 1
     }
-  }, [])
+  }, [loadModeration])
 
   const filteredPosts = useMemo(
     () => posts.filter((post) => post.moderationStatus === filter),
@@ -3612,6 +3828,10 @@ function ModerationView() {
   const filteredSupportRequests = supportRequests.filter(
     (item) => item.status === requestFilter,
   )
+  const sectionError = loadErrors[section]
+  const moderationErrorMessage = Object.values(loadErrors)
+    .filter(Boolean)
+    .join(' ')
 
   const handleModerate = async (
     postId: string,
@@ -3633,13 +3853,25 @@ function ModerationView() {
 
   const handleSupportRequestStatus = async (
     requestId: string,
-    status: SupportRequestStatus,
+    update: { status?: SupportRequestStatus; note?: string },
   ) => {
-    const updated = await updateManagedSupportRequest(requestId, status)
+    const updated = await updateManagedSupportRequest(requestId, update)
     setSupportRequests((current) =>
-      current.map((item) =>
-        item.id === requestId ? { ...item, ...updated } : item,
-      ),
+      current.map((item) => {
+        if (item.id !== requestId) return item
+        const assignedActor = updated.assignedToId
+          ? [...updated.timeline]
+              .reverse()
+              .find((event) => event.actor?.id === updated.assignedToId)?.actor
+          : null
+        return {
+          ...item,
+          ...updated,
+          assignedTo: updated.assignedToId
+            ? (assignedActor ?? item.assignedTo)
+            : null,
+        }
+      }),
     )
   }
 
@@ -3652,8 +3884,23 @@ function ModerationView() {
         <div>
           <span className="portal-card-kicker">Cola de revisión</span>
           <h2>
-            {pendingCount} publicaciones · {openReportsCount} reportes ·{' '}
-            {openRequestsCount} solicitudes abiertas
+            {loading ? (
+              'Cargando datos de moderación…'
+            ) : (
+              <>
+                {loadErrors.posts
+                  ? 'Publicaciones no disponibles'
+                  : `${pendingCount} publicaciones`}{' '}
+                ·{' '}
+                {loadErrors.reports
+                  ? 'reportes no disponibles'
+                  : `${openReportsCount} reportes`}{' '}
+                ·{' '}
+                {loadErrors.requests
+                  ? 'solicitudes no disponibles'
+                  : `${openRequestsCount} solicitudes abiertas`}
+              </>
+            )}
           </h2>
           <p>
             Revisa contenido, reportes y solicitudes estudiantiles con criterios
@@ -3674,7 +3921,8 @@ function ModerationView() {
           className={section === 'posts' ? 'is-active' : ''}
           onClick={() => setSection('posts')}
         >
-          Publicaciones <span>{pendingCount}</span>
+          Publicaciones{' '}
+          <span>{loading || loadErrors.posts ? '—' : pendingCount}</span>
         </button>
         <button
           type="button"
@@ -3683,7 +3931,8 @@ function ModerationView() {
           className={section === 'reports' ? 'is-active' : ''}
           onClick={() => setSection('reports')}
         >
-          Reportes <span>{openReportsCount}</span>
+          Reportes{' '}
+          <span>{loading || loadErrors.reports ? '—' : openReportsCount}</span>
         </button>
         <button
           type="button"
@@ -3692,7 +3941,10 @@ function ModerationView() {
           className={section === 'requests' ? 'is-active' : ''}
           onClick={() => setSection('requests')}
         >
-          Solicitudes <span>{openRequestsCount}</span>
+          Solicitudes{' '}
+          <span>
+            {loading || loadErrors.requests ? '—' : openRequestsCount}
+          </span>
         </button>
       </div>
 
@@ -3723,10 +3975,10 @@ function ModerationView() {
               >
                 {label}
                 <span>
-                  {
-                    posts.filter((post) => post.moderationStatus === value)
-                      .length
-                  }
+                  {loading || loadErrors.posts
+                    ? '—'
+                    : posts.filter((post) => post.moderationStatus === value)
+                        .length}
                 </span>
               </button>
             ))
@@ -3748,7 +4000,10 @@ function ModerationView() {
                 >
                   {label}
                   <span>
-                    {reports.filter((report) => report.status === value).length}
+                    {loading || loadErrors.reports
+                      ? '—'
+                      : reports.filter((report) => report.status === value)
+                          .length}
                   </span>
                 </button>
               ))
@@ -3769,21 +4024,28 @@ function ModerationView() {
                 >
                   {label}
                   <span>
-                    {
-                      supportRequests.filter((item) => item.status === value)
-                        .length
-                    }
+                    {loading || loadErrors.requests
+                      ? '—'
+                      : supportRequests.filter((item) => item.status === value)
+                          .length}
                   </span>
                 </button>
               ))}
       </div>
+
+      {!loading && moderationErrorMessage && (
+        <p className="portal-inline-error" role="alert">
+          Parte del centro de moderación no está disponible.{' '}
+          {moderationErrorMessage}
+        </p>
+      )}
 
       {loading ? (
         <div className="portal-loading" role="status">
           <span className="portal-spinner" />
           <span>Cargando la cola de moderación…</span>
         </div>
-      ) : error ? (
+      ) : sectionError ? (
         <EmptyState
           icon="refresh"
           title="No pudimos abrir la moderación"
@@ -3797,7 +4059,7 @@ function ModerationView() {
             </button>
           }
         >
-          {error}
+          {sectionError}
         </EmptyState>
       ) : section === 'posts' && filteredPosts.length === 0 ? (
         <EmptyState icon="check" title="Todo está al día">
@@ -3843,7 +4105,7 @@ function ModerationView() {
             <SupportRequestReviewCard
               key={request.id}
               request={request}
-              onStatusChange={handleSupportRequestStatus}
+              onUpdate={handleSupportRequestStatus}
             />
           ))}
         </div>
@@ -3939,6 +4201,12 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
       })
   }, [])
 
+  const commitUnreadNotificationCount = useCallback((count: number) => {
+    // Invalida cualquier sondeo iniciado antes de una mutación de lectura.
+    notificationRequestRef.current += 1
+    setUnreadNotifications(count)
+  }, [])
+
   useEffect(() => {
     const refreshUnreadCount = () => void refreshUnreadNotifications()
 
@@ -3987,6 +4255,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'academic', label: 'Materias', icon: 'academic' },
+    { view: 'focus', label: 'FocusBuddy', icon: 'focus' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     ...(canModerate
       ? ([
@@ -4000,6 +4269,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'network', label: 'Conexiones', icon: 'users' },
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'academic', label: 'Materias', icon: 'academic' },
+    { view: 'focus', label: 'Focus', icon: 'focus' },
     { view: 'duco', label: 'DUCO', icon: 'duco' },
     { view: 'profile', label: 'Perfil', icon: 'profile' },
   ]
@@ -4010,6 +4280,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     chat: { eyebrow: 'Conversaciones', title: 'Chat Konea' },
     duco: { eyebrow: 'Asistente', title: 'Organízate con DUCO' },
     academic: { eyebrow: 'Planificación', title: 'Mi espacio académico' },
+    focus: { eyebrow: 'Concentración', title: 'Estudia con FocusBuddy' },
     notifications: { eyebrow: 'Actividad', title: 'Tus notificaciones' },
     profile: { eyebrow: 'Identidad', title: 'Tu perfil Konea' },
     moderation: { eyebrow: 'Seguridad', title: 'Centro de moderación' },
@@ -4044,6 +4315,8 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     if (window.location.hash !== nextHash) {
       window.history.pushState(null, '', nextHash)
     }
+    setInitialChatId(chatId)
+    setInitialChatUserId(null)
   }
 
   const openPost = (postId?: string) => {
@@ -4268,58 +4541,80 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
           </p>
         )}
 
-        {view === 'feed' && (
-          <FeedView key={activePostId ?? 'feed'} user={user} />
-        )}
-        {view === 'network' && (
-          <Network
-            key={networkUserId ?? 'directory'}
-            currentUser={user}
-            initialUserId={networkUserId}
-            onOpenOwnProfile={openProfile}
-            onStartChat={startChatWithUser}
-            onProfileChange={(userId) => {
-              if (userId) openNetworkUser(userId)
-              else goTo('network')
-            }}
-          />
-        )}
-        {view === 'chat' && (
-          <Chat
-            currentUser={user}
-            initialChatId={initialChatId}
-            initialUserId={initialChatUserId}
-            onUnreadChange={setUnreadChats}
-            onNotificationsRead={() => void refreshUnreadNotifications()}
-            onOpenUser={openNetworkUser}
-            onChatChange={syncChatRoute}
-          />
-        )}
-        {view === 'duco' && (
-          <Duco
-            currentUser={user}
-            initialPanel={
-              window.location.hash === '#duco-requests'
-                ? 'requests'
-                : 'conversation'
-            }
-          />
-        )}
-        {view === 'academic' && <Academic />}
-        {view === 'notifications' && (
-          <Notifications
-            unreadCount={unreadNotifications}
-            onUnreadCountChange={setUnreadNotifications}
-            onOpenUser={openNetworkUser}
-            onOpenFeed={openPost}
-            onOpenChat={openChat}
-            onOpenSupportRequests={openSupportRequests}
-          />
-        )}
-        {view === 'profile' && (
-          <ProfileView user={user} onUserChange={onUserChange} />
-        )}
-        {view === 'moderation' && canModerate && <ModerationView />}
+        <Suspense
+          fallback={
+            <div className="portal-loading" role="status">
+              <span className="portal-spinner" />
+              <span>Cargando sección…</span>
+            </div>
+          }
+        >
+          {view === 'feed' && (
+            <FeedView
+              key={activePostId ?? 'feed'}
+              user={user}
+              onOpenUser={(userId) =>
+                userId === user.id ? openProfile() : openNetworkUser(userId)
+              }
+            />
+          )}
+          {view === 'network' && (
+            <Network
+              key={networkUserId ?? 'directory'}
+              currentUser={user}
+              initialUserId={networkUserId}
+              onOpenOwnProfile={openProfile}
+              onStartChat={startChatWithUser}
+              onProfileChange={(userId) => {
+                if (userId) openNetworkUser(userId)
+                else goTo('network')
+              }}
+            />
+          )}
+          {view === 'chat' && (
+            <Chat
+              currentUser={user}
+              initialChatId={initialChatId}
+              initialUserId={initialChatUserId}
+              onUnreadChange={setUnreadChats}
+              onNotificationsRead={() => void refreshUnreadNotifications()}
+              onOpenUser={openNetworkUser}
+              onChatChange={syncChatRoute}
+            />
+          )}
+          {view === 'duco' && (
+            <Duco
+              currentUser={user}
+              initialPanel={
+                window.location.hash === '#duco-requests'
+                  ? 'requests'
+                  : 'conversation'
+              }
+            />
+          )}
+          {view === 'academic' && <Academic />}
+          {view === 'focus' && <FocusBuddy />}
+          {view === 'notifications' && (
+            <Notifications
+              unreadCount={unreadNotifications}
+              onUnreadCountChange={commitUnreadNotificationCount}
+              onOpenUser={openNetworkUser}
+              onOpenFeed={openPost}
+              onOpenChat={openChat}
+              onOpenSupportRequests={openSupportRequests}
+            />
+          )}
+          {view === 'profile' && (
+            <ProfileView
+              user={user}
+              onUserChange={onUserChange}
+              onOpenUser={(userId) =>
+                userId === user.id ? openProfile() : openNetworkUser(userId)
+              }
+            />
+          )}
+          {view === 'moderation' && canModerate && <ModerationView />}
+        </Suspense>
       </main>
 
       <nav className="portal-bottom-nav" aria-label="Navegación móvil">

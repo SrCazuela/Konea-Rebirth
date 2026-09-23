@@ -52,6 +52,122 @@ afterEach(() => {
 })
 
 describe('DUCO AI action invariants', () => {
+  it('prioritizes verified Chilean crisis resources before any form', async () => {
+    env.DUCO_AI_PROVIDER = 'openai'
+    env.OPENAI_API_KEY = 'test-key'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await buildDucoAiReply({
+      prompt: 'Tengo pensamientos suicidas y temo hacerme daño.',
+      localReply: 'Cuéntame qué necesitas.',
+      conversation: [],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.action).toBeNull()
+    expect(result.reply).toContain('*4141')
+    expect(result.reply).toContain('131')
+    expect(result.reply).toContain('133')
+    expect(result.reply).toContain('DUCO no ha contactado')
+  })
+
+  it('treats a confirmed immediate danger as an emergency', async () => {
+    env.DUCO_AI_PROVIDER = 'local'
+    const initialPrompt = 'Estoy pensando en quitarme la vida.'
+    const initial = await buildDucoAiReply({
+      prompt: initialPrompt,
+      localReply: 'Cuéntame qué necesitas.',
+      conversation: [],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    const result = await buildDucoAiReply({
+      prompt: 'Sí, estoy en peligro y tengo un plan.',
+      localReply: 'Cuéntame qué necesitas.',
+      conversation: [
+        { role: 'user', content: initialPrompt },
+        { role: 'assistant', content: initial.reply },
+      ],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    expect(result.reply).toContain('no esperes una respuesta de Konea')
+    expect(result.reply).toContain('*4141')
+    expect(result.action).toMatchObject({
+      type: 'manage_request',
+      draft: { category: 'wellbeing', urgency: 'high' },
+    })
+  })
+
+  it('keeps a non-immediate safety answer distinct from an emergency', async () => {
+    env.DUCO_AI_PROVIDER = 'local'
+    const initialPrompt = 'He pensado en hacerme daño.'
+    const initial = await buildDucoAiReply({
+      prompt: initialPrompt,
+      localReply: 'Cuéntame qué necesitas.',
+      conversation: [],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    const result = await buildDucoAiReply({
+      prompt: 'No estoy en peligro, no tengo un plan y estoy a salvo.',
+      localReply: 'Cuéntame qué necesitas.',
+      conversation: [
+        { role: 'user', content: initialPrompt },
+        { role: 'assistant', content: initial.reply },
+      ],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    expect(result.reply).toContain('Gracias por aclararlo')
+    expect(result.reply).not.toContain('Esto puede ser una emergencia')
+    expect(result.action).toMatchObject({
+      type: 'manage_request',
+      draft: { category: 'wellbeing', urgency: 'high' },
+    })
+  })
+
+  it('keeps the newest request details when prior context exceeds the draft limit', async () => {
+    env.DUCO_AI_PROVIDER = 'local'
+    const latestDetails =
+      'Para la solicitud de cambio de sección, la asignatura es Capstone, mi sección actual es 001D y el motivo es que se superpone con otra clase.'
+    const result = await buildDucoAiReply({
+      prompt: latestDetails,
+      localReply: 'Puedo ayudarte con la solicitud.',
+      conversation: [
+        {
+          role: 'user',
+          content:
+            'Necesito solicitar un cambio de sección porque tengo un problema de horario.',
+        },
+        { role: 'user', content: 'contexto '.repeat(260) },
+        {
+          role: 'assistant',
+          content:
+            'Antes de mostrar el botón “Gestionar solicitud” necesito más información.',
+        },
+      ],
+      pendingTasks: [],
+      activeTaskDraft: null,
+    })
+
+    expect(result.action).toMatchObject({
+      type: 'manage_request',
+      draft: { category: 'section_change' },
+    })
+    if (result.action?.type !== 'manage_request')
+      throw new Error('DUCO did not return a request draft')
+    expect(result.action.draft.description).toContain(latestDetails)
+    expect(Array.from(result.action.draft.description)).toHaveLength(2_000)
+  })
+
   it('does not expose an OpenAI claim that a draft was saved when action is null', async () => {
     env.DUCO_AI_PROVIDER = 'openai'
     env.OPENAI_API_KEY = 'test-key'

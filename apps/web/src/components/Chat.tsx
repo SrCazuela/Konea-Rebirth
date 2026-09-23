@@ -12,6 +12,7 @@ import {
 } from 'react'
 import QRCode from 'qrcode'
 import type { KoneaUser } from '../api/auth'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   addChatParticipant,
   createChatPoll,
@@ -24,6 +25,7 @@ import {
   getChat,
   getChatTasks,
   getCurrentQrCode,
+  getMessageDeliveryStatuses,
   getMessages,
   invalidateCurrentQrCode,
   listChats,
@@ -54,6 +56,7 @@ import {
 } from '../api/chat'
 import { listConnections, type PublicUser } from '../api/network'
 import { createReport } from '../api/reports'
+import { absoluteUploadUrl } from '../api/uploads'
 import './Chat.css'
 import { QrScanner } from './QrScanner'
 
@@ -317,7 +320,7 @@ function ChatAvatar({
 }) {
   const className = `chat-avatar chat-avatar--${size}`
   return url ? (
-    <img className={className} src={url} alt="" />
+    <img className={className} src={absoluteUploadUrl(url)} alt="" />
   ) : (
     <span className={className} aria-hidden="true">
       {initials(name) || 'K'}
@@ -388,32 +391,36 @@ function Dialog({
   title,
   description,
   onClose,
+  closeDisabled = false,
   children,
 }: {
   title: string
   description?: string
   onClose: () => void
+  closeDisabled?: boolean
   children: ReactNode
 }) {
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+  const dialogRef = useModalDialog<HTMLElement>({
+    open: true,
+    onClose,
+    closeDisabled,
+  })
 
   return (
     <div
       className="chat-dialog-backdrop"
       role="presentation"
-      onMouseDown={onClose}
+      onMouseDown={() => {
+        if (!closeDisabled) onClose()
+      }}
     >
       <section
+        ref={dialogRef}
         aria-modal="true"
         className="chat-dialog"
         role="dialog"
         aria-labelledby="chat-dialog-title"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="chat-dialog__header">
@@ -421,7 +428,12 @@ function Dialog({
             <h2 id="chat-dialog-title">{title}</h2>
             {description && <p>{description}</p>}
           </div>
-          <button type="button" onClick={onClose} aria-label="Cerrar">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            disabled={closeDisabled}
+          >
             <ChatIcon name="close" />
           </button>
         </header>
@@ -546,13 +558,22 @@ export function Chat({
   const [messageQuery, setMessageQuery] = useState('')
   const [activeTag, setActiveTag] = useState<MessageTag | null>(null)
   const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState('')
   const [conversationLoading, setConversationLoading] = useState(
     Boolean(initialChatId),
   )
+  const [messageLoadError, setMessageLoadError] = useState('')
+  const [detailLoading, setDetailLoading] = useState(Boolean(initialChatId))
+  const [detailLoadError, setDetailLoadError] = useState('')
+  const [tasksLoading, setTasksLoading] = useState(Boolean(initialChatId))
+  const [tasksLoadError, setTasksLoadError] = useState('')
   const [olderLoading, setOlderLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [utilityPanel, setUtilityPanel] = useState<UtilityPanel | null>(null)
+  const [utilityIsModal, setUtilityIsModal] = useState(
+    () => window.matchMedia('(max-width: 1280px)').matches,
+  )
   const [composer, setComposer] = useState('')
   const [composerTags, setComposerTags] = useState<MessageTag[]>([])
   const [sending, setSending] = useState(false)
@@ -565,6 +586,9 @@ export function Chat({
   const [newChatQuery, setNewChatQuery] = useState('')
   const [newChatPeople, setNewChatPeople] = useState<PublicUser[]>([])
   const [newChatLoading, setNewChatLoading] = useState(false)
+  const [newChatSearchError, setNewChatSearchError] = useState('')
+  const [newChatCreateError, setNewChatCreateError] = useState('')
+  const [newChatSearchNonce, setNewChatSearchNonce] = useState(0)
   const [selectedPeopleIds, setSelectedPeopleIds] = useState<string[]>([])
   const [groupName, setGroupName] = useState('')
   const [creatingChat, setCreatingChat] = useState(false)
@@ -573,6 +597,7 @@ export function Chat({
   const [pollOptions, setPollOptions] = useState(['', ''])
   const [pollAllowsMultiple, setPollAllowsMultiple] = useState(false)
   const [creatingPoll, setCreatingPoll] = useState(false)
+  const [pollSubmitError, setPollSubmitError] = useState('')
   const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [taskFormOpen, setTaskFormOpen] = useState(false)
@@ -599,19 +624,42 @@ export function Chat({
   const [reportReason, setReportReason] = useState('')
   const [reportDetails, setReportDetails] = useState('')
   const [reportBusy, setReportBusy] = useState(false)
+  const [reportSubmitError, setReportSubmitError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messageEndRef = useRef<HTMLDivElement>(null)
   const handledInitialUserRef = useRef<string | null>(null)
   const loadedOlderRef = useRef(false)
+  const messagesRef = useRef<ChatMessage[]>(messages)
   const selectedChatIdRef = useRef<string | null>(selectedChatId)
   const selectionGenerationRef = useRef(0)
   const latestMessageRequestRef = useRef(0)
+  const chatListRequestRef = useRef(0)
+  const chatDetailRequestRef = useRef(0)
+  const chatTasksRequestRef = useRef(0)
+  const utilityDialogRef = useModalDialog<HTMLElement>({
+    open: Boolean(utilityPanel) && utilityIsModal,
+    onClose: () => setUtilityPanel(null),
+  })
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1280px)')
+    const synchronize = () => setUtilityIsModal(mediaQuery.matches)
+    synchronize()
+    mediaQuery.addEventListener('change', synchronize)
+    return () => mediaQuery.removeEventListener('change', synchronize)
+  }, [])
 
   useLayoutEffect(() => {
     selectedChatIdRef.current = selectedChatId
     selectionGenerationRef.current += 1
     latestMessageRequestRef.current += 1
+    chatDetailRequestRef.current += 1
+    chatTasksRequestRef.current += 1
   }, [selectedChatId])
+
+  useLayoutEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const selectedSummary = useMemo(
     () => chats.find((chat) => chat.id === selectedChatId) ?? null,
@@ -651,39 +699,147 @@ export function Chat({
 
   const isManager = detail?.myRole === 'owner' || detail?.myRole === 'admin'
 
+  const isCurrentSelection = useCallback(
+    (chatId: string, generation: number) =>
+      selectedChatIdRef.current === chatId &&
+      selectionGenerationRef.current === generation,
+    [],
+  )
+
   const refreshChats = useCallback(async (silent = false) => {
+    const requestId = ++chatListRequestRef.current
     if (!silent) setListLoading(true)
     try {
-      setChats(await listChats())
-      if (!silent) setError('')
+      const loadedChats = await listChats()
+      if (requestId !== chatListRequestRef.current) return
+      setChats(loadedChats)
+      setListError('')
     } catch (loadError) {
-      if (!silent) {
-        setError(
+      if (!silent && requestId === chatListRequestRef.current) {
+        setListError(
           readableError(loadError, 'No pudimos cargar tus conversaciones.'),
         )
       }
     } finally {
-      setListLoading(false)
+      if (requestId === chatListRequestRef.current) setListLoading(false)
     }
   }, [])
 
-  const refreshDetail = useCallback(async (chatId: string) => {
-    const chat = await getChat(chatId)
-    setDetail(chat)
-    setGroupNameDraft(chat.name ?? '')
-    return chat
-  }, [])
+  const refreshDetail = useCallback(
+    async (chatId: string, generation: number) => {
+      const requestId = ++chatDetailRequestRef.current
+      let chat: ChatDetail
+      try {
+        chat = await getChat(chatId)
+      } catch (loadError) {
+        if (
+          !isCurrentSelection(chatId, generation) ||
+          requestId !== chatDetailRequestRef.current
+        ) {
+          return null
+        }
+        throw loadError
+      }
+      if (
+        !isCurrentSelection(chatId, generation) ||
+        requestId !== chatDetailRequestRef.current
+      ) {
+        return null
+      }
+      setDetail(chat)
+      setDetailLoadError('')
+      setGroupNameDraft(chat.name ?? '')
+      return chat
+    },
+    [isCurrentSelection],
+  )
 
-  const refreshTasks = useCallback(async (chatId: string) => {
-    setTasks(await getChatTasks(chatId))
-  }, [])
+  const refreshTasks = useCallback(
+    async (chatId: string, generation: number) => {
+      const requestId = ++chatTasksRequestRef.current
+      let loadedTasks: ChatTask[]
+      try {
+        loadedTasks = await getChatTasks(chatId)
+      } catch (loadError) {
+        if (
+          !isCurrentSelection(chatId, generation) ||
+          requestId !== chatTasksRequestRef.current
+        ) {
+          return null
+        }
+        throw loadError
+      }
+      if (
+        !isCurrentSelection(chatId, generation) ||
+        requestId !== chatTasksRequestRef.current
+      ) {
+        return null
+      }
+      setTasks(loadedTasks)
+      setTasksLoadError('')
+      return loadedTasks
+    },
+    [isCurrentSelection],
+  )
+
+  const refreshHistoricalDeliveryStatuses = useCallback(
+    async (chatId: string, latestMessageIds: string[], requestId: number) => {
+      const latestIds = new Set(latestMessageIds)
+      const historicalIds = [
+        ...new Set(
+          messagesRef.current
+            .filter(
+              (message) =>
+                message.sender.id === currentUser.id &&
+                message.deliveryStatus !== 'sending' &&
+                message.deliveryStatus !== 'read' &&
+                !latestIds.has(message.id),
+            )
+            .map((message) => message.id),
+        ),
+      ]
+      if (historicalIds.length === 0) return
+
+      const batches: string[][] = []
+      for (let index = 0; index < historicalIds.length; index += 200) {
+        batches.push(historicalIds.slice(index, index + 200))
+      }
+      const statuses = (
+        await Promise.all(
+          batches.map((messageIds) =>
+            getMessageDeliveryStatuses(chatId, messageIds),
+          ),
+        )
+      ).flat()
+      if (
+        selectedChatIdRef.current !== chatId ||
+        latestMessageRequestRef.current !== requestId
+      ) {
+        return
+      }
+
+      const statusByMessage = new Map(
+        statuses.map(({ messageId, status }) => [messageId, status]),
+      )
+      setMessages((current) =>
+        current.map((message) => {
+          const status = statusByMessage.get(message.id)
+          return status ? { ...message, deliveryStatus: status } : message
+        }),
+      )
+    },
+    [currentUser.id],
+  )
 
   const refreshLatestMessages = useCallback(
     async (silent = false) => {
       if (!selectedChatId) return
       const chatId = selectedChatId
       const requestId = ++latestMessageRequestRef.current
-      if (!silent) setConversationLoading(true)
+      if (!silent) {
+        setConversationLoading(true)
+        setMessageLoadError('')
+      }
       try {
         const page = await getMessages(chatId, {
           limit: 30,
@@ -696,6 +852,7 @@ export function Chat({
         ) {
           return
         }
+        setMessageLoadError('')
         setMessages((current) => {
           if (!silent || !loadedOlderRef.current || messageQuery || activeTag) {
             return page.messages
@@ -721,16 +878,36 @@ export function Chat({
           setNextBefore(page.pageInfo.nextBefore)
           setNextBeforeId(page.pageInfo.nextBeforeId)
         }
-        await reconcileChatRead(chatId)
-        if (selectedChatIdRef.current !== chatId) return
-        setChats((current) =>
-          current.map((chat) =>
-            chat.id === chatId ? { ...chat, unreadCount: 0 } : chat,
-          ),
-        )
+        if (loadedOlderRef.current && silent) {
+          void refreshHistoricalDeliveryStatuses(
+            chatId,
+            page.messages.map((message) => message.id),
+            requestId,
+          ).catch(() => undefined)
+        }
+        try {
+          await reconcileChatRead(chatId)
+          if (selectedChatIdRef.current !== chatId) return
+          setChats((current) =>
+            current.map((chat) =>
+              chat.id === chatId ? { ...chat, unreadCount: 0 } : chat,
+            ),
+          )
+        } catch (readError) {
+          if (!silent && selectedChatIdRef.current === chatId) {
+            setMessageLoadError(
+              readableError(
+                readError,
+                'Los mensajes cargaron, pero no pudimos sincronizar su lectura.',
+              ),
+            )
+          }
+        }
       } catch (loadError) {
         if (!silent && selectedChatIdRef.current === chatId) {
-          setError(readableError(loadError, 'No pudimos cargar los mensajes.'))
+          setMessageLoadError(
+            readableError(loadError, 'No pudimos cargar los mensajes.'),
+          )
         }
       } finally {
         if (
@@ -741,7 +918,13 @@ export function Chat({
         }
       }
     },
-    [activeTag, messageQuery, reconcileChatRead, selectedChatId],
+    [
+      activeTag,
+      messageQuery,
+      reconcileChatRead,
+      refreshHistoricalDeliveryStatuses,
+      selectedChatId,
+    ],
   )
 
   useEffect(() => {
@@ -754,16 +937,65 @@ export function Chat({
   }, [refreshChats])
 
   useEffect(() => {
-    if (!initialChatId) return
+    if (!initialChatId) {
+      if (initialUserId) return
+      if (selectedChatIdRef.current === null) return
+      const timeout = window.setTimeout(() => {
+        selectedChatIdRef.current = null
+        selectionGenerationRef.current += 1
+        latestMessageRequestRef.current += 1
+        chatDetailRequestRef.current += 1
+        chatTasksRequestRef.current += 1
+        messagesRef.current = []
+        loadedOlderRef.current = false
+        setLoadedOlder(false)
+        setOlderLoading(false)
+        setSelectedChatId(null)
+        setDetail(null)
+        setDetailLoading(false)
+        setDetailLoadError('')
+        setMessages([])
+        setMessageLoadError('')
+        setTasks([])
+        setTasksLoading(false)
+        setTasksLoadError('')
+        setComposer('')
+        setComposerTags([])
+        setTaskDraft(emptyTaskDraft)
+        setEditingTaskId(null)
+        setTaskFormOpen(false)
+        setHasMoreMessages(false)
+        setNextBefore(null)
+        setNextBeforeId(null)
+        setUtilityPanel(null)
+        setMessageSearchInput('')
+        setMessageQuery('')
+        setActiveTag(null)
+        setEditingMessageId(null)
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+    if (selectedChatIdRef.current === initialChatId) return
     const timeout = window.setTimeout(() => {
+      selectedChatIdRef.current = initialChatId
+      selectionGenerationRef.current += 1
+      latestMessageRequestRef.current += 1
+      chatDetailRequestRef.current += 1
+      chatTasksRequestRef.current += 1
+      messagesRef.current = []
       loadedOlderRef.current = false
       setLoadedOlder(false)
       setOlderLoading(false)
       setNextBefore(null)
       setNextBeforeId(null)
       setDetail(null)
+      setDetailLoading(true)
+      setDetailLoadError('')
       setMessages([])
+      setMessageLoadError('')
       setTasks([])
+      setTasksLoading(true)
+      setTasksLoadError('')
       setComposer('')
       setComposerTags([])
       setTaskDraft(emptyTaskDraft)
@@ -778,7 +1010,7 @@ export function Chat({
       setEditingMessageId(null)
     }, 0)
     return () => window.clearTimeout(timeout)
-  }, [initialChatId])
+  }, [initialChatId, initialUserId])
 
   useEffect(() => {
     if (
@@ -788,18 +1020,33 @@ export function Chat({
     ) {
       return
     }
+    let cancelled = false
+    const generation = selectionGenerationRef.current
     handledInitialUserRef.current = initialUserId
     createDirectChat(initialUserId)
       .then(async (result) => {
+        if (cancelled || selectionGenerationRef.current !== generation) return
         await refreshChats(true)
+        if (cancelled || selectionGenerationRef.current !== generation) return
+        selectedChatIdRef.current = result.chat.id
+        selectionGenerationRef.current += 1
+        latestMessageRequestRef.current += 1
+        chatDetailRequestRef.current += 1
+        chatTasksRequestRef.current += 1
+        messagesRef.current = []
         loadedOlderRef.current = false
         setLoadedOlder(false)
         setOlderLoading(false)
         setNextBefore(null)
         setNextBeforeId(null)
         setDetail(null)
+        setDetailLoading(true)
+        setDetailLoadError('')
         setMessages([])
+        setMessageLoadError('')
         setTasks([])
+        setTasksLoading(true)
+        setTasksLoadError('')
         setComposer('')
         setComposerTags([])
         setTaskDraft(emptyTaskDraft)
@@ -810,9 +1057,13 @@ export function Chat({
         onChatChange?.(result.chat.id)
       })
       .catch((createError: unknown) => {
+        if (cancelled || selectionGenerationRef.current !== generation) return
         handledInitialUserRef.current = null
         setError(readableError(createError, 'No pudimos crear el chat.'))
       })
+    return () => {
+      cancelled = true
+    }
   }, [currentUser.id, initialUserId, onChatChange, refreshChats])
 
   useEffect(() => {
@@ -827,38 +1078,51 @@ export function Chat({
   useEffect(() => {
     if (!selectedChatId) return
 
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     let cancelled = false
-    Promise.all([
-      getChat(selectedChatId),
-      getChatTasks(selectedChatId),
-      reconcileChatRead(selectedChatId),
-    ])
-      .then(([chat, loadedTasks]) => {
-        if (cancelled) return
-        setDetail(chat)
-        setTasks(loadedTasks)
-        setGroupNameDraft(chat.name ?? '')
-        setChats((current) =>
-          current.map((item) =>
-            item.id === selectedChatId ? { ...item, unreadCount: 0 } : item,
-          ),
-        )
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled) {
-          setError(
-            readableError(loadError, 'No pudimos abrir esta conversación.'),
+    const loadTimer = window.setTimeout(() => {
+      if (cancelled || !isCurrentSelection(chatId, generation)) return
+      setDetailLoading(true)
+      setTasksLoading(true)
+      setDetailLoadError('')
+      setTasksLoadError('')
+
+      void Promise.allSettled([
+        refreshDetail(chatId, generation),
+        refreshTasks(chatId, generation),
+      ]).then(([detailResult, tasksResult]) => {
+        if (cancelled || !isCurrentSelection(chatId, generation)) return
+
+        if (detailResult.status === 'rejected') {
+          setDetailLoadError(
+            readableError(
+              detailResult.reason,
+              'No pudimos cargar la información de esta conversación.',
+            ),
           )
         }
+        if (tasksResult.status === 'rejected') {
+          setTasksLoadError(
+            readableError(tasksResult.reason, 'No pudimos cargar las tareas.'),
+          )
+        }
+        setDetailLoading(false)
+        setTasksLoading(false)
       })
+    }, 0)
 
     return () => {
       cancelled = true
+      window.clearTimeout(loadTimer)
     }
-  }, [reconcileChatRead, selectedChatId])
+  }, [isCurrentSelection, refreshDetail, refreshTasks, selectedChatId])
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => void refreshLatestMessages(true), 0)
+    const timeout = window.setTimeout(
+      () => void refreshLatestMessages(false),
+      0,
+    )
     return () => window.clearTimeout(timeout)
   }, [refreshLatestMessages])
 
@@ -874,8 +1138,10 @@ export function Chat({
 
   useEffect(() => {
     if (!selectedChatId || utilityPanel !== 'tasks') return
+    const generation = selectionGenerationRef.current
     const interval = window.setInterval(
-      () => void refreshTasks(selectedChatId).catch(() => undefined),
+      () =>
+        void refreshTasks(selectedChatId, generation).catch(() => undefined),
       12_000,
     )
     return () => window.clearInterval(interval)
@@ -892,15 +1158,18 @@ export function Chat({
     const timeout = window.setTimeout(
       () => {
         setNewChatLoading(true)
+        setNewChatSearchError('')
         listConnections(newChatQuery)
           .then((people) => {
             if (!cancelled) {
               setNewChatPeople(people.filter((person) => !person.isMe))
+              setNewChatSearchError('')
             }
           })
           .catch((searchError: unknown) => {
             if (!cancelled) {
-              setError(
+              setNewChatPeople([])
+              setNewChatSearchError(
                 readableError(searchError, 'No pudimos buscar conexiones.'),
               )
             }
@@ -915,7 +1184,7 @@ export function Chat({
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [newChatQuery, showNewChat])
+  }, [newChatQuery, newChatSearchNonce, showNewChat])
 
   useEffect(() => {
     if (utilityPanel !== 'info' || detail?.type !== 'group' || !isManager) {
@@ -998,14 +1267,25 @@ export function Chat({
   }, [qrCode])
 
   const selectChat = (chatId: string) => {
+    selectedChatIdRef.current = chatId
+    selectionGenerationRef.current += 1
+    latestMessageRequestRef.current += 1
+    chatDetailRequestRef.current += 1
+    chatTasksRequestRef.current += 1
+    messagesRef.current = []
     loadedOlderRef.current = false
     setLoadedOlder(false)
     setOlderLoading(false)
     setNextBefore(null)
     setNextBeforeId(null)
     setDetail(null)
+    setDetailLoading(true)
+    setDetailLoadError('')
     setMessages([])
+    setMessageLoadError('')
     setTasks([])
+    setTasksLoading(true)
+    setTasksLoadError('')
     setComposer('')
     setComposerTags([])
     setTaskDraft(emptyTaskDraft)
@@ -1024,13 +1304,24 @@ export function Chat({
   }
 
   const closeSelectedChat = () => {
+    selectedChatIdRef.current = null
+    selectionGenerationRef.current += 1
+    latestMessageRequestRef.current += 1
+    chatDetailRequestRef.current += 1
+    chatTasksRequestRef.current += 1
+    messagesRef.current = []
     loadedOlderRef.current = false
     setLoadedOlder(false)
     setOlderLoading(false)
     setSelectedChatId(null)
     setDetail(null)
+    setDetailLoading(false)
+    setDetailLoadError('')
     setMessages([])
+    setMessageLoadError('')
     setTasks([])
+    setTasksLoading(false)
+    setTasksLoadError('')
     setComposer('')
     setComposerTags([])
     setTaskDraft(emptyTaskDraft)
@@ -1041,6 +1332,47 @@ export function Chat({
     setNextBeforeId(null)
     setUtilityPanel(null)
     onChatChange?.(null)
+  }
+
+  const retryDetail = async () => {
+    const chatId = selectedChatIdRef.current
+    if (!chatId) return
+    const generation = selectionGenerationRef.current
+    setDetailLoading(true)
+    setDetailLoadError('')
+    try {
+      await refreshDetail(chatId, generation)
+    } catch (loadError) {
+      if (isCurrentSelection(chatId, generation)) {
+        setDetailLoadError(
+          readableError(
+            loadError,
+            'No pudimos cargar la información de esta conversación.',
+          ),
+        )
+      }
+    } finally {
+      if (isCurrentSelection(chatId, generation)) setDetailLoading(false)
+    }
+  }
+
+  const retryTasks = async () => {
+    const chatId = selectedChatIdRef.current
+    if (!chatId) return
+    const generation = selectionGenerationRef.current
+    setTasksLoading(true)
+    setTasksLoadError('')
+    try {
+      await refreshTasks(chatId, generation)
+    } catch (loadError) {
+      if (isCurrentSelection(chatId, generation)) {
+        setTasksLoadError(
+          readableError(loadError, 'No pudimos cargar las tareas.'),
+        )
+      }
+    } finally {
+      if (isCurrentSelection(chatId, generation)) setTasksLoading(false)
+    }
   }
 
   const loadOlderMessages = async () => {
@@ -1090,20 +1422,24 @@ export function Chat({
     setNewChatMode('direct')
     setNewChatQuery('')
     setNewChatPeople([])
+    setNewChatSearchError('')
+    setNewChatCreateError('')
     setSelectedPeopleIds([])
     setGroupName('')
   }
 
   const handleCreateDirect = async (userId: string) => {
     setCreatingChat(true)
-    setError('')
+    setNewChatCreateError('')
     try {
       const result = await createDirectChat(userId)
       resetNewChat()
       await refreshChats(true)
       selectChat(result.chat.id)
     } catch (createError) {
-      setError(readableError(createError, 'No pudimos crear el chat.'))
+      setNewChatCreateError(
+        readableError(createError, 'No pudimos crear el chat.'),
+      )
     } finally {
       setCreatingChat(false)
     }
@@ -1111,9 +1447,9 @@ export function Chat({
 
   const handleCreateGroup = async (event: FormEvent) => {
     event.preventDefault()
-    if (!groupName.trim()) return
+    if (!groupName.trim() || selectedPeopleIds.length === 0) return
     setCreatingChat(true)
-    setError('')
+    setNewChatCreateError('')
     try {
       const result = await createGroupChat({
         name: groupName.trim(),
@@ -1123,7 +1459,9 @@ export function Chat({
       await refreshChats(true)
       selectChat(result.chat.id)
     } catch (createError) {
-      setError(readableError(createError, 'No pudimos crear el grupo.'))
+      setNewChatCreateError(
+        readableError(createError, 'No pudimos crear el grupo.'),
+      )
     } finally {
       setCreatingChat(false)
     }
@@ -1319,6 +1657,7 @@ export function Chat({
     const options = pollOptions.map((option) => option.trim()).filter(Boolean)
     if (!pollQuestion.trim() || options.length < 2) return
     setCreatingPoll(true)
+    setPollSubmitError('')
     try {
       await createChatPoll(selectedChatId, {
         question: pollQuestion.trim(),
@@ -1329,9 +1668,12 @@ export function Chat({
       setPollQuestion('')
       setPollOptions(['', ''])
       setPollAllowsMultiple(false)
+      setPollSubmitError('')
       await Promise.all([refreshLatestMessages(), refreshChats(true)])
     } catch (pollError) {
-      setError(readableError(pollError, 'No pudimos crear la encuesta.'))
+      setPollSubmitError(
+        readableError(pollError, 'No pudimos crear la encuesta.'),
+      )
     } finally {
       setCreatingPoll(false)
     }
@@ -1358,6 +1700,8 @@ export function Chat({
   const submitTask = async (event: FormEvent) => {
     event.preventDefault()
     if (!selectedChatId || !taskDraft.title.trim()) return
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setTaskBusyId(editingTaskId ?? 'new')
     try {
       const input = {
@@ -1368,14 +1712,16 @@ export function Chat({
         priority: taskDraft.priority,
       }
       if (editingTaskId) {
-        await updateChatTask(selectedChatId, editingTaskId, input)
+        await updateChatTask(chatId, editingTaskId, input)
       } else {
-        await createChatTask(selectedChatId, input)
+        await createChatTask(chatId, input)
       }
-      resetTaskForm()
-      await refreshTasks(selectedChatId)
+      if (isCurrentSelection(chatId, generation)) resetTaskForm()
+      await refreshTasks(chatId, generation)
     } catch (taskError) {
-      setError(readableError(taskError, 'No pudimos guardar la tarea.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(taskError, 'No pudimos guardar la tarea.'))
+      }
     } finally {
       setTaskBusyId(null)
     }
@@ -1383,12 +1729,16 @@ export function Chat({
 
   const changeTaskStatus = async (task: ChatTask, status: TaskStatus) => {
     if (!selectedChatId) return
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setTaskBusyId(task.id)
     try {
-      await updateChatTask(selectedChatId, task.id, { status })
-      await refreshTasks(selectedChatId)
+      await updateChatTask(chatId, task.id, { status })
+      await refreshTasks(chatId, generation)
     } catch (taskError) {
-      setError(readableError(taskError, 'No pudimos actualizar la tarea.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(taskError, 'No pudimos actualizar la tarea.'))
+      }
     } finally {
       setTaskBusyId(null)
     }
@@ -1401,12 +1751,18 @@ export function Chat({
     ) {
       return
     }
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setTaskBusyId(task.id)
     try {
-      await deleteChatTask(selectedChatId, task.id)
-      setTasks((current) => current.filter((item) => item.id !== task.id))
+      await deleteChatTask(chatId, task.id)
+      if (isCurrentSelection(chatId, generation)) {
+        setTasks((current) => current.filter((item) => item.id !== task.id))
+      }
     } catch (taskError) {
-      setError(readableError(taskError, 'No pudimos eliminar la tarea.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(taskError, 'No pudimos eliminar la tarea.'))
+      }
     } finally {
       setTaskBusyId(null)
     }
@@ -1415,13 +1771,19 @@ export function Chat({
   const saveGroupName = async (event: FormEvent) => {
     event.preventDefault()
     if (!selectedChatId || !groupNameDraft.trim()) return
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setParticipantBusyId('group')
     try {
-      await updateChat(selectedChatId, { name: groupNameDraft.trim() })
-      await Promise.all([refreshDetail(selectedChatId), refreshChats(true)])
-      setNotice('Nombre del grupo actualizado.')
+      await updateChat(chatId, { name: groupNameDraft.trim() })
+      await Promise.all([refreshDetail(chatId, generation), refreshChats(true)])
+      if (isCurrentSelection(chatId, generation)) {
+        setNotice('Nombre del grupo actualizado.')
+      }
     } catch (updateError) {
-      setError(readableError(updateError, 'No pudimos editar el grupo.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(updateError, 'No pudimos editar el grupo.'))
+      }
     } finally {
       setParticipantBusyId(null)
     }
@@ -1429,15 +1791,23 @@ export function Chat({
 
   const addParticipant = async (person: PublicUser) => {
     if (!selectedChatId) return
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setParticipantBusyId(person.id)
     try {
-      const participants = await addChatParticipant(selectedChatId, person.id)
-      setDetail((current) => (current ? { ...current, participants } : current))
-      setInfoQuery('')
-      setInfoPeople([])
+      const participants = await addChatParticipant(chatId, person.id)
+      if (isCurrentSelection(chatId, generation)) {
+        setDetail((current) =>
+          current ? { ...current, participants } : current,
+        )
+        setInfoQuery('')
+        setInfoPeople([])
+      }
       await refreshChats(true)
     } catch (addError) {
-      setError(readableError(addError, 'No pudimos agregar a esta persona.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(addError, 'No pudimos agregar a esta persona.'))
+      }
     } finally {
       setParticipantBusyId(null)
     }
@@ -1448,6 +1818,8 @@ export function Chat({
     role: ChatParticipantRole,
   ) => {
     if (!selectedChatId) return
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     if (
       role === 'owner' &&
       !window.confirm(
@@ -1459,17 +1831,19 @@ export function Chat({
     setParticipantBusyId(participant.id)
     try {
       const participants = await updateChatParticipant(
-        selectedChatId,
+        chatId,
         participant.id,
         role,
       )
-      if (role === 'owner') await refreshDetail(selectedChatId)
-      else
+      if (role === 'owner') await refreshDetail(chatId, generation)
+      else if (isCurrentSelection(chatId, generation))
         setDetail((current) =>
           current ? { ...current, participants } : current,
         )
     } catch (roleError) {
-      setError(readableError(roleError, 'No pudimos cambiar este rol.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(roleError, 'No pudimos cambiar este rol.'))
+      }
     } finally {
       setParticipantBusyId(null)
     }
@@ -1482,12 +1856,18 @@ export function Chat({
     ) {
       return
     }
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setParticipantBusyId(participant.id)
     try {
-      await removeChatParticipant(selectedChatId, participant.id)
-      await Promise.all([refreshDetail(selectedChatId), refreshChats(true)])
+      await removeChatParticipant(chatId, participant.id)
+      await Promise.all([refreshDetail(chatId, generation), refreshChats(true)])
     } catch (removeError) {
-      setError(readableError(removeError, 'No pudimos quitar al participante.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(
+          readableError(removeError, 'No pudimos quitar al participante.'),
+        )
+      }
     } finally {
       setParticipantBusyId(null)
     }
@@ -1500,13 +1880,17 @@ export function Chat({
     ) {
       return
     }
+    const chatId = selectedChatId
+    const generation = selectionGenerationRef.current
     setParticipantBusyId(currentUser.id)
     try {
-      await removeChatParticipant(selectedChatId, currentUser.id)
-      closeSelectedChat()
+      await removeChatParticipant(chatId, currentUser.id)
+      if (isCurrentSelection(chatId, generation)) closeSelectedChat()
       await refreshChats()
     } catch (leaveError) {
-      setError(readableError(leaveError, 'No pudimos salir del chat.'))
+      if (isCurrentSelection(chatId, generation)) {
+        setError(readableError(leaveError, 'No pudimos salir del chat.'))
+      }
     } finally {
       setParticipantBusyId(null)
     }
@@ -1570,12 +1954,14 @@ export function Chat({
     setReportTarget(null)
     setReportReason('')
     setReportDetails('')
+    setReportSubmitError('')
   }
 
   const submitReport = async (event: FormEvent) => {
     event.preventDefault()
     if (!reportTarget || reportReason.trim().length < 3) return
     setReportBusy(true)
+    setReportSubmitError('')
     try {
       await createReport({
         resourceType: reportTarget.type,
@@ -1586,7 +1972,9 @@ export function Chat({
       closeReport()
       setNotice('Reporte enviado a moderación.')
     } catch (reportError) {
-      setError(readableError(reportError, 'No pudimos enviar el reporte.'))
+      setReportSubmitError(
+        readableError(reportError, 'No pudimos enviar el reporte.'),
+      )
     } finally {
       setReportBusy(false)
     }
@@ -1667,11 +2055,35 @@ export function Chat({
           </div>
         )}
 
-        <div className="chat-list" role="list">
+        {listError && chats.length > 0 && (
+          <div className="chat-alert chat-alert--error" role="alert">
+            <span>{listError}</span>
+            <button type="button" onClick={() => void refreshChats(false)}>
+              Reintentar
+            </button>
+          </div>
+        )}
+
+        <div className="chat-list">
           {listLoading ? (
             <div className="chat-state chat-state--compact" role="status">
               <span className="chat-spinner" />
               <p>Cargando conversaciones…</p>
+            </div>
+          ) : listError && chats.length === 0 ? (
+            <div className="chat-state chat-state--compact" role="alert">
+              <span className="chat-state__icon">
+                <ChatIcon name="message" />
+              </span>
+              <h3>No pudimos cargar tus conversaciones</h3>
+              <p>{listError}</p>
+              <button
+                className="chat-button chat-button--secondary"
+                type="button"
+                onClick={() => void refreshChats(false)}
+              >
+                Reintentar
+              </button>
             </div>
           ) : filteredChats.length === 0 ? (
             <div className="chat-state chat-state--compact">
@@ -1703,7 +2115,6 @@ export function Chat({
                     chat.id === selectedChatId ? ' is-active' : ''
                   }`}
                   type="button"
-                  role="listitem"
                   key={chat.id}
                   onClick={() => selectChat(chat.id)}
                   aria-current={chat.id === selectedChatId ? 'true' : undefined}
@@ -1756,7 +2167,7 @@ export function Chat({
       </section>
 
       <section className="chat-conversation" aria-label="Conversación activa">
-        {!selectedChatId || !selectedIdentity ? (
+        {!selectedChatId ? (
           <div className="chat-welcome">
             <span className="chat-welcome__mark">
               <ChatIcon name="message" />
@@ -1783,6 +2194,51 @@ export function Chat({
                 <ChatIcon name="qr" /> Usar código
               </button>
             </div>
+          </div>
+        ) : !selectedIdentity ? (
+          <div
+            className="chat-welcome"
+            role={detailLoadError ? 'alert' : 'status'}
+          >
+            {detailLoading || listLoading ? (
+              <>
+                <span className="chat-spinner" />
+                <h2>Abriendo conversación…</h2>
+                <p>Estamos recuperando la información del chat.</p>
+              </>
+            ) : (
+              <>
+                <span className="chat-welcome__mark">
+                  <ChatIcon name="message" />
+                </span>
+                <h2>No pudimos abrir esta conversación</h2>
+                <p>
+                  {detailLoadError ||
+                    listError ||
+                    error ||
+                    'La conversación ya no está disponible.'}
+                </p>
+                <div>
+                  <button
+                    className="chat-button chat-button--primary"
+                    type="button"
+                    onClick={() => {
+                      void retryDetail()
+                      void refreshChats(false)
+                    }}
+                  >
+                    Reintentar
+                  </button>
+                  <button
+                    className="chat-button chat-button--secondary"
+                    type="button"
+                    onClick={closeSelectedChat}
+                  >
+                    Volver a conversaciones
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -1904,16 +2360,17 @@ export function Chat({
               </label>
             </div>
 
-            {(error || notice) && (
+            {(error || notice || (messageLoadError && messages.length > 0)) && (
               <div
-                className={`chat-alert${error ? ' chat-alert--error' : ''}`}
-                role={error ? 'alert' : 'status'}
+                className={`chat-alert${error || messageLoadError ? ' chat-alert--error' : ''}`}
+                role={error || messageLoadError ? 'alert' : 'status'}
               >
-                <span>{error || notice}</span>
+                <span>{error || messageLoadError || notice}</span>
                 <button
                   type="button"
                   onClick={() => {
                     setError('')
+                    setMessageLoadError('')
                     setNotice('')
                   }}
                   aria-label="Cerrar aviso"
@@ -1939,6 +2396,21 @@ export function Chat({
                 <div className="chat-state" role="status">
                   <span className="chat-spinner" />
                   <p>Cargando conversación…</p>
+                </div>
+              ) : messageLoadError && messages.length === 0 ? (
+                <div className="chat-state" role="alert">
+                  <span className="chat-state__icon">
+                    <ChatIcon name="message" />
+                  </span>
+                  <h3>No pudimos cargar los mensajes</h3>
+                  <p>{messageLoadError}</p>
+                  <button
+                    className="chat-button chat-button--secondary"
+                    type="button"
+                    onClick={() => void refreshLatestMessages(false)}
+                  >
+                    Reintentar
+                  </button>
                 </div>
               ) : messages.length === 0 ? (
                 <div className="chat-state">
@@ -2065,13 +2537,17 @@ export function Chat({
                                       message.fileUrl && (
                                         <a
                                           className="chat-image-attachment"
-                                          href={message.fileUrl}
+                                          href={absoluteUploadUrl(
+                                            message.fileUrl,
+                                          )}
                                           target="_blank"
                                           rel="noreferrer"
                                           title="Abrir imagen en tamaño completo"
                                         >
                                           <img
-                                            src={message.fileUrl}
+                                            src={absoluteUploadUrl(
+                                              message.fileUrl,
+                                            )}
                                             alt={
                                               message.fileName ||
                                               'Imagen compartida'
@@ -2084,7 +2560,9 @@ export function Chat({
                                       message.fileUrl && (
                                         <a
                                           className="chat-file-attachment"
-                                          href={message.fileUrl}
+                                          href={absoluteUploadUrl(
+                                            message.fileUrl,
+                                          )}
                                           target="_blank"
                                           rel="noreferrer"
                                         >
@@ -2309,8 +2787,12 @@ export function Chat({
 
       {utilityPanel && (
         <aside
+          ref={utilityDialogRef}
           className="chat-utility"
+          role={utilityIsModal ? 'dialog' : undefined}
+          aria-modal={utilityIsModal ? 'true' : undefined}
           aria-label="Herramientas de conversación"
+          tabIndex={utilityIsModal ? -1 : undefined}
         >
           <header className="chat-utility__header">
             <div>
@@ -2521,13 +3003,53 @@ export function Chat({
 
           {utilityPanel === 'info' && !detail && (
             <div className="chat-state">
-              <ChatIcon name="info" />
-              <p>Selecciona una conversación para ver su información.</p>
+              {detailLoading ? (
+                <>
+                  <span className="chat-spinner" />
+                  <p>Cargando información de la conversación…</p>
+                </>
+              ) : (
+                <>
+                  <ChatIcon name="info" />
+                  <p>
+                    {detailLoadError ||
+                      'Selecciona una conversación para ver su información.'}
+                  </p>
+                  {selectedChatId && (
+                    <button
+                      className="chat-button chat-button--secondary"
+                      type="button"
+                      onClick={() => void retryDetail()}
+                    >
+                      Reintentar
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
           {utilityPanel === 'tasks' && detail && (
             <div className="chat-utility__scroll">
+              {tasksLoading && (
+                <div className="chat-state chat-state--compact" role="status">
+                  <span className="chat-spinner" />
+                  <p>Actualizando tareas…</p>
+                </div>
+              )}
+              {tasksLoadError && (
+                <div className="chat-state chat-state--compact" role="alert">
+                  <ChatIcon name="tasks" />
+                  <p>{tasksLoadError}</p>
+                  <button
+                    className="chat-button chat-button--secondary"
+                    type="button"
+                    onClick={() => void retryTasks()}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              )}
               <section className="chat-task-summary">
                 <div>
                   <strong>
@@ -2659,7 +3181,7 @@ export function Chat({
               )}
 
               <div className="chat-task-list">
-                {tasks.length === 0 ? (
+                {tasks.length === 0 && !tasksLoading && !tasksLoadError ? (
                   <div className="chat-state chat-state--compact">
                     <span className="chat-state__icon">
                       <ChatIcon name="tasks" />
@@ -2753,8 +3275,29 @@ export function Chat({
 
           {utilityPanel === 'tasks' && !detail && (
             <div className="chat-state">
-              <ChatIcon name="tasks" />
-              <p>Selecciona una conversación para organizar tareas.</p>
+              {detailLoading ? (
+                <>
+                  <span className="chat-spinner" />
+                  <p>Cargando conversación…</p>
+                </>
+              ) : (
+                <>
+                  <ChatIcon name="tasks" />
+                  <p>
+                    {detailLoadError ||
+                      'Selecciona una conversación para organizar tareas.'}
+                  </p>
+                  {selectedChatId && (
+                    <button
+                      className="chat-button chat-button--secondary"
+                      type="button"
+                      onClick={() => void retryDetail()}
+                    >
+                      Reintentar
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -2890,6 +3433,7 @@ export function Chat({
           title="Nueva conversación"
           description="Conversa directamente o reúne a tus conexiones en un grupo."
           onClose={resetNewChat}
+          closeDisabled={creatingChat}
         >
           <div className="chat-dialog-tabs" role="tablist">
             <button
@@ -2900,6 +3444,7 @@ export function Chat({
               onClick={() => {
                 setNewChatMode('direct')
                 setSelectedPeopleIds([])
+                setNewChatCreateError('')
               }}
             >
               Chat directo
@@ -2909,7 +3454,10 @@ export function Chat({
               role="tab"
               aria-selected={newChatMode === 'group'}
               className={newChatMode === 'group' ? 'is-active' : ''}
-              onClick={() => setNewChatMode('group')}
+              onClick={() => {
+                setNewChatMode('group')
+                setNewChatCreateError('')
+              }}
             >
               Crear grupo
             </button>
@@ -2920,12 +3468,45 @@ export function Chat({
             <input
               type="search"
               value={newChatQuery}
-              onChange={(event) => setNewChatQuery(event.target.value)}
+              onChange={(event) => {
+                setNewChatQuery(event.target.value)
+                setNewChatSearchError('')
+              }}
               placeholder="Buscar entre mis conexiones…"
               autoComplete="off"
               autoFocus
             />
           </label>
+          {newChatSearchError && (
+            <div
+              className="chat-alert chat-alert--error chat-dialog-alert"
+              role="alert"
+            >
+              <span>{newChatSearchError}</span>
+              <button
+                type="button"
+                disabled={newChatLoading}
+                onClick={() => setNewChatSearchNonce((current) => current + 1)}
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
+          {newChatCreateError && (
+            <div
+              className="chat-alert chat-alert--error chat-dialog-alert"
+              role="alert"
+            >
+              <span>{newChatCreateError}</span>
+              <button
+                type="button"
+                onClick={() => setNewChatCreateError('')}
+                aria-label="Cerrar error de creación"
+              >
+                <ChatIcon name="close" />
+              </button>
+            </div>
+          )}
           <div className="chat-person-picker">
             {newChatLoading ? (
               <div className="chat-state chat-state--compact" role="status">
@@ -2974,7 +3555,7 @@ export function Chat({
                   </button>
                 )
               })
-            ) : (
+            ) : newChatSearchError ? null : (
               <div className="chat-state chat-state--compact">
                 <p>No encontramos conexiones disponibles.</p>
               </div>
@@ -2992,10 +3573,19 @@ export function Chat({
                   required
                 />
               </label>
+              {selectedPeopleIds.length === 0 && (
+                <p className="chat-group-create__hint" role="status">
+                  Selecciona al menos una conexión para crear el grupo.
+                </p>
+              )}
               <button
                 className="chat-button chat-button--primary"
                 type="submit"
-                disabled={creatingChat || !groupName.trim()}
+                disabled={
+                  creatingChat ||
+                  !groupName.trim() ||
+                  selectedPeopleIds.length === 0
+                }
               >
                 {creatingChat
                   ? 'Creando…'
@@ -3014,9 +3604,28 @@ export function Chat({
         <Dialog
           title="Crear encuesta"
           description="Haz una pregunta rápida al equipo y reúne sus votos."
-          onClose={() => setShowPollDialog(false)}
+          onClose={() => {
+            setShowPollDialog(false)
+            setPollSubmitError('')
+          }}
+          closeDisabled={creatingPoll}
         >
           <form className="chat-poll-form" onSubmit={submitPoll}>
+            {pollSubmitError && (
+              <div
+                className="chat-alert chat-alert--error chat-dialog-alert"
+                role="alert"
+              >
+                <span>{pollSubmitError}</span>
+                <button
+                  type="button"
+                  onClick={() => setPollSubmitError('')}
+                  aria-label="Cerrar error de encuesta"
+                >
+                  <ChatIcon name="close" />
+                </button>
+              </div>
+            )}
             <label>
               <span>Pregunta</span>
               <input
@@ -3106,8 +3715,24 @@ export function Chat({
           title={`Reportar ${reportTarget.type === 'message' ? 'mensaje' : 'conversación'}`}
           description={`${reportTarget.label}. El equipo de moderación revisará el contexto.`}
           onClose={closeReport}
+          closeDisabled={reportBusy}
         >
           <form className="chat-report-form" onSubmit={submitReport}>
+            {reportSubmitError && (
+              <div
+                className="chat-alert chat-alert--error chat-dialog-alert"
+                role="alert"
+              >
+                <span>{reportSubmitError}</span>
+                <button
+                  type="button"
+                  onClick={() => setReportSubmitError('')}
+                  aria-label="Cerrar error de reporte"
+                >
+                  <ChatIcon name="close" />
+                </button>
+              </div>
+            )}
             <label>
               <span>Motivo</span>
               <select

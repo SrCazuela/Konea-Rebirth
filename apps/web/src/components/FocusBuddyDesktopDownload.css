@@ -1,0 +1,128 @@
+.focus-desktop-download {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #dfd2ec;
+  border-radius: 20px;
+  color: #30243c;
+  background:
+    linear-gradient(115deg, rgb(247 242 253 / 96%), rgb(255 255 255 / 96%)),
+    #fff;
+  box-shadow: 0 14px 32px rgb(81 48 119 / 8%);
+}
+
+.focus-desktop-download__icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #fff;
+  background: linear-gradient(145deg, #9258e8, #6130bd);
+  box-shadow: 0 9px 20px rgb(105 56 181 / 22%);
+}
+
+.focus-desktop-download__icon svg {
+  width: 27px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.focus-desktop-download__copy {
+  min-width: 0;
+}
+
+.focus-desktop-download__copy > span {
+  color: #7440c5;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.focus-desktop-download__copy h2 {
+  margin: 3px 0 4px;
+  font-size: clamp(1rem, 2vw, 1.2rem);
+}
+
+.focus-desktop-download__copy p {
+  margin: 0;
+  color: #6f6278;
+  line-height: 1.45;
+}
+
+.focus-desktop-download__copy small {
+  display: block;
+  margin-top: 7px;
+  color: #8a7a94;
+  font-weight: 650;
+}
+
+.focus-desktop-download__action,
+.focus-desktop-download__unavailable {
+  justify-self: end;
+  padding: 11px 15px;
+  border-radius: 12px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.focus-desktop-download__action {
+  color: #fff;
+  background: #7440c5;
+  box-shadow: 0 8px 18px rgb(105 56 181 / 18%);
+  text-decoration: none;
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease;
+}
+
+.focus-desktop-download__action:hover {
+  background: #6330b0;
+  transform: translateY(-1px);
+}
+
+.focus-desktop-download__action:focus-visible {
+  outline: 3px solid rgb(116 64 197 / 28%);
+  outline-offset: 3px;
+}
+
+.focus-desktop-download__unavailable {
+  border: 1px solid #dfd6e7;
+  color: #766a7e;
+  background: rgb(255 255 255 / 76%);
+}
+
+@media (max-width: 760px) {
+  .focus-desktop-download {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .focus-desktop-download__action,
+  .focus-desktop-download__unavailable {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 460px) {
+  .focus-desktop-download {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .focus-desktop-download__icon {
+    justify-self: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-desktop-download__action {
+    transition: none;
+  }
+}

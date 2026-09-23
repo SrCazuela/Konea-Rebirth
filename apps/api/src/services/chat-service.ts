@@ -1,9 +1,10 @@
-import { and, count, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import {
   chatParticipants,
   chatReads,
   chats,
+  messageReceipts,
   messages,
   pollOptions,
   polls,
@@ -194,20 +195,19 @@ export async function getChatParticipants(chatId: string) {
 }
 
 export async function getUnreadCountForChat(chatId: string, userId: string) {
-  const [readState] = await db
-    .select({ lastReadAt: chatReads.lastReadAt })
-    .from(chatReads)
-    .where(and(eq(chatReads.chatId, chatId), eq(chatReads.userId, userId)))
-    .limit(1)
-
+  const { chat, participant } = await getChatOrThrow(chatId, userId)
   const condition = and(
     eq(messages.chatId, chatId),
-    ne(messages.senderId, userId),
-    readState ? gt(messages.createdAt, readState.lastReadAt) : undefined,
+    eq(messageReceipts.userId, userId),
+    isNull(messageReceipts.readAt),
+    chat.type === 'group' && participant.role !== 'owner'
+      ? gte(messages.createdAt, participant.joinedAt)
+      : undefined,
   )
   const [result] = await db
     .select({ total: count() })
-    .from(messages)
+    .from(messageReceipts)
+    .innerJoin(messages, eq(messages.id, messageReceipts.messageId))
     .where(condition)
 
   return Number(result?.total ?? 0)
@@ -224,6 +224,7 @@ export async function listChatsForUser(userId: string) {
       createdAt: chats.createdAt,
       updatedAt: chats.updatedAt,
       myRole: chatParticipants.role,
+      joinedAt: chatParticipants.joinedAt,
     })
     .from(chatParticipants)
     .innerJoin(chats, eq(chatParticipants.chatId, chats.id))
@@ -268,23 +269,49 @@ export async function listChatsForUser(userId: string) {
         createdAt: messages.createdAt,
       })
       .from(messages)
-      .where(inArray(messages.chatId, chatIds))
-      .orderBy(messages.chatId, desc(messages.createdAt)),
-    db
-      .select({ chatId: messages.chatId, total: count() })
-      .from(messages)
-      .leftJoin(
-        chatReads,
+      .innerJoin(chats, eq(chats.id, messages.chatId))
+      .innerJoin(
+        chatParticipants,
         and(
-          eq(chatReads.chatId, messages.chatId),
-          eq(chatReads.userId, userId),
+          eq(chatParticipants.chatId, messages.chatId),
+          eq(chatParticipants.userId, userId),
+          isNull(chatParticipants.archivedAt),
         ),
       )
       .where(
         and(
           inArray(messages.chatId, chatIds),
-          ne(messages.senderId, userId),
-          sql`${messages.createdAt} > coalesce(${chatReads.lastReadAt}, to_timestamp(0))`,
+          or(
+            eq(chats.type, 'direct'),
+            eq(chatParticipants.role, 'owner'),
+            gte(messages.createdAt, chatParticipants.joinedAt),
+          ),
+        ),
+      )
+      .orderBy(messages.chatId, desc(messages.createdAt)),
+    db
+      .select({ chatId: messages.chatId, total: count() })
+      .from(messageReceipts)
+      .innerJoin(messages, eq(messages.id, messageReceipts.messageId))
+      .innerJoin(chats, eq(chats.id, messages.chatId))
+      .innerJoin(
+        chatParticipants,
+        and(
+          eq(chatParticipants.chatId, messages.chatId),
+          eq(chatParticipants.userId, userId),
+          isNull(chatParticipants.archivedAt),
+        ),
+      )
+      .where(
+        and(
+          inArray(messages.chatId, chatIds),
+          eq(messageReceipts.userId, userId),
+          isNull(messageReceipts.readAt),
+          or(
+            eq(chats.type, 'direct'),
+            eq(chatParticipants.role, 'owner'),
+            gte(messages.createdAt, chatParticipants.joinedAt),
+          ),
         ),
       )
       .groupBy(messages.chatId),

@@ -4,6 +4,8 @@ node_modules/
 # Builds and test artifacts
 dist/
 coverage/
+apps/focusbuddy/release/
+apps/focusbuddy/build/focusbuddy.config.json
 *.tsbuildinfo
 
 # Local configuration and secrets

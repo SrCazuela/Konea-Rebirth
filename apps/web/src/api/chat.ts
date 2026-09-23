@@ -258,6 +258,22 @@ export async function getMessages(
   )
 }
 
+export async function getMessageDeliveryStatuses(
+  chatId: string,
+  messageIds: string[],
+) {
+  const response = await chatRequest<{
+    statuses: Array<{
+      messageId: string
+      status: Exclude<MessageDeliveryStatus, 'sending'>
+    }>
+  }>(chatPath(chatId, '/messages/delivery-statuses'), {
+    method: 'POST',
+    body: JSON.stringify({ messageIds }),
+  })
+  return response.statuses
+}
+
 export async function sendMessage(
   chatId: string,
   input: {

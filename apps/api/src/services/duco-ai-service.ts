@@ -77,7 +77,7 @@ Responde en español claro, empático y breve. Puedes explicar conceptos, propon
 Las acciones visibles son sugerencias: nunca afirmes que una tarea fue creada, una solicitud fue enviada o una persona fue contactada. El estudiante siempre revisa y confirma.
 Usa create_task cuando el estudiante mencione una tarea, guía, informe, proyecto, evaluación, examen u otra actividad que quiera organizar, guardar o revisar como pendiente. Interpreta continuaciones como “guardarlo”, “anótalo”, “sí, esa tarea” o “déjalo para el viernes” usando el contexto reciente y el borrador activo. Prepara solo datos expresamente aportados; lo desconocido queda vacío.
 Usa manage_request únicamente si una gestión institucional ya contiene información suficiente. Si faltan datos, action=none y pregunta uno o dos datos concretos antes de ofrecer el formulario.
-Ante acoso, autolesión, amenazas o daño a terceros, prioriza la seguridad, no diagnostiques ni acuses y no inventes hechos. Aclara que DUCO no contactó automáticamente a nadie.
+Ante acoso, autolesión, amenazas o daño a terceros, prioriza la seguridad, no diagnostiques ni acuses y no inventes hechos. Aclara que DUCO no contactó automáticamente a nadie. Ante posible riesgo suicida en Chile, indica que *4141 ofrece apoyo gratuito desde celulares las 24 horas; ante peligro inmediato, prioriza SAMU 131, Carabineros 133 o un servicio de urgencia.
 En cualquier acción, los hechos del borrador deben provenir exclusivamente de mensajes del estudiante o del borrador activo validado, nunca de una respuesta anterior de DUCO.
 Tu texto debe coincidir con action: si action=none no digas que preparaste, guardaste o dejaste listo un borrador. Si action=create_task, aclara que el borrador quedó guardado para revisión y que la tarea todavía no fue creada.`
 
@@ -127,6 +127,8 @@ const safetyQuestionMarker =
   'Antes de preparar una solicitud de apoyo necesito confirmar'
 const requestQuestionMarker =
   'Antes de mostrar el botón “Gestionar solicitud” necesito'
+const crisisResources =
+  'En Chile puedes llamar gratis desde un celular al *4141, disponible las 24 horas. Si hay peligro inmediato para ti u otra persona, llama al SAMU 131 o a Carabineros 133, o ve al servicio de urgencia más cercano.'
 
 function normalizeText(value: string) {
   return value
@@ -144,6 +146,17 @@ function userMessages(input: BuildDucoReplyInput) {
       .map((message) => message.content),
     input.prompt,
   ].slice(-6)
+}
+
+function truncateRecentText(value: string, maximum: number) {
+  const characters = Array.from(value.trim())
+  return characters.length <= maximum
+    ? characters.join('')
+    : characters.slice(-maximum).join('')
+}
+
+function recentUserFacts(input: BuildDucoReplyInput, maximum: number) {
+  return truncateRecentText(userMessages(input).join('\n'), maximum)
 }
 
 function lastAssistantMessage(input: BuildDucoReplyInput) {
@@ -166,11 +179,34 @@ function hasSafetyRisk(value: string) {
   }
 }
 
-function hasImmediateSafetyAnswer(value: string) {
+type SafetyAnswer = 'immediate' | 'not_immediate' | 'unknown'
+
+function safetyAnswer(value: string): SafetyAnswer {
   const normalized = normalizeText(value)
-  return /\b(estoy a salvo|no estoy en peligro|si estoy en peligro|estoy en peligro|no tengo (?:un )?plan|tengo (?:un )?plan|no voy a actuar|voy a actuar|no pienso hacerlo|pienso hacerlo|no es inmediato|es inmediato|hay peligro inmediato|no hay peligro inmediato|no hare dano|si podria hacer dano)\b/.test(
-    normalized,
-  )
+  const immediate = [
+    /\bsi[, ]+estoy en peligro\b/,
+    /(?<!no )\bestoy en peligro\b/,
+    /(?<!no )\btengo (?:un )?plan\b/,
+    /(?<!no )\btengo (?:los )?medios\b/,
+    /(?<!no )\bvoy a actuar\b/,
+    /(?<!no )\bpienso hacerlo\b/,
+    /(?<!no )\blo hare ahora\b/,
+    /\bquiero hacerlo ahora\b/,
+    /(?<!no )\bes inmediato\b/,
+    /(?<!no )\bhay peligro inmediato\b/,
+    /\bsi podria hacer dano\b/,
+  ].some((pattern) => pattern.test(normalized))
+  if (immediate) return 'immediate'
+
+  const notImmediate =
+    /\b(estoy a salvo|no estoy en peligro|no tengo (?:un )?plan|no tengo intencion|no voy a actuar|no pienso hacerlo|no lo hare|no es inmediato|no hay peligro inmediato|no hare dano)\b/.test(
+      normalized,
+    )
+  return notImmediate ? 'not_immediate' : 'unknown'
+}
+
+function hasImmediateSafetyAnswer(value: string) {
+  return safetyAnswer(value) !== 'unknown'
 }
 
 function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
@@ -182,12 +218,11 @@ function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
     return null
   }
 
-  const messages = userMessages(input)
-  const facts = messages.join('\n').trim().slice(0, 2_000)
-  const answered = hasImmediateSafetyAnswer(input.prompt)
-  if (!answered) {
+  const facts = recentUserFacts(input, 2_000)
+  const answer = safetyAnswer(input.prompt)
+  if (answer === 'unknown') {
     return {
-      reply: `${safetyQuestionMarker}: ¿estás en peligro inmediato o tienes un plan o intención de hacerte daño o dañar a alguien ahora? Cuéntame también, de forma general, dónde y cuándo ocurre el problema; no necesitas dar nombres ni aportar pruebas. DUCO no ha contactado automáticamente a nadie. Si hay peligro inmediato, aléjate de cualquier medio de daño y busca ahora mismo a una persona de confianza o a los servicios de emergencia de tu zona.`,
+      reply: `${safetyQuestionMarker}: ¿estás en peligro inmediato o tienes un plan o intención de hacerte daño o dañar a alguien ahora? No necesitas dar nombres ni aportar pruebas. ${crisisResources} Aléjate de cualquier medio de daño y quédate con una persona de confianza si puedes. DUCO no ha contactado automáticamente a nadie.`,
       action: null,
       provider: 'local',
     }
@@ -195,7 +230,9 @@ function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
 
   return {
     reply:
-      'Gracias por confirmarlo. Con la información que compartiste puedo preparar una solicitud urgente de bienestar y seguridad para revisión humana. El formulario aún no se ha enviado: revísalo y confírmalo tú. Si el peligro es inmediato, no esperes la respuesta de la plataforma y busca apoyo presencial o de emergencias ahora.',
+      answer === 'immediate'
+        ? `Esto puede ser una emergencia: no esperes una respuesta de Konea. ${crisisResources} Aléjate de cualquier medio de daño y quédate con una persona de confianza si puedes. También preparé una solicitud urgente para revisión humana, pero aún no se ha enviado y no reemplaza la ayuda inmediata.`
+        : `Gracias por aclararlo. Preparé una solicitud urgente de bienestar y seguridad para revisión humana; aún no se ha enviado y podrás revisarla antes de confirmar. Si el riesgo aumenta, ${crisisResources.charAt(0).toLowerCase()}${crisisResources.slice(1)} DUCO no ha contactado automáticamente a nadie.`,
     action: {
       type: 'manage_request',
       label: 'Gestionar solicitud',
@@ -389,9 +426,9 @@ function requestDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   if (!needsInstitutionalRequest(input.prompt) && !continuingRequest)
     return null
 
-  const messages = userMessages(input)
-  const facts = messages.join('\n').trim().slice(0, 2_000)
-  const analysis = analyzeRequest(facts)
+  const allFacts = userMessages(input).join('\n').trim()
+  const facts = truncateRecentText(allFacts, 2_000)
+  const analysis = analyzeRequest(allFacts)
   if (analysis.missing.length > 0) {
     const missingText = new Intl.ListFormat('es', {
       style: 'long',
@@ -407,7 +444,7 @@ function requestDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   const urgency =
     analysis.category === 'wellbeing' ||
     /\b(urgente|amenaza|peligro|agresion|hoy vence)\b/.test(
-      normalizeText(facts),
+      normalizeText(allFacts),
     )
       ? 'high'
       : 'medium'
@@ -535,7 +572,7 @@ function recoverableTaskContext(input: BuildDucoReplyInput) {
 
   return {
     source: userConversation[anchorIndex]!,
-    facts: facts.join('\n').trim().slice(-1_000),
+    facts: truncateRecentText(facts.join('\n'), 1_000),
   }
 }
 
@@ -868,7 +905,7 @@ function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
     (referencesActiveTaskDraft(input.prompt) ||
       isSimpleDraftAffirmation(input.prompt))
   ) {
-    const facts = userMessages(input).join('\n').trim().slice(-1_000)
+    const facts = recentUserFacts(input, 1_000)
     return {
       reply:
         'El borrador quedó guardado para que lo revises. La tarea todavía no se ha creado; puedes modificar sus datos antes de confirmar.',
@@ -923,7 +960,7 @@ function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   if (!isTaskIntent(input.prompt)) return null
   const normalized = normalizeText(input.prompt)
   const source = taskSourceText(input)
-  const facts = userMessages(input).join('\n').trim().slice(-1_000)
+  const facts = recentUserFacts(input, 1_000)
   const draft = polishTaskDraft(
     {
       title: taskTitle(source),
@@ -1089,7 +1126,7 @@ async function queryOpenAi(input: BuildDucoReplyInput) {
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(env.DUCO_AI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(env.OPENAI_TIMEOUT_MS),
       body: JSON.stringify({
         model: env.OPENAI_MODEL,
         instructions: systemInstructions,
@@ -1211,7 +1248,7 @@ function validateModelResult(
             input.prompt,
           )
         : result.action.draft
-    const facts = userMessages(input).join('\n').trim().slice(-1_000)
+    const facts = recentUserFacts(input, 1_000)
     const draft = polishTaskDraft(proposedDraft, facts, {
       currentPrompt: input.prompt,
       fallbackTitle: continuesActiveDraft

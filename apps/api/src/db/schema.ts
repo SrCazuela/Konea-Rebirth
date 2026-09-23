@@ -74,6 +74,67 @@ export const taskStatus = pgEnum('task_status', [
 export const academicCourseSource = pgEnum('academic_course_source', [
   'manual',
   'ava',
+  'ava_extension',
+])
+
+export const avaDomImportStatus = pgEnum('ava_dom_import_status', [
+  'draft',
+  'confirmed',
+  'discarded',
+])
+
+export type AvaDomImportPayload = {
+  version: 1
+  source: {
+    pageUrl: string
+    pageTitle: string
+    capturedAt: string
+  }
+  courses: Array<{
+    clientId: string
+    name: string
+    code: string | null
+    section: string | null
+    term: string | null
+  }>
+  activities: Array<{
+    clientId: string
+    title: string
+    description: string | null
+    courseName: string | null
+    dueAt: string | null
+    sourceUrl: string | null
+  }>
+}
+
+export type AvaDomImportResult = {
+  importedCourses: number
+  importedTasks: number
+  existingCourses: number
+  existingTasks: number
+}
+
+export const studyMethod = pgEnum('study_method', [
+  'pomodoro',
+  'pomodoro_extended',
+  'deep_work',
+  'flowtime',
+  'custom',
+])
+
+export const studySessionStatus = pgEnum('study_session_status', [
+  'active',
+  'paused',
+  'completed',
+  'cancelled',
+])
+
+export const studySessionEventType = pgEnum('study_session_event_type', [
+  'start',
+  'pause',
+  'resume',
+  'complete',
+  'cancel',
 ])
 
 export const notificationType = pgEnum('notification_type', [
@@ -110,6 +171,12 @@ export const supportRequestStatus = pgEnum('support_request_status', [
   'reviewing',
   'resolved',
   'rejected',
+])
+
+export const supportRequestEventType = pgEnum('support_request_event_type', [
+  'created',
+  'status_changed',
+  'response',
 ])
 
 export const ducoDraftKind = pgEnum('duco_draft_kind', [
@@ -682,6 +749,8 @@ export const academicTasks = pgTable(
     dueAt: timestamp('due_at', { withTimezone: true }),
     priority: taskPriority('priority').default('medium').notNull(),
     status: taskStatus('status').default('pending').notNull(),
+    externalSource: varchar('external_source', { length: 32 }),
+    externalId: varchar('external_id', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -696,6 +765,150 @@ export const academicTasks = pgTable(
       table.dueAt,
     ),
     index('academic_tasks_course_index').on(table.courseId),
+    uniqueIndex('academic_tasks_user_external_unique')
+      .on(table.userId, table.externalSource, table.externalId)
+      .where(
+        sql`${table.externalSource} is not null and ${table.externalId} is not null`,
+      ),
+  ],
+)
+
+export const avaDomImports = pgTable(
+  'ava_dom_imports',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    payloadDigest: varchar('payload_digest', { length: 64 }).notNull(),
+    payload: jsonb('payload').$type<AvaDomImportPayload>().notNull(),
+    status: avaDomImportStatus('status').default('draft').notNull(),
+    result: jsonb('result').$type<AvaDomImportResult>(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('ava_dom_imports_user_digest_unique').on(
+      table.userId,
+      table.payloadDigest,
+    ),
+    index('ava_dom_imports_user_created_index').on(
+      table.userId,
+      table.createdAt,
+    ),
+    index('ava_dom_imports_expiry_index').on(table.expiresAt),
+  ],
+)
+
+export const studySessions = pgTable(
+  'study_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    courseId: uuid('course_id').references(() => academicCourses.id, {
+      onDelete: 'set null',
+    }),
+    taskId: uuid('task_id').references(() => academicTasks.id, {
+      onDelete: 'set null',
+    }),
+    clientRequestId: uuid('client_request_id').notNull(),
+    method: studyMethod('method').notNull(),
+    status: studySessionStatus('status').default('active').notNull(),
+    plannedDurationSeconds: integer('planned_duration_seconds').notNull(),
+    breakDurationSeconds: integer('break_duration_seconds')
+      .default(0)
+      .notNull(),
+    focusedSeconds: integer('focused_seconds').default(0).notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    activeStartedAt: timestamp('active_started_at', {
+      withTimezone: true,
+    }).defaultNow(),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('study_sessions_user_client_request_unique').on(
+      table.userId,
+      table.clientRequestId,
+    ),
+    uniqueIndex('study_sessions_one_current_per_user_unique')
+      .on(table.userId)
+      .where(sql`${table.status} in ('active', 'paused')`),
+    index('study_sessions_user_started_at_index').on(
+      table.userId,
+      table.startedAt,
+    ),
+    index('study_sessions_course_started_at_index').on(
+      table.courseId,
+      table.startedAt,
+    ),
+    check(
+      'study_sessions_planned_duration_check',
+      sql`(${table.method} = 'flowtime' and ${table.plannedDurationSeconds} = 0) or (${table.method} <> 'flowtime' and ${table.plannedDurationSeconds} between 60 and 43200)`,
+    ),
+    check(
+      'study_sessions_break_duration_check',
+      sql`${table.breakDurationSeconds} between 0 and 7200`,
+    ),
+    check(
+      'study_sessions_focused_seconds_check',
+      sql`${table.focusedSeconds} >= 0`,
+    ),
+    check(
+      'study_sessions_state_timestamps_check',
+      sql`(${table.status} = 'active' and ${table.activeStartedAt} is not null and ${table.pausedAt} is null and ${table.endedAt} is null) or (${table.status} = 'paused' and ${table.activeStartedAt} is null and ${table.pausedAt} is not null and ${table.endedAt} is null) or (${table.status} in ('completed', 'cancelled') and ${table.activeStartedAt} is null and ${table.pausedAt} is null and ${table.endedAt} is not null)`,
+    ),
+  ],
+)
+
+export const studySessionEvents = pgTable(
+  'study_session_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: studySessionEventType('type').notNull(),
+    focusedSeconds: integer('focused_seconds').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('study_session_events_session_occurred_at_index').on(
+      table.sessionId,
+      table.occurredAt,
+    ),
+    index('study_session_events_user_occurred_at_index').on(
+      table.userId,
+      table.occurredAt,
+    ),
+    check(
+      'study_session_events_focused_seconds_check',
+      sql`${table.focusedSeconds} >= 0`,
+    ),
   ],
 )
 
@@ -908,6 +1121,44 @@ export const supportRequests = pgTable(
     index('support_requests_status_created_at_index').on(
       table.status,
       table.createdAt,
+    ),
+  ],
+)
+
+export const supportRequestEvents = pgTable(
+  'support_request_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => supportRequests.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    type: supportRequestEventType('type').notNull(),
+    fromStatus: supportRequestStatus('from_status'),
+    toStatus: supportRequestStatus('to_status').notNull(),
+    note: varchar('note', { length: 1_000 }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('support_request_events_request_created_at_index').on(
+      table.requestId,
+      table.createdAt,
+    ),
+    index('support_request_events_actor_created_at_index').on(
+      table.actorId,
+      table.createdAt,
+    ),
+    check(
+      'support_request_events_shape_check',
+      sql`(${table.type} = 'created' and ${table.fromStatus} is null) or (${table.type} = 'status_changed' and ${table.fromStatus} is not null and ${table.fromStatus} <> ${table.toStatus}) or (${table.type} = 'response' and ${table.fromStatus} is null and ${table.note} is not null)`,
+    ),
+    check(
+      'support_request_events_note_length_check',
+      sql`${table.note} is null or char_length(btrim(${table.note})) between 3 and 1000`,
     ),
   ],
 )

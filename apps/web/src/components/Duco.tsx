@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react'
 import type { KoneaUser } from '../api/auth'
+import { absoluteUploadUrl } from '../api/uploads'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   cancelDucoDraft,
   clearDucoMessages,
@@ -19,6 +21,7 @@ import {
   sendDucoMessage,
   type DucoCreateTaskAction,
   type DucoDraft,
+  type DucoAiProvider,
   type DucoDraftStatus,
   type DucoMessage,
   type DucoRequestCategory,
@@ -266,7 +269,7 @@ function UserAvatar({ user }: { user: DucoProps['currentUser'] }) {
     return (
       <img
         className="duco-avatar duco-avatar--user"
-        src={user.avatarUrl}
+        src={absoluteUploadUrl(user.avatarUrl)}
         alt=""
         aria-hidden="true"
       />
@@ -308,6 +311,55 @@ function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
           <p>{request.desiredOutcome}</p>
         </div>
       )}
+
+      <section
+        className="duco-support-timeline"
+        aria-label="Historial de la solicitud"
+      >
+        <h5>Seguimiento</h5>
+        <ol>
+          {request.timeline.map((event) => {
+            const isStudent =
+              event.actor?.role === 'student' ||
+              event.actor?.role === 'professor'
+            const actorName = !event.actor
+              ? 'Cuenta eliminada'
+              : isStudent
+                ? 'Tú'
+                : event.actor.displayName
+            const eventLabel =
+              event.type === 'created'
+                ? 'Solicitud enviada'
+                : event.type === 'response'
+                  ? 'Respuesta del equipo'
+                  : `Estado: ${requestStatusLabels[event.toStatus]}`
+            return (
+              <li key={event.id}>
+                <span className="duco-support-timeline__dot" />
+                <div>
+                  <header>
+                    <strong>{eventLabel}</strong>
+                    <time dateTime={event.createdAt}>
+                      {formatDateTime(event.createdAt)}
+                    </time>
+                  </header>
+                  <span className="duco-support-timeline__actor">
+                    {actorName}
+                    {event.fromStatus && (
+                      <>
+                        {' '}
+                        · de {requestStatusLabels[event.fromStatus]} a{' '}
+                        {requestStatusLabels[event.toStatus]}
+                      </>
+                    )}
+                  </span>
+                  {event.note && <p>{event.note}</p>}
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
 
       <footer>
         <span
@@ -416,6 +468,7 @@ export function Duco({
 }: DucoProps) {
   const [activePanel, setActivePanel] = useState<DucoPanel>(initialPanel)
   const [messages, setMessages] = useState<VisibleMessage[]>([])
+  const [aiProvider, setAiProvider] = useState<DucoAiProvider | null>(null)
   const [draft, setDraft] = useState('')
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState('')
@@ -438,6 +491,16 @@ export function Duco({
   const [requestsLoaded, setRequestsLoaded] = useState(false)
   const [taskForm, setTaskForm] = useState<TaskFormState | null>(null)
   const [taskSubmitting, setTaskSubmitting] = useState(false)
+  const requestDialogRef = useModalDialog<HTMLDivElement>({
+    open: Boolean(requestForm),
+    onClose: () => setRequestForm(null),
+    closeDisabled: requestSubmitting,
+  })
+  const taskDialogRef = useModalDialog<HTMLDivElement>({
+    open: Boolean(taskForm),
+    onClose: () => setTaskForm(null),
+    closeDisabled: taskSubmitting,
+  })
   const [taskError, setTaskError] = useState('')
   const [taskDrafts, setTaskDrafts] = useState<DucoDraft[]>([])
   const [draftsLoading, setDraftsLoading] = useState(true)
@@ -484,7 +547,11 @@ export function Duco({
     setHistoryError('')
     try {
       const history = await getDucoMessages(signal)
-      setMessages(history.map((message) => ({ ...message, status: 'sent' })))
+      setMessages(
+        history.messages.map((message) => ({ ...message, status: 'sent' })),
+      )
+      setOpenTaskCount(history.openTaskCount)
+      setAiProvider(history.aiProvider)
     } catch (error) {
       if (!isAbortError(error)) {
         setHistoryError(
@@ -500,7 +567,11 @@ export function Duco({
     const controller = new AbortController()
     getDucoMessages(controller.signal)
       .then((history) => {
-        setMessages(history.map((message) => ({ ...message, status: 'sent' })))
+        setMessages(
+          history.messages.map((message) => ({ ...message, status: 'sent' })),
+        )
+        setOpenTaskCount(history.openTaskCount)
+        setAiProvider(history.aiProvider)
       })
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
@@ -628,6 +699,7 @@ export function Duco({
         { ...reply.assistantMessage, status: 'sent' },
       ])
       setOpenTaskCount(reply.openTaskCount)
+      setAiProvider(reply.aiProvider)
       setAnnouncement('DUCO respondió tu mensaje.')
       void loadTaskDrafts()
     } catch (error) {
@@ -650,6 +722,14 @@ export function Duco({
   const submitMessage = (event?: FormEvent) => {
     event?.preventDefault()
     void sendPrompt(draft)
+  }
+
+  const selectPanel = (panel: DucoPanel) => {
+    const nextHash = panel === 'requests' ? '#duco-requests' : '#duco'
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, '', nextHash)
+    }
+    setActivePanel(panel)
   }
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -900,7 +980,6 @@ export function Duco({
     try {
       const result = await clearDucoMessages()
       setMessages([])
-      setOpenTaskCount(null)
       setAnnouncement(
         result.deletedCount > 0
           ? 'Historial de DUCO eliminado.'
@@ -991,6 +1070,20 @@ export function Duco({
         new Date(right.updatedAt).getTime(),
     )
   const hasConversationContent = hasMessages || orphanTaskDrafts.length > 0
+  const providerLabel =
+    aiProvider === 'openai'
+      ? 'IA OpenAI'
+      : aiProvider === 'ollama'
+        ? 'IA local · Ollama'
+        : aiProvider === 'local'
+          ? 'Reglas locales'
+          : 'Comprobando IA'
+  const providerPrivacyCopy =
+    aiProvider === 'openai'
+      ? 'Para responder, DUCO envía a OpenAI el contexto reciente necesario. Evita incluir contraseñas, documentos o datos sensibles.'
+      : aiProvider === 'ollama'
+        ? 'Las respuestas de IA se procesan con Ollama en este equipo; los borradores siguen guardándose en Konea.'
+        : 'DUCO usa reglas de Konea en este servidor. Tú siempre revisas y confirmas antes de crear o enviar algo.'
 
   const renderTaskMessageAction = (message: VisibleMessage) => {
     const resolved = messageTaskDrafts.get(message.id)
@@ -1079,7 +1172,7 @@ export function Duco({
           <div>
             <span className="duco-mode-pill">
               <span aria-hidden="true" />
-              IA activa
+              {providerLabel}
             </span>
             <h2>DUCO</h2>
             <p>Tu compañero para organizar la vida académica.</p>
@@ -1092,10 +1185,7 @@ export function Duco({
           </span>
           <div>
             <strong>Privado por diseño</strong>
-            <p>
-              DUCO organiza tus pendientes y prepara borradores con IA. Tú
-              siempre revisas y confirmas antes de crear o enviar algo.
-            </p>
+            <p>{providerPrivacyCopy}</p>
           </div>
         </div>
 
@@ -1107,7 +1197,10 @@ export function Duco({
             <button
               type="button"
               key={action.label}
-              onClick={() => void sendPrompt(action.prompt)}
+              onClick={() => {
+                selectPanel('conversation')
+                void sendPrompt(action.prompt)
+              }}
               disabled={sending || historyLoading}
             >
               <span className="duco-actions__icon">
@@ -1149,7 +1242,7 @@ export function Duco({
               aria-selected={activePanel === 'conversation'}
               aria-controls="duco-conversation-panel"
               className={activePanel === 'conversation' ? 'is-active' : ''}
-              onClick={() => setActivePanel('conversation')}
+              onClick={() => selectPanel('conversation')}
             >
               Conversación
             </button>
@@ -1160,7 +1253,7 @@ export function Duco({
               aria-selected={activePanel === 'requests'}
               aria-controls="duco-requests-panel"
               className={activePanel === 'requests' ? 'is-active' : ''}
-              onClick={() => setActivePanel('requests')}
+              onClick={() => selectPanel('requests')}
             >
               Mis solicitudes
               {activeRequests.length > 0 && (
@@ -1504,7 +1597,7 @@ export function Duco({
                 </p>
                 <button
                   type="button"
-                  onClick={() => setActivePanel('conversation')}
+                  onClick={() => selectPanel('conversation')}
                 >
                   Volver a la conversación
                 </button>
@@ -1575,12 +1668,22 @@ export function Duco({
       </div>
 
       {requestForm && (
-        <div className="duco-request-modal" role="presentation">
+        <div
+          className="duco-request-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !requestSubmitting) {
+              setRequestForm(null)
+            }
+          }}
+        >
           <div
+            ref={requestDialogRef}
             className="duco-request-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="duco-request-title"
+            tabIndex={-1}
           >
             <header>
               <span className="duco-request-dialog__mark">
@@ -1714,12 +1817,22 @@ export function Duco({
       )}
 
       {taskForm && (
-        <div className="duco-request-modal" role="presentation">
+        <div
+          className="duco-request-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !taskSubmitting) {
+              setTaskForm(null)
+            }
+          }}
+        >
           <div
+            ref={taskDialogRef}
             className="duco-request-dialog duco-task-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="duco-task-title"
+            tabIndex={-1}
           >
             <header>
               <span className="duco-request-dialog__mark">

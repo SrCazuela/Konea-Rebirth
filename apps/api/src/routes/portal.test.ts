@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { eq, inArray } from 'drizzle-orm'
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
-import { connections, posts, uploadedFiles, users } from '../db/schema.js'
+import {
+  connections,
+  notifications,
+  posts,
+  profiles,
+  reports,
+  uploadedFiles,
+  users,
+} from '../db/schema.js'
+import { UPLOAD_DIRECTORY } from './uploads.js'
 
 function testAccount(label: string) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
@@ -26,6 +37,7 @@ describe.sequential('authenticated portal API', () => {
   let firstUserId = ''
   let secondUserId = ''
   let sharedPostId = ''
+  let projectUploadName = ''
 
   beforeAll(async () => {
     const firstRegistration = await firstAgent
@@ -60,6 +72,9 @@ describe.sequential('authenticated portal API', () => {
 
   afterAll(async () => {
     await db.delete(users).where(inArray(users.email, createdEmails))
+    if (projectUploadName) {
+      await rm(join(UPLOAD_DIRECTORY, projectUploadName), { force: true })
+    }
     await closeDatabaseConnection()
   })
 
@@ -81,6 +96,12 @@ describe.sequential('authenticated portal API', () => {
       .send({ institution: 'Institución inventada' })
     expect(invalidCatalogValue.status).toBe(400)
     expect(invalidCatalogValue.body.error.code).toBe('INVALID_INSTITUTION')
+
+    const unsafeWebsite = await firstAgent
+      .patch('/api/v1/profile')
+      .send({ website: 'javascript:alert(1)' })
+    expect(unsafeWebsite.status).toBe(400)
+    expect(unsafeWebsite.body.error.code).toBe('VALIDATION_ERROR')
 
     const emptyProfileUpdate = await secondAgent.patch('/api/v1/profile').send({
       username: secondAccount.username,
@@ -126,6 +147,13 @@ describe.sequential('authenticated portal API', () => {
   })
 
   it('creates a post and supports likes, comments and ownership checks', async () => {
+    const unsafeImage = await firstAgent.post('/api/v1/posts').send({
+      content: 'No se debe aceptar un protocolo ejecutable.',
+      imageUrl: 'data:text/html,malicioso',
+    })
+    expect(unsafeImage.status).toBe(400)
+    expect(unsafeImage.body.error.code).toBe('VALIDATION_ERROR')
+
     const creation = await firstAgent.post('/api/v1/posts').send({
       content: '¿Alguien quiere preparar el próximo proyecto en equipo?',
       visibility: 'campus',
@@ -191,6 +219,36 @@ describe.sequential('authenticated portal API', () => {
       `/api/v1/posts/${sharedPostId}`,
     )
     expect(forbiddenDelete.status).toBe(403)
+
+    const postReport = await secondAgent.post('/api/v1/reports').send({
+      resourceType: 'post',
+      resourceId: sharedPostId,
+      reason: 'Prueba de limpieza al eliminar',
+    })
+    expect(postReport.status).toBe(201)
+    const commentReport = await firstAgent.post('/api/v1/reports').send({
+      resourceType: 'comment',
+      resourceId: comment.body.comment.id,
+      reason: 'Prueba de limpieza del comentario',
+    })
+    expect(commentReport.status).toBe(201)
+
+    const ownerDelete = await firstAgent.delete(`/api/v1/posts/${sharedPostId}`)
+    expect(ownerDelete.status).toBe(204)
+    expect(
+      await db
+        .select({ id: reports.id })
+        .from(reports)
+        .where(
+          inArray(reports.resourceId, [sharedPostId, comment.body.comment.id]),
+        ),
+    ).toHaveLength(0)
+    expect(
+      await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(eq(notifications.resourceId, sharedPostId)),
+    ).toHaveLength(0)
   })
 
   it('enforces announcement roles and connections visibility', async () => {
@@ -223,6 +281,56 @@ describe.sequential('authenticated portal API', () => {
     expect(
       visibleFeed.body.posts.map((post: { id: string }) => post.id),
     ).toContain(privatePost.body.post.id)
+  })
+
+  it('serves a local project image to profile visitors and enforces the total quota', async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('portfolio-test-image'),
+    ])
+    const upload = await firstAgent
+      .post('/api/v1/uploads/files')
+      .attach('file', png, {
+        filename: 'portfolio.png',
+        contentType: 'image/png',
+      })
+    expect(upload.status).toBe(201)
+    projectUploadName = upload.body.file.name
+
+    await db
+      .update(profiles)
+      .set({
+        projects: [
+          {
+            id: randomUUID(),
+            title: 'Proyecto Konea',
+            description: 'Imagen visible dentro del portafolio.',
+            url: null,
+            repositoryUrl: null,
+            imageUrl: upload.body.file.url,
+            technologies: ['TypeScript'],
+          },
+        ],
+      })
+      .where(eq(profiles.userId, firstUserId))
+
+    await secondAgent.get(upload.body.file.url).expect(200)
+
+    await db.insert(uploadedFiles).values({
+      ownerId: firstUserId,
+      storedName: '33333333-3333-4333-8333-333333333333.pdf',
+      originalName: 'quota-reservation.pdf',
+      mimeType: 'application/pdf',
+      size: 100 * 1024 * 1024,
+    })
+    const quotaExceeded = await firstAgent
+      .post('/api/v1/uploads/files')
+      .attach('file', png, {
+        filename: 'over-quota.png',
+        contentType: 'image/png',
+      })
+    expect(quotaExceeded.status).toBe(413)
+    expect(quotaExceeded.body.error.code).toBe('UPLOAD_QUOTA_EXCEEDED')
   })
 
   it('restricts moderation to roles and publishes an approved item', async () => {
@@ -284,5 +392,15 @@ describe.sequential('authenticated portal API', () => {
     expect(
       studentFeed.body.posts.map((post: { id: string }) => post.id),
     ).toContain(pendingPost?.id)
+
+    const moderatorView = await firstAgent.get(
+      `/api/v1/posts/${pendingPost?.id}`,
+    )
+    expect(moderatorView.body.post.canDelete).toBe(false)
+    const moderatorDelete = await firstAgent.delete(
+      `/api/v1/posts/${pendingPost?.id}`,
+    )
+    expect(moderatorDelete.status).toBe(403)
+    expect(moderatorDelete.body.error.code).toBe('INSUFFICIENT_PERMISSIONS')
   })
 })

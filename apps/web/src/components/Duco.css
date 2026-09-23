@@ -38,6 +38,7 @@
   padding: 28px 22px 24px;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #d7cbe7 transparent;
@@ -636,6 +637,91 @@
 
 .duco-support-card__outcome p {
   margin-top: 4px;
+}
+
+.duco-support-timeline {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid #eee7f2;
+}
+
+.duco-support-timeline h5 {
+  margin: 0 0 10px;
+  color: #554a60;
+  font-size: 0.66rem;
+}
+
+.duco-support-timeline ol {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  list-style: none;
+}
+
+.duco-support-timeline li {
+  position: relative;
+  padding-left: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.duco-support-timeline li:not(:last-child)::after {
+  position: absolute;
+  top: 10px;
+  bottom: -14px;
+  left: 4px;
+  width: 1px;
+  content: '';
+  background: #ded1e9;
+}
+
+.duco-support-timeline__dot {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #7d43c8;
+  box-shadow: 0 0 0 1px #cdb7e3;
+}
+
+.duco-support-timeline li header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.duco-support-timeline li strong {
+  color: #403648;
+  font-size: 0.67rem;
+}
+
+.duco-support-timeline time,
+.duco-support-timeline__actor {
+  color: #918997;
+  font-size: 0.58rem;
+}
+
+.duco-support-timeline__actor {
+  display: block;
+  margin-top: 2px;
+}
+
+.duco-support-timeline li p {
+  margin: 7px 0 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: #554b5e;
+  background: #f8f4fb;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .duco-support-card > footer {

@@ -29,13 +29,29 @@ function truncate(value: string, maximum: number) {
   return Array.from(value).slice(0, maximum).join('')
 }
 
+function stripUnsafeControlCharacters(value: string) {
+  return Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0
+      return (
+        (codePoint === 0x09 ||
+          codePoint === 0x0a ||
+          codePoint === 0x0d ||
+          codePoint > 0x1f) &&
+        codePoint !== 0x7f
+      )
+    })
+    .join('')
+}
+
 function decodeIcsText(value: string) {
-  return value
-    .replaceAll(/\\[nN]/g, '\n')
-    .replaceAll('\\,', ',')
-    .replaceAll('\\;', ';')
-    .replaceAll('\\\\', '\\')
-    .trim()
+  return stripUnsafeControlCharacters(
+    value
+      .replaceAll(/\\[nN]/g, '\n')
+      .replaceAll('\\,', ',')
+      .replaceAll('\\;', ';')
+      .replaceAll('\\\\', '\\'),
+  ).trim()
 }
 
 function unfoldIcsLines(content: string) {
@@ -86,7 +102,7 @@ function dateParts(value: string) {
     /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2}))?(Z|[+-]\d{4})?$/,
   )
   if (!match) return null
-  return {
+  const parts = {
     year: Number(match[1]),
     month: Number(match[2]),
     day: Number(match[3]),
@@ -96,6 +112,30 @@ function dateParts(value: string) {
     suffix: match[7] ?? '',
     hasTime: Boolean(match[4]),
   }
+  const candidate = new Date(0)
+  candidate.setUTCFullYear(parts.year, parts.month - 1, parts.day)
+  candidate.setUTCHours(parts.hour, parts.minute, parts.second, 0)
+  if (
+    parts.year < 1 ||
+    parts.month < 1 ||
+    parts.month > 12 ||
+    parts.day < 1 ||
+    parts.hour > 23 ||
+    parts.minute > 59 ||
+    parts.second > 59 ||
+    candidate.getUTCFullYear() !== parts.year ||
+    candidate.getUTCMonth() !== parts.month - 1 ||
+    candidate.getUTCDate() !== parts.day
+  ) {
+    return null
+  }
+  if (parts.suffix && !parts.hasTime) return null
+  if (/^[+-]\d{4}$/.test(parts.suffix)) {
+    const offsetHours = Number(parts.suffix.slice(1, 3))
+    const offsetMinutes = Number(parts.suffix.slice(3, 5))
+    if (offsetHours > 23 || offsetMinutes > 59) return null
+  }
+  return parts
 }
 
 function zonedDateToUtc(
@@ -146,7 +186,24 @@ function zonedDateToUtc(
     )
     timestamp += desiredTimestamp - representedTimestamp
   }
-  return new Date(timestamp)
+  const result = new Date(timestamp)
+  const represented = Object.fromEntries(
+    formatter
+      .formatToParts(result)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
+  )
+  if (
+    represented.year !== parts.year ||
+    represented.month !== parts.month ||
+    represented.day !== parts.day ||
+    represented.hour !== parts.hour ||
+    represented.minute !== parts.minute ||
+    represented.second !== parts.second
+  ) {
+    throw new RangeError('The local ICS date does not exist in its time zone')
+  }
+  return result
 }
 
 function parseIcsDate(property: IcsProperty | undefined) {
@@ -203,6 +260,11 @@ function parseIcsDate(property: IcsProperty | undefined) {
 }
 
 function eventFromProperties(properties: Map<string, IcsProperty[]>) {
+  const status = decodeIcsText(
+    firstProperty(properties, 'STATUS')?.value ?? '',
+  ).toUpperCase()
+  if (status === 'CANCELLED') return null
+
   const start = parseIcsDate(firstProperty(properties, 'DTSTART', 'DUE'))
   const summary = decodeIcsText(
     firstProperty(properties, 'SUMMARY')?.value ?? '',
@@ -210,6 +272,12 @@ function eventFromProperties(properties: Map<string, IcsProperty[]>) {
   if (!start || !summary) return null
 
   const end = parseIcsDate(firstProperty(properties, 'DTEND'))
+  if (
+    end &&
+    (end.allDay !== start.allDay || end.date.getTime() <= start.date.getTime())
+  ) {
+    return null
+  }
   const uid = decodeIcsText(firstProperty(properties, 'UID')?.value ?? '')
   const recurrenceId = firstProperty(properties, 'RECURRENCE-ID')?.value ?? ''
   const sourceIdentity = `${uid || summary}|${start.date.toISOString()}|${recurrenceId}`
@@ -242,27 +310,41 @@ function eventFromProperties(properties: Map<string, IcsProperty[]>) {
   } satisfies ImportedCalendarEvent
 }
 
+function invalidCalendarError() {
+  return new ApiError(
+    422,
+    'INVALID_AVA_CALENDAR',
+    'El enlace no devolvió un calendario válido.',
+  )
+}
+
 export function parseIcsCalendar(content: string) {
-  if (!content.includes('BEGIN:VCALENDAR')) {
-    throw new ApiError(
-      422,
-      'INVALID_AVA_CALENDAR',
-      'El enlace no devolvió un calendario válido.',
-    )
+  const lines = unfoldIcsLines(content.replace(/^\uFEFF/u, ''))
+  const firstMeaningfulLine = lines.findIndex((line) => line.trim().length > 0)
+  let lastMeaningfulLine = lines.length - 1
+  while (lastMeaningfulLine >= 0 && !lines[lastMeaningfulLine]?.trim()) {
+    lastMeaningfulLine -= 1
+  }
+  if (
+    firstMeaningfulLine < 0 ||
+    lines[firstMeaningfulLine]?.trim() !== 'BEGIN:VCALENDAR' ||
+    lines[lastMeaningfulLine]?.trim() !== 'END:VCALENDAR'
+  ) {
+    throw invalidCalendarError()
   }
 
   const events: ImportedCalendarEvent[] = []
   let currentEvent: Map<string, IcsProperty[]> | null = null
-  for (const line of unfoldIcsLines(content)) {
+  for (const line of lines.slice(firstMeaningfulLine + 1, lastMeaningfulLine)) {
     if (line === 'BEGIN:VEVENT') {
+      if (currentEvent) throw invalidCalendarError()
       currentEvent = new Map()
       continue
     }
     if (line === 'END:VEVENT') {
-      if (currentEvent) {
-        const event = eventFromProperties(currentEvent)
-        if (event) events.push(event)
-      }
+      if (!currentEvent) throw invalidCalendarError()
+      const event = eventFromProperties(currentEvent)
+      if (event) events.push(event)
       currentEvent = null
       if (events.length > MAX_CALENDAR_EVENTS) {
         throw new ApiError(
@@ -273,12 +355,38 @@ export function parseIcsCalendar(content: string) {
       }
       continue
     }
+    if (line === 'BEGIN:VCALENDAR' || line === 'END:VCALENDAR') {
+      throw invalidCalendarError()
+    }
     if (!currentEvent) continue
     const parsed = parseProperty(line)
     if (parsed) addProperty(currentEvent, parsed.name, parsed.property)
   }
 
+  if (currentEvent) throw invalidCalendarError()
+
   return [...new Map(events.map((event) => [event.externalId, event])).values()]
+}
+
+export function calendarDateFloorInTimeZone(
+  now = new Date(),
+  timeZone = DEFAULT_TIME_ZONE,
+) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .formatToParts(now)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
+  )
+  const result = new Date(0)
+  result.setUTCFullYear(parts.year!, parts.month! - 1, parts.day!)
+  result.setUTCHours(0, 0, 0, 0)
+  return result
 }
 
 export function validateAvaCalendarUrl(value: string) {
@@ -336,6 +444,14 @@ export async function fetchAvaCalendar(value: string) {
       'AVA rechazó el enlace. Genera uno nuevo desde Blackboard.',
     )
   }
+  const contentType = response.headers.get('content-type')?.toLowerCase()
+  if (contentType?.includes('text/html')) {
+    throw new ApiError(
+      422,
+      'AVA_CALENDAR_REJECTED',
+      'AVA rechazó el enlace. Genera uno nuevo desde Blackboard.',
+    )
+  }
   const declaredLength = Number(response.headers.get('content-length') ?? 0)
   if (declaredLength > MAX_CALENDAR_BYTES) {
     throw new ApiError(
@@ -344,13 +460,41 @@ export async function fetchAvaCalendar(value: string) {
       'El calendario supera el tamaño permitido.',
     )
   }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > MAX_CALENDAR_BYTES) {
+  const chunks: Uint8Array[] = []
+  let receivedBytes = 0
+  const reader = response.body?.getReader()
+  if (reader) {
+    while (true) {
+      const { done, value: chunk } = await reader.read()
+      if (done) break
+      receivedBytes += chunk.byteLength
+      if (receivedBytes > MAX_CALENDAR_BYTES) {
+        await reader.cancel()
+        throw new ApiError(
+          413,
+          'AVA_CALENDAR_TOO_LARGE',
+          'El calendario supera el tamaño permitido.',
+        )
+      }
+      chunks.push(chunk)
+    }
+  } else {
+    const chunk = new Uint8Array(await response.arrayBuffer())
+    receivedBytes = chunk.byteLength
+    chunks.push(chunk)
+  }
+  if (receivedBytes > MAX_CALENDAR_BYTES) {
     throw new ApiError(
       413,
       'AVA_CALENDAR_TOO_LARGE',
       'El calendario supera el tamaño permitido.',
     )
+  }
+  const bytes = new Uint8Array(receivedBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
   }
   return parseIcsCalendar(new TextDecoder('utf-8').decode(bytes))
 }

@@ -1,10 +1,12 @@
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import express, { type ErrorRequestHandler } from 'express'
+import { rateLimit } from 'express-rate-limit'
 import helmet from 'helmet'
 import { pinoHttp } from 'pino-http'
 import { env } from './config/env.js'
 import { ApiError } from './errors/api-error.js'
+import { trustedWriteOrigin } from './middleware/request-security.js'
 import { authRouter } from './routes/auth.js'
 import { auxiliaryRouter } from './routes/auxiliary.js'
 import { chatsRouter } from './routes/chats.js'
@@ -18,12 +20,18 @@ import { usersRouter } from './routes/users.js'
 
 export function createApp() {
   const app = express()
+  const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) =>
+    origin.trim(),
+  )
 
   app.disable('x-powered-by')
+  if (env.TRUST_PROXY_HOPS > 0) {
+    app.set('trust proxy', env.TRUST_PROXY_HOPS)
+  }
   app.use(helmet())
   app.use(
     cors({
-      origin: env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
+      origin: allowedOrigins,
       credentials: true,
     }),
   )
@@ -33,6 +41,22 @@ export function createApp() {
     pinoHttp({
       enabled: env.NODE_ENV !== 'test',
       redact: ['req.headers.authorization', 'req.headers.cookie'],
+    }),
+  )
+  app.use(trustedWriteOrigin(allowedOrigins))
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1_000,
+      limit: env.WRITE_RATE_LIMIT_PER_15_MIN,
+      skip: (request) => ['GET', 'HEAD', 'OPTIONS'].includes(request.method),
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      message: {
+        error: {
+          code: 'TOO_MANY_WRITES',
+          message: 'Demasiadas operaciones. Intenta nuevamente más tarde.',
+        },
+      },
     }),
   )
 

@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import { avaCalendarRouter } from './ava-calendar.js'
+import { avaImportsRouter } from './ava-imports.js'
 import { academicRouter } from './academic.js'
 import { ducoRouter } from './duco.js'
 import { notificationsRouter } from './notifications.js'
 import { reportsRouter } from './reports.js'
+import { studyRouter } from './study.js'
 import { uploadsRouter } from './uploads.js'
 
 /**
@@ -16,6 +18,8 @@ export const auxiliaryRouter = Router()
 auxiliaryRouter.use('/uploads', uploadsRouter)
 auxiliaryRouter.use('/notifications', notificationsRouter)
 auxiliaryRouter.use('/ava-calendar', avaCalendarRouter)
+auxiliaryRouter.use('/ava-imports', avaImportsRouter)
 auxiliaryRouter.use('/academic', academicRouter)
 auxiliaryRouter.use('/duco', ducoRouter)
 auxiliaryRouter.use('/reports', reportsRouter)
+auxiliaryRouter.use('/study', studyRouter)

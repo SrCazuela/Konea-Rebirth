@@ -100,10 +100,7 @@ async function enrichPosts(rows: RawPost[], currentUser: AuthenticatedUser) {
     likeCount: likesByPost.get(post.id) ?? 0,
     commentCount: commentsByPost.get(post.id) ?? 0,
     likedByMe: likedPostIds.has(post.id),
-    canDelete:
-      authorId === currentUser.id ||
-      currentUser.role === 'moderator' ||
-      currentUser.role === 'admin',
+    canDelete: authorId === currentUser.id || currentUser.role === 'admin',
   }))
 }
 

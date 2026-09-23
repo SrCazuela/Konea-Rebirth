@@ -1,11 +1,19 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 import { db } from '../db/client.js'
-import { comments, postLikes, posts, profiles } from '../db/schema.js'
+import {
+  comments,
+  notifications,
+  postLikes,
+  posts,
+  profiles,
+  reports,
+} from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody, parseId } from '../http/validation.js'
+import { httpOrLocalUploadUrlSchema } from '../http/url-schemas.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
@@ -23,15 +31,7 @@ const createPostSchema = z.strictObject({
   content: z.string().trim().min(1).max(2_000),
   contentType: z.enum(['announcement', 'community']).default('community'),
   visibility: z.enum(['campus', 'connections', 'public']).default('campus'),
-  imageUrl: z
-    .union([
-      z.string().trim().url().max(2_048),
-      z
-        .string()
-        .trim()
-        .regex(/^\/api\/v1\/uploads\/files\/[a-zA-Z0-9._-]+$/),
-    ])
-    .optional(),
+  imageUrl: httpOrLocalUploadUrlSchema.optional(),
 })
 
 const createCommentSchema = z.strictObject({
@@ -124,7 +124,34 @@ postsRouter.delete('/:postId', async (request, response) => {
     )
   }
 
-  await db.delete(posts).where(eq(posts.id, postId))
+  await db.transaction(async (transaction) => {
+    const postComments = await transaction
+      .select({ id: comments.id })
+      .from(comments)
+      .where(eq(comments.postId, postId))
+    const commentIds = postComments.map((comment) => comment.id)
+
+    await transaction
+      .delete(reports)
+      .where(
+        and(eq(reports.resourceType, 'post'), eq(reports.resourceId, postId)),
+      )
+    if (commentIds.length > 0) {
+      await transaction
+        .delete(reports)
+        .where(
+          and(
+            eq(reports.resourceType, 'comment'),
+            inArray(reports.resourceId, commentIds),
+          ),
+        )
+    }
+
+    await transaction
+      .delete(notifications)
+      .where(inArray(notifications.resourceId, [postId, ...commentIds]))
+    await transaction.delete(posts).where(eq(posts.id, postId))
+  })
   response.status(204).send()
 })
 

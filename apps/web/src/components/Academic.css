@@ -5,15 +5,45 @@
 .academic-error {
   margin: 0;
   padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   border-radius: 12px;
   color: #9e3041;
   background: #fff0f2;
+}
+.academic-error button,
+.academic-load-failure button {
+  padding: 7px 11px;
+  border: 1px solid currentColor;
+  border-radius: 9px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 750;
 }
 .academic-loading,
 .academic-empty {
   padding: 35px;
   color: #81778a;
   text-align: center;
+}
+.academic-load-failure {
+  min-height: 240px;
+  padding: 35px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  border: 1px solid #eadfea;
+  border-radius: 18px;
+  color: #803548;
+  background: #fff;
+  text-align: center;
+}
+.academic-load-failure p {
+  margin: 0;
 }
 .academic-summary {
   display: grid;
@@ -76,7 +106,7 @@
   font-size: 1.15rem;
 }
 .academic-panel > header button,
-.academic-form > button {
+.academic-form-actions button {
   min-height: 38px;
   padding: 8px 12px;
   border: 0;
@@ -86,6 +116,12 @@
   cursor: pointer;
   font-weight: 750;
 }
+.academic-panel button:disabled,
+.academic-form button:disabled,
+.academic-load-failure button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
 .academic-form {
   margin-top: 17px;
   padding: 15px;
@@ -93,6 +129,11 @@
   gap: 11px;
   border-radius: 14px;
   background: #f8f4fc;
+}
+.academic-form > h3 {
+  margin: 0 0 2px;
+  color: #493854;
+  font-size: 0.86rem;
 }
 .academic-form > div {
   display: grid;
@@ -121,6 +162,16 @@
 }
 .academic-form textarea {
   resize: vertical;
+}
+.academic-form-actions {
+  display: flex !important;
+  justify-content: flex-end;
+  grid-template-columns: none !important;
+}
+.academic-form-actions button.secondary {
+  border: 1px solid #dacde5;
+  color: #684298;
+  background: #fff;
 }
 .academic-form input:focus,
 .academic-form select:focus,
@@ -154,7 +205,7 @@
   font-size: 0.68rem;
   font-weight: 850;
 }
-.academic-course-list article > div {
+.academic-course-list article > div:not(.academic-course-actions) {
   min-width: 0;
   flex: 1;
 }
@@ -170,9 +221,51 @@
   font-size: 0.64rem;
 }
 .academic-course-list article > small {
+  max-width: 92px;
   color: #7650a7;
   font-size: 0.58rem;
   font-weight: 800;
+  text-align: right;
+}
+.academic-course-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5px;
+}
+.academic-course-actions button,
+.academic-agenda-tabs button {
+  padding: 5px 8px;
+  border: 1px solid #ded3e8;
+  border-radius: 8px;
+  color: #684298;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.61rem;
+  font-weight: 700;
+}
+.academic-course-actions button:last-child {
+  color: #a63b4b;
+}
+.academic-agenda-tabs {
+  margin-top: 14px;
+  padding: 3px;
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  border: 1px solid #e7dcef;
+  border-radius: 11px;
+  background: #f9f6fc;
+}
+.academic-agenda-tabs button {
+  border-color: transparent;
+  color: #766b7e;
+  background: transparent;
+}
+.academic-agenda-tabs button[aria-pressed='true'] {
+  color: #60349d;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(64 34 95 / 10%);
 }
 .academic-agenda-item {
   padding: 14px;
@@ -187,6 +280,10 @@
 }
 .academic-agenda-item--completed h3 {
   text-decoration: line-through;
+}
+.academic-agenda-item--in_progress {
+  border-color: #d7c3ea;
+  background: #fcf9ff;
 }
 .academic-priority {
   width: 5px;
@@ -223,6 +320,23 @@
 .academic-agenda-item time {
   color: #8a8091;
   font-size: 0.62rem;
+}
+.academic-status {
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 99px;
+  color: #7853a7;
+  background: #f0e8f8;
+  font-size: 0.56rem;
+  font-weight: 750;
+}
+.academic-status--in_progress {
+  color: #744e13;
+  background: #fff0ce;
+}
+.academic-status--completed {
+  color: #2b7553;
+  background: #e4f5ed;
 }
 .academic-task-actions {
   display: flex;
@@ -272,5 +386,15 @@
   .academic-task-actions {
     grid-column: 2;
     flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .academic-course-list article {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .academic-course-actions {
+    width: 100%;
+    flex-direction: row;
+    padding-left: 49px;
   }
 }

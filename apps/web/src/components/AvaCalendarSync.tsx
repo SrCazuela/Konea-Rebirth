@@ -4,11 +4,18 @@ import {
   syncAvaCalendar,
   type AvaCalendarOverview,
 } from '../api/ava-calendar'
+import { useModalDialog } from '../hooks/useModalDialog'
+import { AvaDomImport } from './AvaDomImport'
 import './AvaCalendarSync.css'
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', {
   dateStyle: 'medium',
   timeStyle: 'short',
+})
+
+const allDayFormatter = new Intl.DateTimeFormat('es-CL', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
 })
 
 function CalendarIcon() {
@@ -35,9 +42,12 @@ function readableError(error: unknown) {
     : 'No pudimos sincronizar el calendario de AVA.'
 }
 
-function formatSyncDate(value: string) {
+function formatSyncDate(value: string, allDay = false) {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : dateFormatter.format(date)
+  if (Number.isNaN(date.getTime())) return ''
+  return allDay
+    ? `${allDayFormatter.format(date)} · Todo el día`
+    : dateFormatter.format(date)
 }
 
 export function AvaCalendarSync({
@@ -47,19 +57,30 @@ export function AvaCalendarSync({
 } = {}) {
   const [overview, setOverview] = useState<AvaCalendarOverview | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [calendarUrl, setCalendarUrl] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
   const [resultMessage, setResultMessage] = useState('')
+  const dialogRef = useModalDialog<HTMLDivElement>({
+    open: dialogOpen,
+    onClose: () => setDialogOpen(false),
+    closeDisabled: syncing,
+  })
 
   useEffect(() => {
     let cancelled = false
     getAvaCalendar()
       .then((result) => {
-        if (!cancelled) setOverview(result)
+        if (!cancelled) {
+          setOverview(result)
+          setLoadError('')
+        }
       })
-      .catch(() => undefined)
+      .catch((loadFailure) => {
+        if (!cancelled) setLoadError(readableError(loadFailure))
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -67,6 +88,19 @@ export function AvaCalendarSync({
       cancelled = true
     }
   }, [])
+
+  const retryOverview = async () => {
+    if (loading) return
+    setLoading(true)
+    setLoadError('')
+    try {
+      setOverview(await getAvaCalendar())
+    } catch (loadFailure) {
+      setLoadError(readableError(loadFailure))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const openDialog = () => {
     setError('')
@@ -108,23 +142,44 @@ export function AvaCalendarSync({
           <p>
             {loading
               ? 'Revisando sincronización…'
-              : overview?.sync
-                ? `${overview.upcomingCount} ${overview.upcomingCount === 1 ? 'actividad próxima' : 'actividades próximas'}`
-                : 'Aún no está sincronizado'}
+              : loadError
+                ? 'No pudimos consultar AVA'
+                : overview?.sync
+                  ? `${overview.upcomingCount} ${overview.upcomingCount === 1 ? 'actividad próxima' : 'actividades próximas'}`
+                  : 'Aún no está sincronizado'}
           </p>
-          <button type="button" onClick={openDialog}>
-            {overview?.sync ? 'Sincronizar nuevamente' : 'Conectar calendario'}
+          <button
+            type="button"
+            onClick={loadError ? retryOverview : openDialog}
+            disabled={loading}
+            title={loadError || undefined}
+          >
+            {loadError
+              ? 'Reintentar'
+              : overview?.sync
+                ? 'Sincronizar nuevamente'
+                : 'Conectar calendario'}
           </button>
         </div>
       </section>
 
       {dialogOpen && (
-        <div className="ava-sync-modal" role="presentation">
+        <div
+          className="ava-sync-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !syncing) {
+              setDialogOpen(false)
+            }
+          }}
+        >
           <div
+            ref={dialogRef}
             className="ava-sync-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="ava-sync-title"
+            tabIndex={-1}
           >
             <header>
               <span>
@@ -153,7 +208,10 @@ export function AvaCalendarSync({
               </a>
             </div>
 
+            <AvaDomImport onImported={onSynchronized} />
+
             <form onSubmit={synchronize}>
+              <h4>Alternativa: calendario ICS</h4>
               <label htmlFor="ava-calendar-url">
                 Enlace privado del calendario
               </label>
@@ -166,6 +224,7 @@ export function AvaCalendarSync({
                 autoComplete="off"
                 maxLength={2_000}
                 required
+                autoFocus
                 disabled={syncing}
               />
               <small>
@@ -225,7 +284,10 @@ export function AvaCalendarSync({
                         <div>
                           <strong>{calendarEvent.title}</strong>
                           <time dateTime={calendarEvent.startsAt}>
-                            {formatSyncDate(calendarEvent.startsAt)}
+                            {formatSyncDate(
+                              calendarEvent.startsAt,
+                              calendarEvent.allDay,
+                            )}
                           </time>
                           {calendarEvent.courseName && (
                             <small>{calendarEvent.courseName}</small>

@@ -3,6 +3,20 @@ import { apiRequest } from './base'
 export type SupportRequestStatus =
   'pending' | 'reviewing' | 'resolved' | 'rejected'
 
+export type SupportRequestEvent = {
+  id: string
+  type: 'created' | 'status_changed' | 'response'
+  fromStatus: SupportRequestStatus | null
+  toStatus: SupportRequestStatus
+  note: string | null
+  createdAt: string
+  actor:
+    | (SupportRequestPerson & {
+        role: 'student' | 'professor' | 'moderator' | 'admin'
+      })
+    | null
+}
+
 export type SupportRequestCategory =
   | 'section_change'
   | 'missing_course'
@@ -36,6 +50,7 @@ export type ManagedSupportRequest = {
   updatedAt: string
   requester: SupportRequestPerson | null
   assignedTo: SupportRequestPerson | null
+  timeline: SupportRequestEvent[]
 }
 
 export async function getManagedSupportRequests() {
@@ -47,13 +62,13 @@ export async function getManagedSupportRequests() {
 
 export async function updateManagedSupportRequest(
   requestId: string,
-  status: SupportRequestStatus,
+  update: { status?: SupportRequestStatus; note?: string },
 ) {
   const response = await apiRequest<{
     request: Omit<ManagedSupportRequest, 'requester' | 'assignedTo'>
   }>(`/duco/requests/${encodeURIComponent(requestId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(update),
   })
   return response.request
 }

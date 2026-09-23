@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compañero FocusBuddy</title>
+    <link rel="stylesheet" href="companion.css" />
+  </head>
+  <body>
+    <main
+      class="companion"
+      data-status="idle"
+      aria-label="Compañero FocusBuddy"
+    >
+      <section class="bubble" aria-live="polite" aria-atomic="true">
+        <strong id="session-title">Listo para estudiar</strong>
+        <span id="session-course" hidden></span>
+        <time id="session-timer">--:--</time>
+      </section>
+
+      <div
+        class="avatar-button drag-region"
+        aria-hidden="true"
+        title="Arrastra para mover el compañero"
+      >
+        <span class="owl-sprite" aria-hidden="true"></span>
+      </div>
+
+      <nav class="companion-actions" aria-label="Acciones del compañero">
+        <button id="open-button" type="button" title="Abrir FocusBuddy">
+          Abrir
+        </button>
+        <button
+          id="compact-button"
+          type="button"
+          title="Alternar ventana compacta"
+        >
+          Mini
+        </button>
+        <button id="hide-button" type="button" title="Ocultar compañero">
+          Ocultar
+        </button>
+      </nav>
+    </main>
+    <script src="companion.js"></script>
+  </body>
+</html>

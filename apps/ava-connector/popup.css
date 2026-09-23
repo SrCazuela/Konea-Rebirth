@@ -1,0 +1,157 @@
+:root {
+  color: #292032;
+  background: #f8f5fc;
+  font:
+    14px/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 390px;
+  max-height: 580px;
+  margin: 0;
+  overflow-y: auto;
+}
+
+main {
+  padding: 18px;
+}
+
+header,
+.section-title,
+label {
+  display: flex;
+  align-items: center;
+}
+
+header {
+  gap: 11px;
+}
+
+header > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  background: linear-gradient(145deg, #8854d0, #6338b0);
+  font-weight: 800;
+}
+
+h1,
+h2,
+small,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.05rem;
+}
+
+header small {
+  color: #754caf;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.privacy,
+.hint,
+#status {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #e2d8ee;
+  border-radius: 11px;
+  color: #655a70;
+  background: #fff;
+  font-size: 0.78rem;
+}
+
+#preview > section {
+  margin-top: 16px;
+}
+
+.section-title {
+  justify-content: space-between;
+}
+
+h2 {
+  font-size: 0.86rem;
+}
+
+.section-title span {
+  min-width: 25px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  color: #673ab7;
+  background: #eee5fa;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.items {
+  max-height: 160px;
+  margin-top: 7px;
+  display: grid;
+  gap: 5px;
+  overflow-y: auto;
+}
+
+label {
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid #e9e2ef;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 0.77rem;
+}
+
+label span {
+  min-width: 0;
+  display: grid;
+}
+
+label small {
+  overflow: hidden;
+  color: #807588;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button {
+  width: 100%;
+  min-height: 41px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 11px;
+  color: #fff;
+  background: #6d3cbd;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#retry {
+  color: #663aad;
+  background: #eee5fa;
+}
+
+.error {
+  color: #973448 !important;
+  border-color: #f0cbd2 !important;
+  background: #fff2f4 !important;
+}

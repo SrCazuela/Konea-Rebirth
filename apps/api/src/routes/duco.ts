@@ -8,11 +8,14 @@ import {
   inArray,
   isNull,
   ne,
+  or,
   sql,
 } from 'drizzle-orm'
-import { Router } from 'express'
+import { Router, type Request } from 'express'
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
-import { db } from '../db/client.js'
+import { env } from '../config/env.js'
+import { db, isUniqueViolation } from '../db/client.js'
 import {
   assistantMessages,
   academicCalendarEvents,
@@ -21,11 +24,13 @@ import {
   chatParticipants,
   ducoDrafts,
   profiles,
+  supportRequestEvents,
   supportRequests,
   tasks,
   users,
 } from '../db/schema.js'
 import type { AssistantMessageAction, DucoTaskDraft } from '../db/schema.js'
+import { cleanCourseName, normalizeCourseName } from '../domain/academic.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody, parseId } from '../http/validation.js'
 import {
@@ -34,6 +39,7 @@ import {
   requireModerator,
 } from '../middleware/authentication.js'
 import { buildDucoAiReply } from '../services/duco-ai-service.js'
+import { calendarDateFloorInTimeZone } from '../services/ics-calendar-service.js'
 import { createNotification } from '../services/notification-service.js'
 import { normalizeText } from '../utils/text.js'
 
@@ -55,6 +61,68 @@ const requestStatuses = [
   'resolved',
   'rejected',
 ] as const
+
+const MAX_CONCURRENT_DUCO_REQUESTS = 4
+let activeDucoRequests = 0
+const usersWithActiveDucoRequest = new Set<string>()
+
+function authenticatedUserKey(request: Request) {
+  const userId: unknown = request.res?.locals.currentUser?.id
+  return typeof userId === 'string'
+    ? `user:${userId}`
+    : `ip:${ipKeyGenerator(request.ip ?? 'unknown')}`
+}
+
+const ducoIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1_000,
+  limit: 120,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_DUCO_REQUESTS',
+      message: 'Hay demasiadas consultas a DUCO. Intenta nuevamente mas tarde.',
+    },
+  },
+})
+
+const ducoUserLimiter = rateLimit({
+  windowMs: 15 * 60 * 1_000,
+  limit: 30,
+  keyGenerator: authenticatedUserKey,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_DUCO_REQUESTS',
+      message: 'Alcanzaste el limite temporal de consultas a DUCO.',
+    },
+  },
+})
+
+function acquireDucoRequest(userId: string) {
+  if (
+    usersWithActiveDucoRequest.has(userId) ||
+    activeDucoRequests >= MAX_CONCURRENT_DUCO_REQUESTS
+  ) {
+    throw new ApiError(
+      429,
+      'DUCO_BUSY',
+      'DUCO esta procesando otras consultas. Intenta nuevamente en un momento.',
+    )
+  }
+
+  usersWithActiveDucoRequest.add(userId)
+  activeDucoRequests += 1
+  let released = false
+
+  return () => {
+    if (released) return
+    released = true
+    usersWithActiveDucoRequest.delete(userId)
+    activeDucoRequests = Math.max(0, activeDucoRequests - 1)
+  }
+}
 
 const sendMessageSchema = z
   .union([
@@ -98,12 +166,101 @@ const createAcademicTaskSchema = z
     message: 'Se requiere un borrador de DUCO.',
     path: ['draftId'],
   })
-const updateSupportRequestSchema = z.strictObject({
-  status: z.enum(requestStatuses),
-})
+const updateSupportRequestSchema = z
+  .strictObject({
+    status: z.enum(requestStatuses).optional(),
+    note: z.string().trim().min(3).max(1_000).optional(),
+  })
+  .refine((input) => input.status !== undefined || input.note !== undefined, {
+    message: 'Debes indicar un estado o una respuesta.',
+  })
 
-function normalizeCourseName(value: string) {
-  return value.trim().replaceAll(/\s+/g, ' ').toLocaleLowerCase('es-CL')
+type SupportRequestStatus = (typeof requestStatuses)[number]
+
+const validSupportRequestTransitions: Record<
+  SupportRequestStatus,
+  readonly SupportRequestStatus[]
+> = {
+  pending: ['reviewing', 'resolved', 'rejected'],
+  reviewing: ['pending', 'resolved', 'rejected'],
+  resolved: ['reviewing'],
+  rejected: ['reviewing'],
+}
+
+function safeNotificationSummary(note: string) {
+  const normalized = note.replaceAll(/\s+/g, ' ').trim()
+  const characters = Array.from(normalized)
+  return characters.length <= 140
+    ? normalized
+    : `${characters.slice(0, 137).join('')}...`
+}
+
+async function addSupportRequestTimelines<T extends { id: string }>(
+  requests: T[],
+) {
+  if (requests.length === 0)
+    return requests.map((supportRequest) => ({
+      ...supportRequest,
+      timeline: [],
+    }))
+
+  const timelineRows = await db
+    .select({
+      id: supportRequestEvents.id,
+      requestId: supportRequestEvents.requestId,
+      actorId: supportRequestEvents.actorId,
+      type: supportRequestEvents.type,
+      fromStatus: supportRequestEvents.fromStatus,
+      toStatus: supportRequestEvents.toStatus,
+      note: supportRequestEvents.note,
+      createdAt: supportRequestEvents.createdAt,
+      actorUsername: profiles.username,
+      actorDisplayName: profiles.displayName,
+      actorAvatarUrl: profiles.avatarUrl,
+      actorRole: users.role,
+    })
+    .from(supportRequestEvents)
+    .leftJoin(users, eq(users.id, supportRequestEvents.actorId))
+    .leftJoin(profiles, eq(profiles.userId, supportRequestEvents.actorId))
+    .where(
+      inArray(
+        supportRequestEvents.requestId,
+        requests.map((item) => item.id),
+      ),
+    )
+    .orderBy(asc(supportRequestEvents.createdAt), asc(supportRequestEvents.id))
+
+  const timelines = new Map<string, Array<(typeof timelineRows)[number]>>()
+  for (const event of timelineRows) {
+    const timeline = timelines.get(event.requestId) ?? []
+    timeline.push(event)
+    timelines.set(event.requestId, timeline)
+  }
+
+  return requests.map((supportRequest) => ({
+    ...supportRequest,
+    timeline: (timelines.get(supportRequest.id) ?? []).map((event) => ({
+      id: event.id,
+      type: event.type,
+      fromStatus: event.fromStatus,
+      toStatus: event.toStatus,
+      note: event.note,
+      createdAt: event.createdAt,
+      actor:
+        event.actorId &&
+        event.actorUsername &&
+        event.actorDisplayName &&
+        event.actorRole
+          ? {
+              id: event.actorId,
+              username: event.actorUsername,
+              displayName: event.actorDisplayName,
+              avatarUrl: event.actorAvatarUrl,
+              role: event.actorRole,
+            }
+          : null,
+    })),
+  }))
 }
 
 type PendingTask = Awaited<ReturnType<typeof loadPendingTasks>>[number]
@@ -114,6 +271,7 @@ function taskLine(task: PendingTask, index: number) {
     ? ` · vence ${new Intl.DateTimeFormat('es-CL', {
         dateStyle: 'short',
         ...(task.dueDate.includes('T') ? { timeStyle: 'short' as const } : {}),
+        ...(!task.dueDate.includes('T') ? { timeZone: 'UTC' } : {}),
       }).format(new Date(task.dueDate))}`
     : ''
   const source =
@@ -193,6 +351,8 @@ function createLocalReply(
 }
 
 async function loadPendingTasks(userId: string) {
+  const now = new Date()
+  const currentAllDayDate = calendarDateFloorInTimeZone(now)
   const [assignedTasks, avaEvents, personalTasks] = await Promise.all([
     db
       .select({
@@ -220,13 +380,29 @@ async function loadPendingTasks(userId: string) {
         title: academicCalendarEvents.title,
         description: academicCalendarEvents.description,
         startsAt: academicCalendarEvents.startsAt,
+        allDay: academicCalendarEvents.allDay,
       })
       .from(academicCalendarEvents)
       .where(
         and(
           eq(academicCalendarEvents.userId, userId),
           eq(academicCalendarEvents.active, true),
-          gte(academicCalendarEvents.startsAt, new Date()),
+          or(
+            and(
+              eq(academicCalendarEvents.allDay, false),
+              or(
+                gte(academicCalendarEvents.startsAt, now),
+                gte(academicCalendarEvents.endsAt, now),
+              ),
+            ),
+            and(
+              eq(academicCalendarEvents.allDay, true),
+              or(
+                gte(academicCalendarEvents.startsAt, currentAllDayDate),
+                gt(academicCalendarEvents.endsAt, currentAllDayDate),
+              ),
+            ),
+          ),
         ),
       )
       .orderBy(asc(academicCalendarEvents.startsAt))
@@ -257,7 +433,9 @@ async function loadPendingTasks(userId: string) {
       id: event.id,
       title: event.title,
       description: event.description,
-      dueDate: event.startsAt.toISOString(),
+      dueDate: event.allDay
+        ? event.startsAt.toISOString().slice(0, 10)
+        : event.startsAt.toISOString(),
       priority: 'medium' as const,
       status: 'pending' as const,
       source: 'ava' as const,
@@ -281,12 +459,23 @@ async function loadRecentConversation(userId: string) {
     .select({
       role: assistantMessages.role,
       content: assistantMessages.content,
+      action: assistantMessages.action,
     })
     .from(assistantMessages)
     .where(eq(assistantMessages.userId, userId))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(30)
-  return messages.reverse()
+  const chronological = messages.reverse()
+  const lastCompletedWorkflowIndex = chronological.findLastIndex(
+    (message) => message.action !== null,
+  )
+
+  // Un borrador ya ofrecido marca el cierre del contexto anterior. Así una
+  // solicitud sensible nueva no hereda datos de otra gestión o tarea.
+  return chronological
+    .slice(lastCompletedWorkflowIndex + 1)
+    .slice(-12)
+    .map(({ role, content }) => ({ role, content }))
 }
 
 async function loadActiveTaskDraft(userId: string) {
@@ -365,152 +554,176 @@ ducoRouter.use(requireAuthentication)
 
 ducoRouter.get('/messages', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
-  response.json({ messages: await loadMessages(currentUser.id) })
+  const [messages, pendingTasks] = await Promise.all([
+    loadMessages(currentUser.id),
+    loadPendingTasks(currentUser.id),
+  ])
+  response.json({
+    messages,
+    openTaskCount: pendingTasks.length,
+    aiProvider: env.DUCO_AI_PROVIDER,
+  })
 })
 
-ducoRouter.post('/messages', async (request, response) => {
-  const currentUser = getAuthenticatedUser(response)
-  const content = parseBody(sendMessageSchema, request.body)
-  const [pendingTasks, conversation, activeTaskDraft] = await Promise.all([
-    loadPendingTasks(currentUser.id),
-    loadRecentConversation(currentUser.id),
-    loadActiveTaskDraft(currentUser.id),
-  ])
-  const aiReply = await buildDucoAiReply({
-    prompt: content,
-    localReply: createLocalReply(
-      content,
-      pendingTasks,
-      currentUser.displayName,
-    ),
-    conversation,
-    pendingTasks,
-    activeTaskDraft,
-  })
-  const askedAt = new Date()
-  const answeredAt = new Date(askedAt.getTime() + 1)
+ducoRouter.post(
+  '/messages',
+  ducoIpLimiter,
+  ducoUserLimiter,
+  async (request, response) => {
+    const currentUser = getAuthenticatedUser(response)
+    const content = parseBody(sendMessageSchema, request.body)
+    const releaseDucoRequest = acquireDucoRequest(currentUser.id)
 
-  const result = await db.transaction(async (transaction) => {
-    const [userMessage] = await transaction
-      .insert(assistantMessages)
-      .values({
-        userId: currentUser.id,
-        role: 'user',
-        content,
-        createdAt: askedAt,
+    try {
+      const [pendingTasks, conversation, activeTaskDraft] = await Promise.all([
+        loadPendingTasks(currentUser.id),
+        loadRecentConversation(currentUser.id),
+        loadActiveTaskDraft(currentUser.id),
+      ])
+      const aiReply = await buildDucoAiReply({
+        prompt: content,
+        localReply: createLocalReply(
+          content,
+          pendingTasks,
+          currentUser.displayName,
+        ),
+        conversation,
+        pendingTasks,
+        activeTaskDraft,
       })
-      .returning({
-        id: assistantMessages.id,
-        role: assistantMessages.role,
-        content: assistantMessages.content,
-        action: assistantMessages.action,
-        createdAt: assistantMessages.createdAt,
-      })
-    const [insertedAssistantMessage] = await transaction
-      .insert(assistantMessages)
-      .values({
-        userId: currentUser.id,
-        role: 'assistant',
-        content: aiReply.reply,
-        action: aiReply.action,
-        createdAt: answeredAt,
-      })
-      .returning({
-        id: assistantMessages.id,
-        role: assistantMessages.role,
-        content: assistantMessages.content,
-        action: assistantMessages.action,
-        createdAt: assistantMessages.createdAt,
-      })
-    if (!userMessage || !insertedAssistantMessage)
-      throw new Error('Database did not return the DUCO messages')
+      const askedAt = new Date()
+      const answeredAt = new Date(askedAt.getTime() + 1)
 
-    let assistantMessage = insertedAssistantMessage
-    if (aiReply.action?.type === 'create_task') {
-      const shouldUpdateActiveDraft =
-        activeTaskDraft !== null &&
-        aiReply.action.draftId === activeTaskDraft.id
-      let draftId: string
-
-      if (shouldUpdateActiveDraft) {
-        await transaction.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${activeTaskDraft.id}))`,
-        )
-        const [updatedDraft] = await transaction
-          .update(ducoDrafts)
-          .set({
-            status: 'ready_for_review',
-            payload: aiReply.action.draft,
-            sourceMessageId: insertedAssistantMessage.id,
-            expiresAt: sql`now() + interval '30 days'`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(ducoDrafts.id, activeTaskDraft.id),
-              eq(ducoDrafts.userId, currentUser.id),
-              eq(ducoDrafts.kind, 'task'),
-              inArray(ducoDrafts.status, [
-                'collecting_information',
-                'ready_for_review',
-              ]),
-              gt(ducoDrafts.expiresAt, new Date()),
-            ),
-          )
-          .returning({ id: ducoDrafts.id })
-        if (!updatedDraft)
-          throw new Error('The active DUCO task draft could not be updated')
-        draftId = updatedDraft.id
-      } else {
-        const [createdDraft] = await transaction
-          .insert(ducoDrafts)
+      const result = await db.transaction(async (transaction) => {
+        const [userMessage] = await transaction
+          .insert(assistantMessages)
           .values({
             userId: currentUser.id,
-            kind: 'task',
-            status: 'ready_for_review',
-            payload: aiReply.action.draft,
-            sourceMessageId: insertedAssistantMessage.id,
+            role: 'user',
+            content,
+            createdAt: askedAt,
           })
-          .returning({ id: ducoDrafts.id })
-        if (!createdDraft)
-          throw new Error('Database did not return the DUCO task draft')
-        draftId = createdDraft.id
-      }
+          .returning({
+            id: assistantMessages.id,
+            role: assistantMessages.role,
+            content: assistantMessages.content,
+            action: assistantMessages.action,
+            createdAt: assistantMessages.createdAt,
+          })
+        const [insertedAssistantMessage] = await transaction
+          .insert(assistantMessages)
+          .values({
+            userId: currentUser.id,
+            role: 'assistant',
+            content: aiReply.reply,
+            action: aiReply.action,
+            createdAt: answeredAt,
+          })
+          .returning({
+            id: assistantMessages.id,
+            role: assistantMessages.role,
+            content: assistantMessages.content,
+            action: assistantMessages.action,
+            createdAt: assistantMessages.createdAt,
+          })
+        if (!userMessage || !insertedAssistantMessage)
+          throw new Error('Database did not return the DUCO messages')
 
-      const persistedAction: AssistantMessageAction = {
-        ...aiReply.action,
-        draftId,
-        draftStatus: 'ready_for_review',
-        task: null,
-      }
-      const [updatedAssistantMessage] = await transaction
-        .update(assistantMessages)
-        .set({ action: persistedAction })
-        .where(eq(assistantMessages.id, insertedAssistantMessage.id))
-        .returning({
-          id: assistantMessages.id,
-          role: assistantMessages.role,
-          content: assistantMessages.content,
-          action: assistantMessages.action,
-          createdAt: assistantMessages.createdAt,
-        })
-      if (!updatedAssistantMessage)
-        throw new Error('Database did not return the updated DUCO message')
-      assistantMessage = updatedAssistantMessage
+        let assistantMessage = insertedAssistantMessage
+        if (aiReply.action?.type === 'create_task') {
+          const shouldUpdateActiveDraft =
+            activeTaskDraft !== null &&
+            aiReply.action.draftId === activeTaskDraft.id
+          let draftId: string
+
+          if (shouldUpdateActiveDraft) {
+            await transaction.execute(
+              sql`select pg_advisory_xact_lock(hashtext(${activeTaskDraft.id}))`,
+            )
+            const [updatedDraft] = await transaction
+              .update(ducoDrafts)
+              .set({
+                status: 'ready_for_review',
+                payload: aiReply.action.draft,
+                sourceMessageId: insertedAssistantMessage.id,
+                expiresAt: sql`now() + interval '30 days'`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(ducoDrafts.id, activeTaskDraft.id),
+                  eq(ducoDrafts.userId, currentUser.id),
+                  eq(ducoDrafts.kind, 'task'),
+                  inArray(ducoDrafts.status, [
+                    'collecting_information',
+                    'ready_for_review',
+                  ]),
+                  gt(ducoDrafts.expiresAt, new Date()),
+                ),
+              )
+              .returning({ id: ducoDrafts.id })
+            if (!updatedDraft) {
+              throw new ApiError(
+                409,
+                'DUCO_TASK_DRAFT_CHANGED',
+                'El borrador cambió o expiró mientras DUCO respondía. Inténtalo nuevamente.',
+              )
+            }
+            draftId = updatedDraft.id
+          } else {
+            const [createdDraft] = await transaction
+              .insert(ducoDrafts)
+              .values({
+                userId: currentUser.id,
+                kind: 'task',
+                status: 'ready_for_review',
+                payload: aiReply.action.draft,
+                sourceMessageId: insertedAssistantMessage.id,
+              })
+              .returning({ id: ducoDrafts.id })
+            if (!createdDraft)
+              throw new Error('Database did not return the DUCO task draft')
+            draftId = createdDraft.id
+          }
+
+          const persistedAction: AssistantMessageAction = {
+            ...aiReply.action,
+            draftId,
+            draftStatus: 'ready_for_review',
+            task: null,
+          }
+          const [updatedAssistantMessage] = await transaction
+            .update(assistantMessages)
+            .set({ action: persistedAction })
+            .where(eq(assistantMessages.id, insertedAssistantMessage.id))
+            .returning({
+              id: assistantMessages.id,
+              role: assistantMessages.role,
+              content: assistantMessages.content,
+              action: assistantMessages.action,
+              createdAt: assistantMessages.createdAt,
+            })
+          if (!updatedAssistantMessage)
+            throw new Error('Database did not return the updated DUCO message')
+          assistantMessage = updatedAssistantMessage
+        }
+
+        return {
+          userMessage: { ...userMessage, request: null },
+          assistantMessage: { ...assistantMessage, request: null },
+        }
+      })
+
+      response.status(201).json({
+        ...result,
+        openTaskCount: pendingTasks.length,
+        aiProvider: aiReply.provider,
+      })
+    } finally {
+      releaseDucoRequest()
     }
-
-    return {
-      userMessage: { ...userMessage, request: null },
-      assistantMessage: { ...assistantMessage, request: null },
-    }
-  })
-
-  response.status(201).json({
-    ...result,
-    openTaskCount: pendingTasks.length,
-    aiProvider: aiReply.provider,
-  })
-})
+  },
+)
 
 ducoRouter.delete('/messages', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
@@ -793,7 +1006,7 @@ ducoRouter.post('/tasks', async (request, response) => {
 
     let courseId: string | null = null
     if (input.courseName) {
-      const name = input.courseName.trim().replaceAll(/\s+/g, ' ')
+      const name = cleanCourseName(input.courseName)
       const normalizedName = normalizeCourseName(name)
       const [course] = await transaction
         .insert(academicCourses)
@@ -805,11 +1018,25 @@ ducoRouter.post('/tasks', async (request, response) => {
         })
         .onConflictDoUpdate({
           target: [academicCourses.userId, academicCourses.normalizedName],
-          set: { active: true, updatedAt: new Date() },
+          set: {
+            active: sql`case when ${academicCourses.source} = 'manual' then true else ${academicCourses.active} end`,
+            updatedAt: new Date(),
+          },
         })
-        .returning({ id: academicCourses.id })
+        .returning({
+          id: academicCourses.id,
+          source: academicCourses.source,
+          active: academicCourses.active,
+        })
       if (!course)
         throw new Error('Database did not return the academic course')
+      if (course.source === 'ava' && !course.active) {
+        throw new ApiError(
+          409,
+          'ACADEMIC_COURSE_READ_ONLY',
+          'La materia de AVA está inactiva. Sincroniza el calendario antes de usarla.',
+        )
+      }
       courseId = course.id
     }
 
@@ -907,61 +1134,86 @@ ducoRouter.get('/requests', async (_request, response) => {
     .from(supportRequests)
     .where(eq(supportRequests.requesterId, currentUser.id))
     .orderBy(desc(supportRequests.createdAt))
-  response.json({ requests })
+  response.json({ requests: await addSupportRequestTimelines(requests) })
 })
 
 ducoRouter.post('/requests', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(createSupportRequestSchema, request.body)
-  const [sourceMessage] = await db
-    .select({
-      id: assistantMessages.id,
-      action: assistantMessages.action,
-    })
-    .from(assistantMessages)
-    .where(
-      and(
-        eq(assistantMessages.id, input.sourceMessageId),
-        eq(assistantMessages.userId, currentUser.id),
-        eq(assistantMessages.role, 'assistant'),
-      ),
-    )
-    .limit(1)
 
-  if (!sourceMessage || sourceMessage.action?.type !== 'manage_request') {
-    throw new ApiError(
-      404,
-      'DUCO_REQUEST_DRAFT_NOT_FOUND',
-      'El borrador de solicitud de DUCO no existe.',
-    )
-  }
-  const [existingRequest] = await db
-    .select({ id: supportRequests.id })
-    .from(supportRequests)
-    .where(eq(supportRequests.sourceMessageId, sourceMessage.id))
-    .limit(1)
-  if (existingRequest) {
-    throw new ApiError(
-      409,
-      'DUCO_REQUEST_ALREADY_SENT',
-      'Esta solicitud ya fue enviada.',
-    )
-  }
+  let createdRequest: typeof supportRequests.$inferSelect
+  try {
+    createdRequest = await db.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select 1 from ${assistantMessages} where ${assistantMessages.id} = ${input.sourceMessageId} for update`,
+      )
+      const [sourceMessage] = await transaction
+        .select({
+          id: assistantMessages.id,
+          action: assistantMessages.action,
+        })
+        .from(assistantMessages)
+        .where(
+          and(
+            eq(assistantMessages.id, input.sourceMessageId),
+            eq(assistantMessages.userId, currentUser.id),
+            eq(assistantMessages.role, 'assistant'),
+          ),
+        )
+        .limit(1)
+      if (!sourceMessage || sourceMessage.action?.type !== 'manage_request') {
+        throw new ApiError(
+          404,
+          'DUCO_REQUEST_DRAFT_NOT_FOUND',
+          'El borrador de solicitud de DUCO no existe.',
+        )
+      }
+      const [existingRequest] = await transaction
+        .select({ id: supportRequests.id })
+        .from(supportRequests)
+        .where(eq(supportRequests.sourceMessageId, sourceMessage.id))
+        .limit(1)
+      if (existingRequest) {
+        throw new ApiError(
+          409,
+          'DUCO_REQUEST_ALREADY_SENT',
+          'Esta solicitud ya fue enviada.',
+        )
+      }
 
-  const [createdRequest] = await db
-    .insert(supportRequests)
-    .values({
-      requesterId: currentUser.id,
-      sourceMessageId: sourceMessage.id,
-      category: input.category,
-      subject: input.subject,
-      description: input.description,
-      desiredOutcome: input.desiredOutcome,
-      urgency: input.urgency,
+      const [insertedRequest] = await transaction
+        .insert(supportRequests)
+        .values({
+          requesterId: currentUser.id,
+          sourceMessageId: sourceMessage.id,
+          category: input.category,
+          subject: input.subject,
+          description: input.description,
+          desiredOutcome: input.desiredOutcome,
+          urgency: input.urgency,
+        })
+        .returning()
+      if (!insertedRequest)
+        throw new Error('Database did not return the DUCO support request')
+
+      await transaction.insert(supportRequestEvents).values({
+        requestId: insertedRequest.id,
+        actorId: currentUser.id,
+        type: 'created',
+        toStatus: insertedRequest.status,
+      })
+      return insertedRequest
     })
-    .returning()
-  if (!createdRequest)
-    throw new Error('Database did not return the DUCO support request')
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ApiError(
+        409,
+        'DUCO_REQUEST_ALREADY_SENT',
+        'Esta solicitud ya fue enviada.',
+      )
+    }
+    throw error
+  }
 
   const recipients = await db
     .select({ id: users.id })
@@ -980,7 +1232,10 @@ ducoRouter.post('/requests', async (request, response) => {
       }),
     ),
   )
-  response.status(201).json({ request: createdRequest })
+  const [requestWithTimeline] = await addSupportRequestTimelines([
+    createdRequest,
+  ])
+  response.status(201).json({ request: requestWithTimeline })
 })
 
 ducoRouter.get(
@@ -1014,8 +1269,9 @@ ducoRouter.get(
             .innerJoin(profiles, eq(profiles.userId, users.id))
             .where(inArray(users.id, personIds))
     const peopleById = new Map(people.map((person) => [person.id, person]))
+    const requestsWithTimeline = await addSupportRequestTimelines(requests)
     response.json({
-      requests: requests.map((item) => ({
+      requests: requestsWithTimeline.map((item) => ({
         ...item,
         requester: peopleById.get(item.requesterId) ?? null,
         assignedTo: item.assignedToId
@@ -1036,50 +1292,117 @@ ducoRouter.patch(
       'La solicitud no es válida.',
     )
     const input = parseBody(updateSupportRequestSchema, request.body)
-    const [currentRequest] = await db
-      .select()
-      .from(supportRequests)
-      .where(eq(supportRequests.id, requestId))
-      .limit(1)
-    if (!currentRequest)
-      throw new ApiError(
-        404,
-        'DUCO_REQUEST_NOT_FOUND',
-        'La solicitud no existe.',
-      )
+    const updatedRequest = await db.transaction(async (transaction) => {
+      const [currentRequest] = await transaction
+        .select()
+        .from(supportRequests)
+        .where(eq(supportRequests.id, requestId))
+        .limit(1)
+      if (!currentRequest)
+        throw new ApiError(
+          404,
+          'DUCO_REQUEST_NOT_FOUND',
+          'La solicitud no existe.',
+        )
 
-    if (currentRequest.status === input.status) {
-      response.json({ request: currentRequest })
-      return
-    }
+      const targetStatus = input.status ?? currentRequest.status
+      const changesStatus = targetStatus !== currentRequest.status
 
-    const [updatedRequest] = await db
-      .update(supportRequests)
-      .set({
-        status: input.status,
-        assignedToId: input.status === 'pending' ? null : currentUser.id,
-        updatedAt: new Date(),
+      if (
+        changesStatus &&
+        !validSupportRequestTransitions[currentRequest.status].includes(
+          targetStatus,
+        )
+      ) {
+        throw new ApiError(
+          409,
+          'DUCO_REQUEST_INVALID_TRANSITION',
+          `No se puede cambiar una solicitud ${currentRequest.status} a ${targetStatus}.`,
+        )
+      }
+      if (
+        (targetStatus === 'resolved' || targetStatus === 'rejected') &&
+        changesStatus &&
+        !input.note
+      ) {
+        throw new ApiError(
+          400,
+          'DUCO_REQUEST_RESPONSE_REQUIRED',
+          'Escribe una respuesta breve para cerrar la solicitud.',
+          { fields: { note: ['La respuesta es obligatoria para cerrar.'] } },
+        )
+      }
+      if (!changesStatus && !input.note) {
+        throw new ApiError(
+          400,
+          'DUCO_REQUEST_NO_CHANGES',
+          'La solicitud ya tiene ese estado. Agrega una respuesta para actualizarla.',
+        )
+      }
+
+      const updatedAt = new Date()
+      const [updated] = await transaction
+        .update(supportRequests)
+        .set({
+          status: targetStatus,
+          assignedToId:
+            targetStatus === 'pending'
+              ? null
+              : changesStatus
+                ? currentUser.id
+                : (currentRequest.assignedToId ?? currentUser.id),
+          updatedAt,
+        })
+        .where(
+          and(
+            eq(supportRequests.id, requestId),
+            eq(supportRequests.status, currentRequest.status),
+          ),
+        )
+        .returning()
+      if (!updated) {
+        throw new ApiError(
+          409,
+          'DUCO_REQUEST_CHANGED',
+          'La solicitud cambió mientras la revisabas. Vuelve a cargarla.',
+        )
+      }
+
+      await transaction.insert(supportRequestEvents).values({
+        requestId,
+        actorId: currentUser.id,
+        type: changesStatus ? 'status_changed' : 'response',
+        fromStatus: changesStatus ? currentRequest.status : null,
+        toStatus: targetStatus,
+        note: input.note ?? null,
+        createdAt: updatedAt,
       })
-      .where(eq(supportRequests.id, requestId))
-      .returning()
-    if (!updatedRequest)
-      throw new Error('Database did not return the updated DUCO request')
+      return updated
+    })
 
     const translatedStatus = {
       pending: 'pendiente',
       reviewing: 'en revisión',
       resolved: 'resuelta',
       rejected: 'rechazada',
-    }[input.status]
+    }[updatedRequest.status]
+    const noteSummary = input.note
+      ? ` Respuesta: ${safeNotificationSummary(input.note)}`
+      : ''
     await createNotification({
       userId: updatedRequest.requesterId,
       actorId: currentUser.id,
       type: 'support_request',
-      title: 'Solicitud actualizada',
-      body: `Tu solicitud ahora está ${translatedStatus}.`,
+      title: input.status ? 'Solicitud actualizada' : 'Nueva respuesta',
+      body: input.status
+        ? `Tu solicitud ahora está ${translatedStatus}.${noteSummary}`
+        : `El equipo respondió tu solicitud.${noteSummary}`,
       href: `duco-request:${updatedRequest.id}`,
       resourceId: updatedRequest.id,
     })
-    response.json({ request: updatedRequest })
+    const [requestWithTimeline] = await addSupportRequestTimelines([
+      updatedRequest,
+    ])
+    response.json({ request: requestWithTimeline })
   },
 )

@@ -1,0 +1,73 @@
+{
+  "name": "@konea/focusbuddy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cliente de escritorio FocusBuddy para las sesiones de estudio de Konea.",
+  "author": "Konea Capstone",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/companion-preload.cjs && node --check electron/offline.js && node --check electron/companion.js && node --check electron/app-url.cjs && node --check electron/preferences.cjs && node --check electron/session-state.cjs && node --check electron/window-options.cjs && node --check scripts/after-pack.cjs && node --check scripts/fuse-policy.cjs && node --check scripts/run-electron-builder.cjs && node --check scripts/verify-release.cjs",
+    "test": "node --test electron/*.test.cjs",
+    "dist": "node scripts/prepare-release-config.cjs && node scripts/run-electron-builder.cjs --win nsis && node scripts/verify-release.cjs",
+    "dist:dir": "node scripts/prepare-release-config.cjs && node scripts/run-electron-builder.cjs --win dir && node scripts/verify-release.cjs",
+    "verify:release": "node scripts/verify-release.cjs"
+  },
+  "devDependencies": {
+    "@electron/fuses": "2.1.3",
+    "electron": "44.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "cl.konea.focusbuddy",
+    "productName": "Konea FocusBuddy",
+    "artifactName": "Konea-FocusBuddy-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/app-url.cjs",
+      "electron/companion.css",
+      "electron/companion.html",
+      "electron/companion.js",
+      "electron/companion-preload.cjs",
+      "electron/main.cjs",
+      "electron/offline.html",
+      "electron/offline.js",
+      "electron/owl-shimeji-provisional.png",
+      "electron/preload.cjs",
+      "electron/preferences.cjs",
+      "electron/session-state.cjs",
+      "electron/window-options.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/focusbuddy.config.json",
+        "to": "focusbuddy.config.json"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "focusbuddy-icon.png"
+      }
+    ],
+    "afterPack": "scripts/after-pack.cjs",
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

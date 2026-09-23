@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -122,41 +123,66 @@ export function Notifications({
   const [actionError, setActionError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  const requestRef = useRef(0)
+  const hasLoadedRef = useRef(false)
+  const loadingRef = useRef(true)
+  const mutationCountRef = useRef(0)
 
-  const loadNotifications = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      setNotifications(await getNotifications())
-    } catch (loadError) {
-      setError(
-        readableError(loadError, 'No pudimos cargar tus notificaciones.'),
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const loadNotifications = useCallback(
+    async ({ silent = false } = {}) => {
+      const requestId = ++requestRef.current
+      if (!silent) {
+        loadingRef.current = true
+        setLoading(true)
+        setError('')
+      }
+      try {
+        const snapshot = await getNotifications()
+        if (requestId !== requestRef.current) return
+        setNotifications(snapshot.notifications)
+        onUnreadCountChange(snapshot.unreadCount)
+        setError('')
+      } catch (loadError) {
+        if (requestId !== requestRef.current || silent) return
+        setError(
+          readableError(loadError, 'No pudimos cargar tus notificaciones.'),
+        )
+      } finally {
+        if (requestId === requestRef.current) {
+          loadingRef.current = false
+          hasLoadedRef.current = true
+          setLoading(false)
+        }
+      }
+    },
+    [onUnreadCountChange],
+  )
 
   useEffect(() => {
-    let cancelled = false
-    getNotifications()
-      .then((items) => {
-        if (!cancelled) setNotifications(items)
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled) {
-          setError(
-            readableError(loadError, 'No pudimos cargar tus notificaciones.'),
-          )
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+    const initialTimer = window.setTimeout(() => void loadNotifications(), 0)
+    const refreshSilently = () => {
+      if (
+        document.visibilityState !== 'visible' ||
+        !hasLoadedRef.current ||
+        loadingRef.current ||
+        mutationCountRef.current > 0
+      ) {
+        return
+      }
+      void loadNotifications({ silent: true })
     }
-  }, [])
+    const refreshTimer = window.setInterval(refreshSilently, 5_000)
+    window.addEventListener('focus', refreshSilently)
+    document.addEventListener('visibilitychange', refreshSilently)
+
+    return () => {
+      requestRef.current += 1
+      window.clearTimeout(initialTimer)
+      window.clearInterval(refreshTimer)
+      window.removeEventListener('focus', refreshSilently)
+      document.removeEventListener('visibilitychange', refreshSilently)
+    }
+  }, [loadNotifications])
 
   const visibleNotifications = useMemo(
     () =>
@@ -177,24 +203,30 @@ export function Notifications({
   }
 
   const openNotification = async (notification: KoneaNotification) => {
-    if (busyId) return
+    if (busyId || mutationCountRef.current > 0) return
+    mutationCountRef.current += 1
+    requestRef.current += 1
     setBusyId(notification.id)
     setActionError('')
     const wasUnread = !notification.readAt
 
-    if (wasUnread) {
-      try {
-        await markNotificationRead(notification.id)
+    try {
+      if (wasUnread) {
+        const result = await markNotificationRead(notification.id)
         markAsReadLocally(notification.id)
-        onUnreadCountChange(Math.max(0, unreadCount - 1))
-      } catch (markError) {
+        onUnreadCountChange(result.unreadCount)
+      }
+    } catch (markError) {
+      if (wasUnread) {
         setActionError(
           readableError(markError, 'No pudimos marcar la notificación.'),
         )
       }
+    } finally {
+      mutationCountRef.current = Math.max(0, mutationCountRef.current - 1)
+      setBusyId(null)
     }
 
-    setBusyId(null)
     const destination = notificationDestination(notification)
     if (destination?.type === 'user' && destination.id) {
       onOpenUser(destination.id)
@@ -208,11 +240,13 @@ export function Notifications({
   }
 
   const markAll = async () => {
-    if (!unreadCount || markingAll) return
+    if (!unreadCount || markingAll || mutationCountRef.current > 0) return
+    mutationCountRef.current += 1
+    requestRef.current += 1
     setMarkingAll(true)
     setActionError('')
     try {
-      await markAllNotificationsRead()
+      const result = await markAllNotificationsRead()
       const now = new Date().toISOString()
       setNotifications((current) =>
         current.map((notification) => ({
@@ -220,12 +254,13 @@ export function Notifications({
           readAt: notification.readAt ?? now,
         })),
       )
-      onUnreadCountChange(0)
+      onUnreadCountChange(result.unreadCount)
     } catch (markError) {
       setActionError(
         readableError(markError, 'No pudimos marcar las notificaciones.'),
       )
     } finally {
+      mutationCountRef.current = Math.max(0, mutationCountRef.current - 1)
       setMarkingAll(false)
     }
   }

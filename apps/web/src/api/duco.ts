@@ -1,11 +1,7 @@
-import { ApiClientError } from './auth'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
+import { apiRequest } from './base'
 
 export type DucoMessageRole = 'user' | 'assistant'
+export type DucoAiProvider = 'local' | 'ollama' | 'openai'
 
 export type DucoRequestCategory =
   | 'section_change'
@@ -21,6 +17,8 @@ export type DucoRequestCategory =
 export type DucoRequestUrgency = 'low' | 'medium' | 'high'
 export type DucoRequestStatus =
   'pending' | 'reviewing' | 'resolved' | 'rejected'
+export type DucoSupportRequestEventType =
+  'created' | 'status_changed' | 'response'
 export type DucoTaskPriority = 'low' | 'medium' | 'high'
 export type DucoDraftStatus =
   | 'collecting_information'
@@ -73,6 +71,23 @@ export type DucoSupportRequest = DucoRequestDraft & {
   status: DucoRequestStatus
   createdAt: string
   updatedAt: string
+  timeline: DucoSupportRequestEvent[]
+}
+
+export type DucoSupportRequestEvent = {
+  id: string
+  type: DucoSupportRequestEventType
+  fromStatus: DucoRequestStatus | null
+  toStatus: DucoRequestStatus
+  note: string | null
+  createdAt: string
+  actor: {
+    id: string
+    username: string
+    displayName: string
+    avatarUrl: string | null
+    role: 'student' | 'professor' | 'moderator' | 'admin'
+  } | null
 }
 
 export type DucoMessage = {
@@ -100,66 +115,26 @@ export type DucoReply = {
   userMessage: DucoMessage
   assistantMessage: DucoMessage
   openTaskCount: number
-  aiProvider: 'local' | 'ollama' | 'openai'
-}
-
-type ErrorEnvelope = {
-  error?: {
-    code?: string
-    message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
-  }
-}
-
-async function ducoRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
-
-  if (response.status === 401) {
-    window.dispatchEvent(new Event('konea:session-expired'))
-  }
-
-  if (response.status === 204) return undefined as T
-
-  const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-
-  if (!response.ok) {
-    throw new ApiClientError(
-      response.status,
-      body.error?.code ?? 'REQUEST_FAILED',
-      body.error?.message ?? 'No pudimos completar la solicitud a DUCO.',
-      body.error?.details?.fields,
-    )
-  }
-
-  return body
+  aiProvider: DucoAiProvider
 }
 
 export async function getDucoMessages(signal?: AbortSignal) {
-  const response = await ducoRequest<{ messages: DucoMessage[] }>(
-    '/duco/messages',
-    { signal },
-  )
-  return response.messages
+  return apiRequest<{
+    messages: DucoMessage[]
+    openTaskCount: number
+    aiProvider: DucoAiProvider
+  }>('/duco/messages', { signal })
 }
 
 export async function sendDucoMessage(content: string) {
-  return ducoRequest<DucoReply>('/duco/messages', {
+  return apiRequest<DucoReply>('/duco/messages', {
     method: 'POST',
     body: JSON.stringify({ content }),
   })
 }
 
 export async function clearDucoMessages() {
-  return ducoRequest<{ deletedCount: number }>('/duco/messages', {
+  return apiRequest<{ deletedCount: number }>('/duco/messages', {
     method: 'DELETE',
   })
 }
@@ -168,7 +143,7 @@ export async function createDucoSupportRequest(
   sourceMessageId: string,
   draft: DucoRequestDraft,
 ) {
-  const response = await ducoRequest<{ request: DucoSupportRequest }>(
+  const response = await apiRequest<{ request: DucoSupportRequest }>(
     '/duco/requests',
     {
       method: 'POST',
@@ -179,7 +154,7 @@ export async function createDucoSupportRequest(
 }
 
 export async function getDucoSupportRequests(signal?: AbortSignal) {
-  const response = await ducoRequest<{ requests: DucoSupportRequest[] }>(
+  const response = await apiRequest<{ requests: DucoSupportRequest[] }>(
     '/duco/requests',
     { signal },
   )
@@ -187,14 +162,14 @@ export async function getDucoSupportRequests(signal?: AbortSignal) {
 }
 
 export async function getDucoDrafts(signal?: AbortSignal) {
-  const response = await ducoRequest<{ drafts: DucoDraft[] }>('/duco/drafts', {
+  const response = await apiRequest<{ drafts: DucoDraft[] }>('/duco/drafts', {
     signal,
   })
   return response.drafts
 }
 
 export async function cancelDucoDraft(draftId: string) {
-  const response = await ducoRequest<{ draft?: DucoDraft } | undefined>(
+  const response = await apiRequest<{ draft?: DucoDraft } | undefined>(
     `/duco/drafts/${encodeURIComponent(draftId)}`,
     { method: 'DELETE' },
   )
@@ -208,7 +183,7 @@ export async function createDucoTask(
   },
   draft: DucoTaskDraft,
 ) {
-  const response = await ducoRequest<{ task: { id: string } }>('/duco/tasks', {
+  const response = await apiRequest<{ task: { id: string } }>('/duco/tasks', {
     method: 'POST',
     body: JSON.stringify({
       ...(reference.draftId

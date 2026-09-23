@@ -26,30 +26,26 @@ export function SearchableSelect({
   onChange,
 }: SearchableSelectProps) {
   const id = useId()
-  const [query, setQuery] = useState(value ?? '')
+  const [draft, setDraft] = useState(value ?? '')
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
 
   const filtered = useMemo(() => {
-    const search = normalize(query.trim())
+    const search = normalize(draft.trim())
     if (!search) return options.slice(0, 12)
     return options
       .filter((option) => normalize(option).includes(search))
       .slice(0, 12)
-  }, [options, query])
+  }, [draft, options])
 
   const select = (option: string) => {
-    setQuery(option)
+    setDraft(option)
     onChange(option)
     setOpen(false)
   }
 
-  const finishEditing = () => {
-    const exact = options.find(
-      (option) => normalize(option) === normalize(query.trim()),
-    )
-    if (exact) select(exact)
-    else setQuery(value ?? '')
+  const restoreCommittedValue = () => {
+    setDraft(value ?? '')
     setOpen(false)
   }
 
@@ -70,18 +66,26 @@ export function SearchableSelect({
               ? `${id}-option-${activeIndex}`
               : undefined
           }
-          value={query}
+          value={open ? draft : (value ?? '')}
           placeholder={placeholder}
           autoComplete="off"
           required={required}
           disabled={disabled}
-          onFocus={() => setOpen(true)}
-          onBlur={() => window.setTimeout(finishEditing, 120)}
+          onFocus={() => {
+            setDraft(value ?? '')
+            setOpen(true)
+          }}
+          onClick={() => {
+            if (!open) {
+              setDraft(value ?? '')
+              setOpen(true)
+            }
+          }}
+          onBlur={restoreCommittedValue}
           onChange={(event) => {
-            setQuery(event.target.value)
+            setDraft(event.target.value)
             setOpen(true)
             setActiveIndex(0)
-            if (!event.target.value) onChange(null)
           }}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
@@ -97,8 +101,8 @@ export function SearchableSelect({
               event.preventDefault()
               select(filtered[activeIndex])
             } else if (event.key === 'Escape') {
-              setQuery(value ?? '')
-              setOpen(false)
+              event.preventDefault()
+              restoreCommittedValue()
             }
           }}
         />
@@ -108,8 +112,9 @@ export function SearchableSelect({
             aria-label={`Limpiar ${label.toLowerCase()}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              setQuery('')
+              setDraft('')
               onChange(null)
+              setOpen(false)
             }}
           >
             ×

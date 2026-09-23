@@ -1,9 +1,4 @@
-import { ApiClientError } from './auth'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
+import { apiRequest } from './base'
 
 export type NotificationType =
   | 'connection'
@@ -32,71 +27,34 @@ export type KoneaNotification = {
   } | null
 }
 
-type ErrorEnvelope = {
-  error?: {
-    code?: string
-    message?: string
-    details?: {
-      fields?: Record<string, string[] | undefined>
-    }
-  }
-}
-
-async function notificationRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
-
-  if (response.status === 401) {
-    window.dispatchEvent(new Event('konea:session-expired'))
-  }
-
-  if (response.status === 204) return undefined as T
-
-  const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-
-  if (!response.ok) {
-    throw new ApiClientError(
-      response.status,
-      body.error?.code ?? 'REQUEST_FAILED',
-      body.error?.message ?? 'No pudimos completar la solicitud.',
-      body.error?.details?.fields,
-    )
-  }
-
-  return body
-}
-
 export async function getNotifications() {
-  const response = await notificationRequest<{
+  return apiRequest<{
     notifications: KoneaNotification[]
+    unreadCount: number
   }>('/notifications')
-  return response.notifications
 }
 
 export async function getUnreadNotificationCount() {
-  const response = await notificationRequest<{ unreadCount: number }>(
+  const response = await apiRequest<{ unreadCount: number }>(
     '/notifications/unread-count',
   )
   return response.unreadCount
 }
 
 export async function markNotificationRead(notificationId: string) {
-  const response = await notificationRequest<{
+  return apiRequest<{
     notification?: KoneaNotification
+    unreadCount: number
   }>(`/notifications/${encodeURIComponent(notificationId)}/read`, {
     method: 'PATCH',
   })
-  return response?.notification
 }
 
 export async function markAllNotificationsRead() {
-  await notificationRequest<unknown>('/notifications/read-all', {
-    method: 'POST',
-  })
+  return apiRequest<{ updated: boolean; unreadCount: number }>(
+    '/notifications/read-all',
+    {
+      method: 'POST',
+    },
+  )
 }

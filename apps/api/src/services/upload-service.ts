@@ -2,14 +2,12 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { uploadedFiles } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
-
-const localUploadPattern =
-  /^\/api\/v1\/uploads\/files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:gif|jpe?g|pdf|png|webp))$/
+import { localUploadPathPattern } from '../http/url-schemas.js'
 
 export function getLocalUploadName(value: string) {
   if (!value.startsWith('/api/v1/uploads/files/')) return null
 
-  const match = localUploadPattern.exec(value)
+  const match = localUploadPathPattern.exec(value)
   if (!match?.[1]) {
     throw new ApiError(
       400,

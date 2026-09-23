@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [switch]$PrepareOnly
+  [switch]$PrepareOnly,
+  [switch]$FocusBuddy
 )
 
 $ErrorActionPreference = 'Stop'
@@ -366,15 +367,42 @@ function Stop-ProcessTree {
   }
 }
 
+function Start-FocusBuddyDesktop {
+  $ElectronPath = Join-Path $ProjectRoot 'node_modules\electron\dist\electron.exe'
+  $FocusBuddyDirectory = Join-Path $ProjectRoot 'apps\focusbuddy'
+  if (-not (Test-Path -LiteralPath $ElectronPath -PathType Leaf)) {
+    throw 'Falta Electron para FocusBuddy. Ejecuta npm install y vuelve a intentarlo.'
+  }
+  if (-not (Test-Path -LiteralPath $FocusBuddyDirectory -PathType Container)) {
+    throw 'No se encontro el cliente apps\focusbuddy.'
+  }
+
+  # Algunas terminales de desarrollo definen ELECTRON_RUN_AS_NODE; el cliente
+  # gráfico debe ejecutarse sin esa variable.
+  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+  $env:FOCUSBUDDY_DATA_DIR = Join-Path $ProjectRoot '.local\focusbuddy-desktop'
+  return Start-Process `
+    -FilePath $ElectronPath `
+    -ArgumentList @(
+      "`"$FocusBuddyDirectory`"",
+      '--app-url=http://localhost:5173/'
+    ) `
+    -WorkingDirectory $ProjectRoot `
+    -PassThru
+}
+
 try {
   Push-Location -LiteralPath $ProjectRoot
+  # Mantiene también la caché de npm en el disco del proyecto. Es útil cuando
+  # Konea vive en D: y evita volver a llenar el perfil de Windows en C:.
+  $env:npm_config_cache = Join-Path $ProjectRoot '.npm-cache'
 
   Write-Host ''
   Write-Host '==================================================' -ForegroundColor Magenta
   Write-Host '       Konea Rebirth - Entorno de desarrollo' -ForegroundColor Magenta
   Write-Host '==================================================' -ForegroundColor Magenta
 
-  Write-Step -Number 1 -Total 7 -Message 'Validando configuracion y herramientas'
+  Write-Step -Number 1 -Total 8 -Message 'Validando configuracion y herramientas'
   if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
     if (-not (Test-Path -LiteralPath $EnvExampleFile -PathType Leaf)) {
       throw 'Faltan .env y .env.example.'
@@ -417,22 +445,22 @@ try {
       -FailureMessage 'No se pudieron instalar las dependencias'
   }
 
-  Write-Step -Number 2 -Total 7 -Message 'Comprobando Docker Desktop'
+  Write-Step -Number 2 -Total 8 -Message 'Comprobando Docker Desktop'
   Wait-ForDocker -DockerPath $DockerPath
 
-  Write-Step -Number 3 -Total 7 -Message 'Levantando PostgreSQL y esperando su healthcheck'
+  Write-Step -Number 3 -Total 8 -Message 'Levantando PostgreSQL y esperando su healthcheck'
   Invoke-NativeCommand `
     -FilePath $NpmPath `
     -Arguments @('run', 'db:up') `
     -FailureMessage 'PostgreSQL no pudo iniciarse'
 
-  Write-Step -Number 4 -Total 7 -Message 'Aplicando migraciones pendientes'
+  Write-Step -Number 4 -Total 8 -Message 'Aplicando migraciones pendientes'
   Invoke-NativeCommand `
     -FilePath $NpmPath `
     -Arguments @('run', 'db:migrate') `
     -FailureMessage 'Las migraciones no pudieron aplicarse'
 
-  Write-Step -Number 5 -Total 7 -Message 'Preparando cuenta administrativa local'
+  Write-Step -Number 5 -Total 8 -Message 'Preparando cuenta administrativa local'
   $NodeEnvironment = Get-DotEnvValue -Name 'NODE_ENV'
   if ([string]::IsNullOrWhiteSpace($NodeEnvironment) -or $NodeEnvironment -eq 'development') {
     Invoke-NativeCommand `
@@ -444,7 +472,33 @@ try {
     Write-Host "Cuenta local omitida en NODE_ENV=$NodeEnvironment."
   }
 
-  Write-Step -Number 6 -Total 7 -Message 'Preparando el proveedor de IA de DUCO'
+  Write-Step -Number 6 -Total 8 -Message 'Preparando contenido social de demostracion'
+  if ([string]::IsNullOrWhiteSpace($NodeEnvironment) -or $NodeEnvironment -eq 'development') {
+    $SeedSocialDemo = Get-DotEnvValue -Name 'SEED_SOCIAL_DEMO'
+    if ([string]::IsNullOrWhiteSpace($SeedSocialDemo)) {
+      $SeedSocialDemo = 'true'
+    }
+
+    switch ($SeedSocialDemo.ToLowerInvariant()) {
+      'true' {
+        Invoke-NativeCommand `
+          -FilePath $NpmPath `
+          -Arguments @('run', 'db:seed:social') `
+          -FailureMessage 'No se pudo preparar el contenido social de demostracion'
+      }
+      'false' {
+        Write-Host 'Contenido social de demostracion omitido por configuracion.'
+      }
+      default {
+        throw "SEED_SOCIAL_DEMO='$SeedSocialDemo' no es valido. Usa true o false."
+      }
+    }
+  }
+  else {
+    Write-Host "Contenido social de demostracion omitido en NODE_ENV=$NodeEnvironment."
+  }
+
+  Write-Step -Number 7 -Total 8 -Message 'Preparando el proveedor de IA de DUCO'
   $Provider = Get-DotEnvValue -Name 'DUCO_AI_PROVIDER'
   if ($null -eq $Provider) {
     if ($NodeEnvironment -eq 'development' -or [string]::IsNullOrWhiteSpace($NodeEnvironment)) {
@@ -462,45 +516,61 @@ try {
 
   switch ($Provider) {
     'ollama' {
-      $env:OLLAMA_HOST = '127.0.0.1:11434'
-      $OllamaBaseUrl = Get-DotEnvValue -Name 'OLLAMA_BASE_URL'
-      if ([string]::IsNullOrWhiteSpace($OllamaBaseUrl)) {
-        $OllamaBaseUrl = 'http://127.0.0.1:11434'
-      }
-      $OllamaPath = Get-OllamaPath
-      Wait-ForOllama -OllamaPath $OllamaPath -BaseUrl $OllamaBaseUrl
+      try {
+        $env:OLLAMA_HOST = '127.0.0.1:11434'
+        $OllamaBaseUrl = Get-DotEnvValue -Name 'OLLAMA_BASE_URL'
+        if ([string]::IsNullOrWhiteSpace($OllamaBaseUrl)) {
+          $OllamaBaseUrl = 'http://127.0.0.1:11434'
+        }
+        $OllamaPath = Get-OllamaPath
+        Wait-ForOllama -OllamaPath $OllamaPath -BaseUrl $OllamaBaseUrl
 
-      $Model = Get-DotEnvValue -Name 'OLLAMA_MODEL'
-      if ([string]::IsNullOrWhiteSpace($Model)) {
-        $Model = 'qwen3.5:4b'
-      }
+        $Model = Get-DotEnvValue -Name 'OLLAMA_MODEL'
+        if ([string]::IsNullOrWhiteSpace($Model)) {
+          $Model = 'qwen3.5:4b'
+        }
 
-      if (-not (Test-OllamaModelAvailable -Model $Model -BaseUrl $OllamaBaseUrl)) {
-        throw "Falta el modelo $Model. Ejecuta 'ollama pull $Model' una sola vez y vuelve a iniciar Konea."
+        if (-not (Test-OllamaModelAvailable -Model $Model -BaseUrl $OllamaBaseUrl)) {
+          throw "Falta el modelo $Model. Ejecuta 'ollama pull $Model' cuando quieras volver a usar Ollama."
+        }
+        Write-Host "IA local lista: Ollama / $Model" -ForegroundColor Green
       }
-      Write-Host "IA local lista: Ollama / $Model" -ForegroundColor Green
+      catch {
+        Write-Warning ("Ollama no esta disponible: {0}" -f $_.Exception.Message)
+        Write-Host 'Konea continuara con las reglas locales de DUCO.' -ForegroundColor Yellow
+        $Provider = 'local'
+        $env:DUCO_AI_PROVIDER = 'local'
+      }
     }
     'openai' {
-      $OpenAiKey = Get-DotEnvValue -Name 'OPENAI_API_KEY'
-      if ([string]::IsNullOrWhiteSpace($OpenAiKey)) {
-        throw 'DUCO_AI_PROVIDER=openai requiere OPENAI_API_KEY en .env.'
-      }
+      try {
+        $OpenAiKey = Get-DotEnvValue -Name 'OPENAI_API_KEY'
+        if ([string]::IsNullOrWhiteSpace($OpenAiKey)) {
+          throw 'DUCO_AI_PROVIDER=openai requiere OPENAI_API_KEY en .env.'
+        }
 
-      $OpenAiModel = Get-DotEnvValue -Name 'OPENAI_MODEL'
-      if ([string]::IsNullOrWhiteSpace($OpenAiModel)) {
-        $OpenAiModel = 'gpt-5.6-luna'
-      }
+        $OpenAiModel = Get-DotEnvValue -Name 'OPENAI_MODEL'
+        if ([string]::IsNullOrWhiteSpace($OpenAiModel)) {
+          $OpenAiModel = 'gpt-5.6-luna'
+        }
 
-      $OpenAiBaseUrl = Get-DotEnvValue -Name 'OPENAI_BASE_URL'
-      if ([string]::IsNullOrWhiteSpace($OpenAiBaseUrl)) {
-        $OpenAiBaseUrl = 'https://api.openai.com/v1'
-      }
+        $OpenAiBaseUrl = Get-DotEnvValue -Name 'OPENAI_BASE_URL'
+        if ([string]::IsNullOrWhiteSpace($OpenAiBaseUrl)) {
+          $OpenAiBaseUrl = 'https://api.openai.com/v1'
+        }
 
-      Write-Host "Verificando acceso a OpenAI / $OpenAiModel..."
-      Assert-OpenAiConfiguration `
-        -ApiKey $OpenAiKey `
-        -Model $OpenAiModel `
-        -BaseUrl $OpenAiBaseUrl
+        Write-Host "Verificando acceso a OpenAI / $OpenAiModel..."
+        Assert-OpenAiConfiguration `
+          -ApiKey $OpenAiKey `
+          -Model $OpenAiModel `
+          -BaseUrl $OpenAiBaseUrl
+      }
+      catch {
+        Write-Warning ("OpenAI no esta disponible: {0}" -f $_.Exception.Message)
+        Write-Host 'Konea continuara con las reglas locales de DUCO.' -ForegroundColor Yellow
+        $Provider = 'local'
+        $env:DUCO_AI_PROVIDER = 'local'
+      }
     }
     'local' {
       Write-Host 'DUCO usara su modo local deterministico; no requiere un servicio externo.' -ForegroundColor Green
@@ -510,7 +580,7 @@ try {
     }
   }
 
-  Write-Step -Number 7 -Total 7 -Message 'Iniciando API y web'
+  Write-Step -Number 8 -Total 8 -Message 'Iniciando API y web'
   $ApiPortText = Get-DotEnvValue -Name 'API_PORT'
   if ([string]::IsNullOrWhiteSpace($ApiPortText)) {
     $ApiPortText = '3000'
@@ -537,6 +607,10 @@ try {
     Write-Host 'Konea ya estaba en ejecucion y ambos servicios responden correctamente.' -ForegroundColor Green
     Write-Host "Web: $WebUrl"
     Write-Host "API: $ApiHealthUrl"
+    if ($FocusBuddy) {
+      Start-FocusBuddyDesktop | Out-Null
+      Write-Host 'FocusBuddy se abrio como aplicacion de escritorio.' -ForegroundColor Green
+    }
     return
   }
 
@@ -567,6 +641,7 @@ try {
 
   $ApiProcess = $null
   $WebProcess = $null
+  $FocusBuddyProcess = $null
   try {
     $ApiEntryPoint = Join-Path $ProjectRoot 'node_modules\tsx\dist\cli.mjs'
     $WebEntryPoint = Join-Path $ProjectRoot 'node_modules\vite\bin\vite.js'
@@ -627,6 +702,10 @@ try {
     Write-Host 'Konea esta lista.' -ForegroundColor Green
     Write-Host "Web: $WebUrl"
     Write-Host "API: $ApiHealthUrl"
+    if ($FocusBuddy) {
+      $FocusBuddyProcess = Start-FocusBuddyDesktop
+      Write-Host 'FocusBuddy se abrio como aplicacion de escritorio.' -ForegroundColor Green
+    }
     Write-Host ''
 
     $HealthCheckCounter = 0
@@ -658,6 +737,7 @@ try {
     }
   }
   finally {
+    Stop-ProcessTree -Process $FocusBuddyProcess
     Stop-ProcessTree -Process $ApiProcess
     Stop-ProcessTree -Process $WebProcess
   }

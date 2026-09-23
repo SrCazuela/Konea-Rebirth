@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  calendarDateFloorInTimeZone,
+  fetchAvaCalendar,
   parseIcsCalendar,
   validateAvaCalendarUrl,
 } from './ics-calendar-service.js'
@@ -26,6 +28,10 @@ END:VCALENDAR\r
 `
 
 describe('AVA ICS calendar parsing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('parses timed and all-day Blackboard events without exposing the feed URL', () => {
     const events = parseIcsCalendar(calendar)
 
@@ -71,5 +77,88 @@ describe('AVA ICS calendar parsing', () => {
         'https://campusvirtual.duoc.cl/webapps/calendar/calendarFeed/token/learn.ics?redirect=1',
       ),
     ).toThrow('calendario privado generado por AVA Duoc')
+  })
+
+  it('rejects incomplete containers and ignores invalid or cancelled events', () => {
+    expect(() =>
+      parseIcsCalendar('BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nEND:VCALENDAR'),
+    ).toThrow('calendario válido')
+    expect(() =>
+      parseIcsCalendar('contenido previo BEGIN:VCALENDAR\r\nEND:VCALENDAR'),
+    ).toThrow('calendario válido')
+    expect(() =>
+      parseIcsCalendar('BEGIN:VCALENDAR\r\nEND:VEVENT\r\nEND:VCALENDAR'),
+    ).toThrow('calendario válido')
+    expect(() =>
+      parseIcsCalendar(
+        'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\nEND:VCALENDAR',
+      ),
+    ).toThrow('calendario válido')
+
+    const guardedCalendar = `BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:invalid-date\r
+DTSTART;VALUE=DATE:20300230\r
+SUMMARY:Fecha imposible\r
+END:VEVENT\r
+BEGIN:VEVENT\r
+UID:cancelled\r
+DTSTART:20300115T150000Z\r
+STATUS:CANCELLED\r
+SUMMARY:Actividad cancelada\r
+END:VEVENT\r
+BEGIN:VEVENT\r
+UID:reversed\r
+DTSTART:20300115T160000Z\r
+DTEND:20300115T150000Z\r
+SUMMARY:Intervalo invertido\r
+END:VEVENT\r
+BEGIN:VEVENT\r
+UID:valid\r
+DTSTART:20300116T150000Z\r
+SUMMARY:Actividad\u0000 válida\r
+END:VEVENT\r
+END:VCALENDAR\r
+`
+    expect(parseIcsCalendar(guardedCalendar)).toEqual([
+      expect.objectContaining({ title: 'Actividad válida' }),
+    ])
+  })
+
+  it('represents the current calendar date independently of the UTC rollover', () => {
+    expect(
+      calendarDateFloorInTimeZone(
+        new Date('2026-09-09T00:30:00.000Z'),
+        'America/Santiago',
+      ).toISOString(),
+    ).toBe('2026-09-08T00:00:00.000Z')
+  })
+
+  it('rejects login HTML and caps streamed responses before parsing', async () => {
+    const calendarUrl =
+      'https://campusvirtual.duoc.cl/webapps/calendar/calendarFeed/test_token/learn.ics'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response('<html>BEGIN:VCALENDAR</html>', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      ),
+    )
+    await expect(fetchAvaCalendar(calendarUrl)).rejects.toMatchObject({
+      code: 'AVA_CALENDAR_REJECTED',
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response('x'.repeat(2 * 1024 * 1024 + 1), {
+          headers: { 'Content-Type': 'text/calendar' },
+        }),
+      ),
+    )
+    await expect(fetchAvaCalendar(calendarUrl)).rejects.toMatchObject({
+      code: 'AVA_CALENDAR_TOO_LARGE',
+    })
   })
 })

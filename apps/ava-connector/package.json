@@ -1,0 +1,14 @@
+{
+  "name": "@konea/ava-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Extensión local y explícita para exportar el DOM visible de AVA a Konea.",
+  "type": "commonjs",
+  "scripts": {
+    "lint": "oxlint .",
+    "test": "node --test parser.test.cjs"
+  },
+  "devDependencies": {
+    "oxlint": "^1.79.0"
+  }
+}

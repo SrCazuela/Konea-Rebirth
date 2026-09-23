@@ -1,10 +1,5 @@
-import { ApiClientError } from './auth'
 import type { AvaCalendarEvent } from './ava-calendar'
-
-const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(
-  /\/$/,
-  '',
-)
+import { apiRequest } from './base'
 
 export type AcademicCourse = {
   id: string
@@ -13,7 +8,7 @@ export type AcademicCourse = {
   code: string | null
   section: string | null
   term: string | null
-  source: 'manual' | 'ava'
+  source: 'manual' | 'ava' | 'ava_extension'
   active: boolean
   createdAt: string
   updatedAt: string
@@ -33,35 +28,14 @@ export type AcademicTask = {
 
 export type AcademicDashboard = {
   courses: AcademicCourse[]
+  archivedCourses: AcademicCourse[]
   tasks: AcademicTask[]
   events: AvaCalendarEvent[]
   sync: { lastSyncedAt: string; lastEventCount: number } | null
 }
 
-type ErrorEnvelope = { error?: { code?: string; message?: string } }
-
-async function academicRequest<T>(path = '', init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}/academic${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
-  if (response.status === 401)
-    window.dispatchEvent(new Event('konea:session-expired'))
-  if (response.status === 204) return undefined as T
-  const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
-  if (!response.ok) {
-    throw new ApiClientError(
-      response.status,
-      body.error?.code ?? 'ACADEMIC_REQUEST_FAILED',
-      body.error?.message ?? 'No pudimos completar la acción académica.',
-    )
-  }
-  return body
-}
+const academicRequest = <T>(path = '', init?: RequestInit) =>
+  apiRequest<T>(`/academic${path}`, init)
 
 export function getAcademicDashboard() {
   return academicRequest<AcademicDashboard>()
@@ -78,6 +52,28 @@ export async function createAcademicCourse(input: {
     body: JSON.stringify(input),
   })
   return result.course
+}
+
+export async function updateAcademicCourse(
+  courseId: string,
+  input: {
+    name?: string
+    code?: string
+    section?: string
+    term?: string
+  },
+) {
+  const result = await academicRequest<{ course: AcademicCourse }>(
+    `/courses/${encodeURIComponent(courseId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  )
+  return result.course
+}
+
+export function deactivateAcademicCourse(courseId: string) {
+  return academicRequest<void>(`/courses/${encodeURIComponent(courseId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function createAcademicTask(input: {
