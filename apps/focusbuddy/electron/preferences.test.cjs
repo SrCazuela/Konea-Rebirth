@@ -12,6 +12,7 @@ describe('FocusBuddy desktop preferences', () => {
     assert.deepEqual(
       normalizePreferences({
         companionEnabled: 'yes',
+        companionCharacter: 'dragon',
         companionScale: 'huge',
         companionPosition: { x: '10', y: 20 },
       }),
@@ -22,12 +23,14 @@ describe('FocusBuddy desktop preferences', () => {
   it('normalizes a valid companion position and supported scale', () => {
     const preferences = normalizePreferences({
       companionEnabled: false,
+      companionCharacter: 'chibi',
       companionScale: 'large',
       companionPosition: { x: 10.4, y: -20.7 },
       notificationsEnabled: true,
     })
 
     assert.equal(preferences.companionEnabled, false)
+    assert.equal(preferences.companionCharacter, 'chibi')
     assert.equal(preferences.companionScale, 'large')
     assert.deepEqual(preferences.companionPosition, { x: 10, y: -21 })
     assert.equal(preferences.notificationsEnabled, true)
@@ -41,5 +44,14 @@ describe('FocusBuddy desktop preferences', () => {
 
     assert.equal(preferences.compactMode, true)
     assert.equal(Object.hasOwn(preferences, 'arbitrarySecret'), false)
+  })
+
+  it('uses Kuco for existing preference files without a character choice', () => {
+    const preferences = normalizePreferences({
+      companionEnabled: true,
+      companionScale: 'small',
+    })
+
+    assert.equal(preferences.companionCharacter, 'kuco')
   })
 })

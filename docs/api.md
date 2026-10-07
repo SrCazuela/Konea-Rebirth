@@ -592,12 +592,16 @@ reactiva la que estaba desactivada o responde `409` si ya está activa. Una
 materia AVA se actualiza exclusivamente mediante sincronización.
 
 Las capturas del conector experimental aceptan como máximo 100 materias y 250
-actividades. La página y cada enlace deben ser HTTPS del host exacto
+tareas detectadas. El arreglo v1 `activities` contiene exclusivamente elementos
+importables; una publicación del flujo sin vencimiento explícito se muestra solo
+en el popup y no forma parte del archivo. La página y cada enlace deben ser HTTPS del host exacto
 `campusvirtual.duoc.cl`; consulta, fragmento y credenciales URL se descartan. La
 vista previa vence en 24 horas. Confirmar crea materias `ava_extension` y tareas
 pendientes con identificador externo único; no desactiva ni borra elementos que
-falten en capturas posteriores. El archivo entra por la SPA autenticada, por lo
-que no existe un endpoint de extensión exento de CORS o `trustedWriteOrigin`.
+falten en capturas posteriores. Reimportar una materia `ava_extension` archivada
+reactiva la misma fila; las materias manuales homónimas permanecen intactas. El
+archivo entra por la SPA autenticada, por lo que no existe un endpoint de
+extensión exento de CORS o `trustedWriteOrigin`.
 
 Un pendiente académico admite materia propia activa o `null`, título de 2–160,
 descripción de hasta 1.000, `dueAt` ISO con offset o `null`, prioridad

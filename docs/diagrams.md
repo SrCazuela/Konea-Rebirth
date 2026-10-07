@@ -13,7 +13,7 @@ flowchart LR
 
   subgraph clients[Clientes]
     web[Web React + Vite]
-    desktop[FocusBuddy Electron]
+    desktop[FocusBuddy Electron<br/>desktop.html local]
   end
 
   subgraph backend[Servicios de Konea]
@@ -31,8 +31,8 @@ flowchart LR
   student --> web
   student --> desktop
   staff --> web
-  desktop -->|carga la misma SPA| web
   web -->|JSON + cookie HttpOnly| api
+  desktop -->|IPC allowlist + cookie HttpOnly| api
   api --> db
   api --> files
   api -->|DUCO, según configuración| openai
@@ -40,9 +40,11 @@ flowchart LR
   api -->|importación explícita| ava
 ```
 
-El cliente Electron no contiene lógica académica duplicada: reutiliza la SPA y
-la API. Por ello una sesión iniciada en escritorio aparece en el dashboard web
-y mantiene una sola fuente de verdad en PostgreSQL.
+El cliente Electron no carga la SPA: incorpora una interfaz local con login,
+estudio, progreso, ajustes y cuenta. Solo el proceso principal llama a una lista
+cerrada de rutas de la API y conserva la cookie en su sesión persistente. Por
+ello una sesión iniciada en escritorio aparece en el dashboard web y mantiene
+una sola fuente de verdad en PostgreSQL.
 
 ## Modelo entidad-relación resumido
 
@@ -107,6 +109,11 @@ sequenceDiagram
   participant F as FocusBuddy
   participant A as API Konea
   participant D as PostgreSQL
+
+  U->>F: Inicia sesión en la interfaz local
+  F->>A: POST /auth/login mediante IPC allowlist
+  A->>D: Valida credenciales y crea sesión
+  A-->>F: Cookie HttpOnly en la sesión Electron
 
   U->>F: Selecciona método, materia y tarea
   F->>A: POST /study/sessions + clientRequestId

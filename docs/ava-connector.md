@@ -20,20 +20,27 @@ documentados. El enlace ICS sigue disponible como respaldo.
    pestaña activa.
 3. La extensión comprueba el host exacto, elimina credenciales, consulta y
    fragmento de las URLs, recorre nodos visibles y muestra una primera selección
-   local.
+   local. En **Actividad**, separa las publicaciones recientes informativas de
+   las tareas que declaran un vencimiento.
 4. Al confirmar, descarga `konea-ava-AAAA-MM-DD.json`. No realiza ninguna llamada
    a Konea.
 5. En Konea, el estudiante arrastra o selecciona el archivo. La API valida origen,
    versión, tamaños, URLs y unicidad, y guarda una vista previa por 24 horas.
-6. La interfaz compara materias y actividades con PostgreSQL. El estudiante
+6. La interfaz compara materias y tareas con vencimiento con PostgreSQL. El estudiante
    vuelve a seleccionar y pulsa **Confirmar e importar**.
-7. La API crea materias con origen `ava_extension` y actividades como pendientes
-   académicos. Repetir la misma captura devuelve el resultado existente y no
-   duplica datos.
+7. La API crea materias con origen `ava_extension` y las tareas seleccionadas
+   como pendientes académicos. Las publicaciones recientes son efímeras y no
+   salen del popup. Repetir la misma captura devuelve el resultado existente y
+   no duplica datos.
 
 Una captura posterior nunca desactiva materias ausentes ni elimina pendientes.
 El estudiante puede editar o archivar lo importado por la extensión. La
 sincronización ICS solo administra materias con origen `ava`.
+
+Si se vuelve a importar una materia `ava_extension` archivada, la vista previa
+la identifica como reactivable y la confirmación reutiliza la misma fila con sus
+metadatos actualizados. Una materia manual homónima nunca se convierte ni se
+sobrescribe desde este flujo.
 
 ## Permisos MV3
 

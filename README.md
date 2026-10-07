@@ -37,9 +37,11 @@ El repositorio implementa estos dominios:
 - **Organización académica:** calendario AVA importado mediante un enlace ICS,
   materias y próximos pendientes editables, vinculables a sesiones de estudio.
 - **FocusBuddy:** centro de concentración disponible dentro de la web y como
-  cliente Electron. Incluye Pomodoro, Pomodoro extendido, trabajo profundo,
-  Flowtime y tiempos personalizados, pausa/reanudación, historial, rachas y
-  paneles por día y asignatura. El avatar animado actual es provisional.
+  cliente Electron independiente. Incluye inicio de sesión, Pomodoro, Pomodoro
+  extendido, trabajo profundo, Flowtime y tiempos personalizados,
+  pausa/reanudación, historial, rachas y paneles por día y asignatura. El
+  escritorio usa derivados transparentes de los sprites oficiales del equipo y
+  preserva los originales; la vista web todavía usa el avatar provisional.
 
 La API contiene el alcance completo anterior que se decidió rescatar. No se
 copiaron secretos, adaptadores rotos ni controles que en el proyecto legacy eran
@@ -65,7 +67,7 @@ Konea-Rebirth/
 ├── apps/
 │   ├── api/                 # API REST, reglas, esquema y migraciones
 │   ├── web/                 # cliente React responsive
-│   └── focusbuddy/          # shell Electron para el espacio de estudio
+│   └── focusbuddy/          # aplicación Electron local para el espacio de estudio
 ├── docs/
 │   ├── api.md               # contratos HTTP
 │   ├── architecture.md      # decisiones y flujos técnicos
@@ -108,15 +110,16 @@ reconoce como un estado correcto en vez de fallar por los puertos ocupados.
 Si solo la API o la web quedó activa, reutiliza el servicio sano y levanta el
 que falta.
 
-Para iniciar los mismos servicios y abrir además FocusBuddy como aplicación de
-escritorio, usa `iniciar-focusbuddy.bat`. Es equivalente a:
+Para preparar PostgreSQL, migraciones y la API y abrir FocusBuddy como
+aplicación de escritorio, usa `iniciar-focusbuddy.bat`. Es equivalente a:
 
 ```powershell
 .\iniciar.bat -FocusBuddy
 ```
 
-El cliente espera hasta que API y web respondan antes de abrirse. Conserva su
-sesión en un perfil propio de Electron, separado de la sesión del navegador.
+El modo `-FocusBuddy` no inicia Vite ni la web: espera solo a que la API responda
+y abre la interfaz local `desktop.html`. Conserva su cookie de sesión en un
+perfil propio de Electron, separado de la sesión del navegador.
 
 Para preparar Docker, la base de datos, las migraciones, la cuenta de desarrollo
 y el proveedor de IA sin iniciar la API ni la web, usa:
@@ -138,6 +141,15 @@ Internet y conservan su atribución en
 usan rostros reales como identidades ficticias. Configura
 `SEED_SOCIAL_DEMO=false` si necesitas una base local vacía.
 
+También se prepara un escenario Capstone con conexiones, chats, mensajes con
+estados de lectura, solicitudes y reportes para el panel administrativo,
+tareas académicas y siete días de sesiones de FocusBuddy. El seed es
+idempotente y conserva las tareas, solicitudes y conversaciones que modifiques
+durante la demostración; únicamente desplaza las sesiones históricas de
+FocusBuddy para mantener una racha reciente de siete días. Puedes desactivarlo con
+`SEED_CAPSTONE_DEMO=false`; `CAPSTONE_DEMO_USERNAME` permite elegir la cuenta
+estudiantil que recibirá los datos personales del escenario.
+
 El modelo de Ollama no se descarga silenciosamente porque ocupa varios GB. Si
 falta el modelo configurado, el iniciador muestra el comando `ollama pull` que
 debes ejecutar una sola vez. `Ctrl+C` detiene API y web; PostgreSQL y Ollama
@@ -156,6 +168,7 @@ npm run db:up
 npm run db:migrate
 npm run db:seed:dev
 npm run db:seed:social
+npm run db:seed:demo
 npm run dev
 ```
 
@@ -171,8 +184,9 @@ Servicios de desarrollo:
   <http://localhost:3000/api/v1/health/database>.
 
 `npm run dev` mantiene web y API en la misma terminal. También pueden iniciarse
-por separado con `npm run dev:web` y `npm run dev:api`. Con ambos servicios
-activos, `npm run focusbuddy` abre únicamente el cliente de escritorio.
+por separado con `npm run dev:web` y `npm run dev:api`. Con la API activa,
+`npm run focusbuddy` abre únicamente el cliente de escritorio; Vite no es un
+requisito para ese cliente.
 
 Los procesos de desarrollo se ejecutan con `--no-maglev`. Es una medida de
 compatibilidad para evitar el cierre nativo `0xC0000409` observado con Node 24
@@ -181,38 +195,45 @@ de Konea ni el comportamiento de la aplicación.
 
 ### Variables de entorno
 
-| Variable                       | Uso                                            | Valor local de referencia   |
-| ------------------------------ | ---------------------------------------------- | --------------------------- |
-| `POSTGRES_DB`                  | Base creada por Compose                        | `konea`                     |
-| `POSTGRES_USER`                | Usuario local de PostgreSQL                    | `konea`                     |
-| `POSTGRES_PASSWORD`            | Contraseña local                               | reemplazar el ejemplo       |
-| `POSTGRES_PORT`                | Puerto publicado por Docker                    | `5432`                      |
-| `DATABASE_URL`                 | Conexión usada por API y migraciones           | PostgreSQL local            |
-| `NODE_ENV`                     | `development`, `test` o `production`           | `development`               |
-| `API_HOST`                     | Interfaz donde escucha Express                 | `127.0.0.1`                 |
-| `API_PORT`                     | Puerto HTTP de Express                         | `3000`                      |
-| `TRUST_PROXY_HOPS`             | Proxies confiables delante de Express          | `0`                         |
-| `CORS_ORIGIN`                  | Orígenes web permitidos, separados por coma    | `http://localhost:5173`     |
-| `WRITE_RATE_LIMIT_PER_15_MIN`  | Máximo global de escrituras por IP cada 15 min | `600`                       |
-| `SESSION_TTL_DAYS`             | Vigencia de una sesión, entre 1 y 30 días      | `7`                         |
-| `POSTS_REQUIRE_APPROVAL`       | Activa la cola para posts de estudiantes       | `false`                     |
-| `SEED_SOCIAL_DEMO`             | Prepara el contenido social ficticio en local  | `true`                      |
-| `DUCO_AI_PROVIDER`             | Proveedor de DUCO: local, Ollama u OpenAI      | `ollama`                    |
-| `OLLAMA_BASE_URL`              | Dirección del servicio local de Ollama         | `http://127.0.0.1:11434`    |
-| `OLLAMA_MODEL`                 | Modelo local utilizado por DUCO                | `qwen3.5:4b`                |
-| `OLLAMA_KEEP_ALIVE`            | Tiempo que Ollama conserva el modelo cargado   | `2m`                        |
-| `DUCO_AI_TIMEOUT_MS`           | Tiempo máximo de respuesta de Ollama           | `120000`                    |
-| `OPENAI_API_KEY`               | Clave privada; solo cuando se usa OpenAI       | sin valor                   |
-| `OPENAI_MODEL`                 | Modelo utilizado con el proveedor OpenAI       | `gpt-5.6-luna`              |
-| `OPENAI_BASE_URL`              | Base de la API compatible con OpenAI           | `https://api.openai.com/v1` |
-| `OPENAI_TIMEOUT_MS`            | Tiempo máximo de respuesta de OpenAI           | `45000`                     |
-| `VITE_API_URL`                 | Prefijo/base consumido por la web              | `/api/v1`                   |
-| `VITE_FOCUSBUDDY_DOWNLOAD_URL` | Instalador público HTTPS de FocusBuddy         | sin valor                   |
+| Variable                       | Uso                                            | Valor local de referencia      |
+| ------------------------------ | ---------------------------------------------- | ------------------------------ |
+| `POSTGRES_DB`                  | Base creada por Compose                        | `konea`                        |
+| `POSTGRES_USER`                | Usuario local de PostgreSQL                    | `konea`                        |
+| `POSTGRES_PASSWORD`            | Contraseña local                               | reemplazar el ejemplo          |
+| `POSTGRES_PORT`                | Puerto publicado por Docker                    | `5432`                         |
+| `DATABASE_URL`                 | Conexión usada por API y migraciones           | PostgreSQL local               |
+| `NODE_ENV`                     | `development`, `test` o `production`           | `development`                  |
+| `API_HOST`                     | Interfaz donde escucha Express                 | `127.0.0.1`                    |
+| `API_PORT`                     | Puerto HTTP de Express                         | `3000`                         |
+| `TRUST_PROXY_HOPS`             | Proxies confiables delante de Express          | `0`                            |
+| `CORS_ORIGIN`                  | Orígenes web permitidos, separados por coma    | `http://localhost:5173`        |
+| `WRITE_RATE_LIMIT_PER_15_MIN`  | Máximo global de escrituras por IP cada 15 min | `600`                          |
+| `SESSION_TTL_DAYS`             | Vigencia de una sesión, entre 1 y 30 días      | `7`                            |
+| `POSTS_REQUIRE_APPROVAL`       | Activa la cola para posts de estudiantes       | `false`                        |
+| `SEED_SOCIAL_DEMO`             | Prepara el contenido social ficticio en local  | `true`                         |
+| `SEED_CAPSTONE_DEMO`           | Prepara el escenario completo de presentación  | `true`                         |
+| `CAPSTONE_DEMO_USERNAME`       | Cuenta estudiantil que recibe el escenario     | selección automática           |
+| `DUCO_AI_PROVIDER`             | Proveedor de DUCO: local, Ollama u OpenAI      | `ollama`                       |
+| `OLLAMA_BASE_URL`              | Dirección del servicio local de Ollama         | `http://127.0.0.1:11434`       |
+| `OLLAMA_MODEL`                 | Modelo local utilizado por DUCO                | `qwen3.5:4b`                   |
+| `OLLAMA_KEEP_ALIVE`            | Tiempo que Ollama conserva el modelo cargado   | `2m`                           |
+| `DUCO_AI_TIMEOUT_MS`           | Tiempo máximo de respuesta de Ollama           | `120000`                       |
+| `OPENAI_API_KEY`               | Clave privada; solo cuando se usa OpenAI       | sin valor                      |
+| `OPENAI_MODEL`                 | Modelo utilizado con el proveedor OpenAI       | `gpt-5.6-luna`                 |
+| `OPENAI_BASE_URL`              | Base de la API compatible con OpenAI           | `https://api.openai.com/v1`    |
+| `OPENAI_TIMEOUT_MS`            | Tiempo máximo de respuesta de OpenAI           | `45000`                        |
+| `VITE_API_URL`                 | Prefijo/base consumido por la web              | `/api/v1`                      |
+| `VITE_FOCUSBUDDY_DOWNLOAD_URL` | Instalador público HTTPS de FocusBuddy         | sin valor                      |
+| `FOCUSBUDDY_API_URL`           | API incorporada al instalador de FocusBuddy    | `http://localhost:3000/api/v1` |
 
 No uses las credenciales de ejemplo en producción ni subas `.env` a GitHub.
 Mantén `TRUST_PROXY_HOPS=0` en local y configúralo en `1` únicamente si la API
 queda directamente detrás de un reverse proxy confiable; este valor afecta la IP
 que usan los límites de tasa.
+
+`FOCUSBUDDY_API_URL` se lee desde el proceso que construye el instalador, no
+desde la configuración interna de Express. Es una URL pública, no una
+credencial; un ejecutable ya empaquetado no acepta cambiarla en runtime.
 
 Aunque el repositorio sea público, una API key, una contraseña real o un enlace
 ICS personal de AVA nunca debe publicarse. Los documentos académicos pueden
@@ -253,30 +274,30 @@ almacén compartido, por ejemplo Redis.
 
 ## FocusBuddy web y escritorio
 
-La ruta `#focusbuddy` usa la misma API y cuenta de Konea en ambos clientes. Una
-sesión puede asociarse a una materia y a un pendiente propios. PostgreSQL admite
+La ruta web `#focusbuddy` y la interfaz local de Electron usan la misma API,
+cuenta y fuente de datos. Una sesión puede asociarse a una materia y a un
+pendiente propios. PostgreSQL admite
 solo una sesión `active` o `paused` por usuario, guarda eventos de inicio, pausa,
 reanudación, término o cancelación y calcula el tiempo efectivo del lado
 servidor. El dashboard muestra tiempo de hoy, semana y total, sesiones
 completadas, racha actual/máxima, últimos siete días, distribución por materia e
 historial reciente.
 
-Electron es un contenedor del frontend, no una segunda implementación ni una
-aplicación autónoma sin servidor. En desarrollo abre
-`http://localhost:5173/#focusbuddy`. Al ejecutar `npm run dist:focusbuddy`, la
-variable de proceso `FOCUSBUDDY_APP_URL=https://...` queda incorporada como
-configuración pública del instalador. Un ejecutable empaquetado ignora
-sobrescrituras de URL en runtime para impedir que un acceso directo lo convierta
-en una ventana de phishing; cambiar el endpoint requiere regenerarlo. Los
-overrides mediante variable o `--app-url=https://...` quedan disponibles solo
-en desarrollo. HTTP remoto se rechaza y solo se admite HTTP para localhost. El
-build también puede hacerse sin esa variable para una defensa local: queda fijado
-a `localhost` y requiere mantener `iniciar.bat` abierto. Hasta contar con
-hosting, `iniciar-focusbuddy.bat` es la demostración más directa; un instalador
-para otro equipo necesitará web/API publicadas mediante HTTPS. El
-shell deshabilita acceso Node y DevTools en el paquete, activa aislamiento de
-contexto y sandbox, bloquea ventanas internas, limita la cámara al vídeo y
-deriva enlaces seguros al navegador del sistema. El launcher local fija
+Electron carga `desktop.html` desde el instalador y no abre ni incrusta la SPA
+de Konea. Su preload expone una lista cerrada de operaciones de autenticación,
+academia y estudio; el renderer no posee una función HTTP genérica ni accede
+directamente a PostgreSQL. El proceso principal llama a la API con la cookie
+persistida en la sesión aislada de Electron.
+
+Al ejecutar `npm run dist:focusbuddy`, `FOCUSBUDDY_API_URL=https://.../api/v1`
+queda incorporada como configuración pública del instalador. En desarrollo se
+puede usar esa variable o `--api-url=...`; el ejecutable empaquetado ignora
+ambos overrides para reducir redirecciones a servidores no confiables. HTTP
+remoto se rechaza y solo se admite HTTP para loopback. Sin la variable, el build
+queda fijado a `http://localhost:3000/api/v1` y requiere mantener PostgreSQL y la
+API locales activos. No requiere Vite. El cliente deshabilita acceso Node y
+DevTools en el paquete, activa aislamiento de contexto y sandbox y bloquea
+navegación y permisos no necesarios. El launcher local fija
 `FOCUSBUDDY_DATA_DIR=.local/focusbuddy-desktop`, de modo que caché y sesión
 quedan junto al proyecto en `D:` en vez de consumir el perfil de usuario en
 `C:`.
@@ -286,10 +307,11 @@ al iniciar, pausar, reanudar, completar o cancelar. Mientras una sesión está
 activa, el cliente envía un heartbeat cada 30 segundos. Si deja de recibirlos,
 la API limita el tiempo computable a 90 segundos desde el último heartbeat y
 pausa la sesión al recibir la siguiente consulta o transición. Así, cerrar el
-programa abruptamente no infla las estadísticas indefinidamente. La hoja PNG
-4×4 incluida es deliberadamente provisional y se podrá reemplazar por los
-sprites animados definitivos sin cambiar el temporizador ni las reglas de
-sesión.
+programa abruptamente no infla las estadísticas indefinidamente. El escritorio
+incluye doce derivados transparentes para reposo, escritura/concentración y
+estudio. Los PNG fuente con fondo opaco y su manifiesto permanecen preservados;
+todavía faltan exportaciones alfa oficiales y estados visuales dedicados para
+pausa y celebración. La web mantiene por ahora su hoja provisional 4×4.
 
 ## Roles y moderación
 
@@ -356,7 +378,7 @@ referenciados.
 | Comando                   | Propósito                                                |
 | ------------------------- | -------------------------------------------------------- |
 | `npm run dev`             | Inicia API y web con recarga automática                  |
-| `npm run focusbuddy`      | Abre FocusBuddy; requiere API y web activas              |
+| `npm run focusbuddy`      | Abre FocusBuddy; requiere la API activa                  |
 | `npm run dist:focusbuddy` | Genera el instalador Windows de Electron                 |
 | `npm run build`           | Compila todos los workspaces                             |
 | `npm run lint`            | Revisa reglas estáticas                                  |
@@ -372,6 +394,7 @@ referenciados.
 | `npm run db:check`        | Valida migraciones y snapshots de Drizzle                |
 | `npm run db:migrate`      | Aplica migraciones pendientes                            |
 | `npm run db:seed:social`  | Prepara o actualiza el contenido social de demostración  |
+| `npm run db:seed:demo`    | Prepara chats, solicitudes, tareas y progreso para demo  |
 | `npm run db:studio`       | Abre Drizzle Studio                                      |
 
 Antes de una entrega o push ejecuta:
@@ -412,8 +435,9 @@ archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
 - Las respuestas generativas de DUCO pueden equivocarse y no constituyen
   asesoría académica o institucional oficial. Las acciones sensibles se
   validan en la API y siempre requieren revisión y confirmación del usuario.
-- FocusBuddy aún no ejecuta ciclos automáticos de descanso, no funciona sin la
-  web/API y todavía usa el avatar provisional en lugar de los sprites finales.
+- FocusBuddy aún no ejecuta ciclos automáticos de descanso ni funciona sin una
+  API accesible. El escritorio usa derivados transparentes del chibi, conserva
+  los PNG fuente y la web mantiene el avatar provisional.
 
 ## Migración futura a Supabase y Hostinger
 
@@ -430,9 +454,10 @@ La arquitectura evita acoplar el dominio a un proveedor:
 6. configurar `CORS_ORIGIN`, cookies seguras, dominio y copias de respaldo;
 7. ejecutar pruebas de humo antes de importar datos de demostración.
 
-El cliente Electron no incorpora una copia estática de la web: para distribuirlo
-debe compilarse con `FOCUSBUDDY_APP_URL` apuntando a esa instalación HTTPS y
-verificar autenticación, cookies y actualizaciones del instalador.
+El cliente Electron incorpora su propia interfaz local. Para distribuirlo debe
+compilarse con `FOCUSBUDDY_API_URL` apuntando a la API HTTPS publicada y se deben
+verificar autenticación, cookies y actualizaciones del instalador. El escritorio
+no se conecta directamente a Supabase/PostgreSQL.
 
 Usar Supabase Auth, Realtime o Storage es opcional y requeriría adaptadores
 explícitos. Migrar PostgreSQL no obliga a reemplazar la autenticación actual.

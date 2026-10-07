@@ -348,15 +348,18 @@ async function canAccessUpload(fileName: string, response: Response) {
     return true
   }
 
-  const [projectReference] = await db
+  const [portfolioReference] = await db
     .select({ userId: profiles.userId })
     .from(profiles)
     .where(
-      sql`${profiles.projects} @> ${JSON.stringify([{ imageUrl: fileUrl }])}::jsonb`,
+      or(
+        sql`${profiles.projects} @> ${JSON.stringify([{ imageUrl: fileUrl }])}::jsonb`,
+        sql`${profiles.achievements} @> ${JSON.stringify([{ imageUrl: fileUrl }])}::jsonb`,
+      ),
     )
     .limit(1)
 
-  if (projectReference) return true
+  if (portfolioReference) return true
 
   if (currentUser.role === 'moderator' || currentUser.role === 'admin') {
     const [reportedPrivateResource] = await db

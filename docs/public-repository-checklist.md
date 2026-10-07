@@ -34,5 +34,8 @@ La cuenta `admin` / `admin` solo se crea en desarrollo local y el script rechaza
 una base remota. Antes de desplegar, usa `NODE_ENV=production`, credenciales
 únicas, HTTPS y secretos administrados por la plataforma de hosting.
 
-`FOCUSBUDDY_APP_URL` no es secreto: es la dirección pública de Konea que el
-instalador abre. En una entrega web debe ser HTTPS.
+`FOCUSBUDDY_API_URL` no es secreto: es la base pública que el proceso principal
+de FocusBuddy usa para las operaciones permitidas y debe terminar en `/api/v1`.
+Para una distribución remota debe usar HTTPS. No se deben publicar el perfil de
+Electron, su cookie de sesión ni capturas del login; la interfaz local y sus
+sprites sí forman parte normal del instalador.

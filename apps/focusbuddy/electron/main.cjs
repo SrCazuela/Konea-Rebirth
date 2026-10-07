@@ -6,7 +6,6 @@ const {
   nativeImage,
   Notification,
   screen,
-  shell,
   Tray,
 } = require('electron')
 const {
@@ -16,11 +15,8 @@ const {
   writeFileSync,
 } = require('node:fs')
 const path = require('node:path')
-const {
-  DEFAULT_APP_URL,
-  isSafeExternalUrl,
-  selectAppUrl,
-} = require('./app-url.cjs')
+const { DEFAULT_API_BASE_URL, selectApiBaseUrl } = require('./api-url.cjs')
+const { createDesktopApiClient } = require('./desktop-api.cjs')
 const {
   DEFAULT_PREFERENCES,
   mergePreferences,
@@ -44,8 +40,8 @@ const COMPANION_SIZES = {
 let mainWindow = null
 let companionWindow = null
 let tray = null
-let requestedUrl = DEFAULT_APP_URL
-let showingOfflineFallback = false
+let apiBaseUrl = DEFAULT_API_BASE_URL
+let desktopApi = null
 let isQuitting = false
 let normalWindowBounds = null
 let preferences = { ...DEFAULT_PREFERENCES }
@@ -87,44 +83,59 @@ function persistPreferences() {
   renameSync(temporary, target)
 }
 
-function resolveAppUrl() {
+function resolveApiBaseUrl() {
   const commandLineValue = process.argv
+    .find((argument) => argument.startsWith('--api-url='))
+    ?.slice('--api-url='.length)
+  const legacyCommandLineValue = process.argv
     .find((argument) => argument.startsWith('--app-url='))
     ?.slice('--app-url='.length)
 
-  let packagedValue = null
+  let config = {}
   try {
     const configPath = app.isPackaged
       ? path.join(process.resourcesPath, 'focusbuddy.config.json')
       : path.join(__dirname, '../build/focusbuddy.config.json')
-    const config = JSON.parse(readFileSync(configPath, 'utf8'))
-    if (typeof config.appUrl === 'string') packagedValue = config.appUrl
+    const value = JSON.parse(readFileSync(configPath, 'utf8'))
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      config = value
+    }
   } catch {
     // En desarrollo el archivo es opcional; localhost sigue siendo el fallback.
   }
 
-  return selectAppUrl({
+  const configuredApiUrl =
+    typeof config.apiBaseUrl === 'string' ? config.apiBaseUrl : null
+  const configuredAppUrl =
+    typeof config.appUrl === 'string' ? config.appUrl : null
+
+  return selectApiBaseUrl({
     isPackaged: app.isPackaged,
     commandLineValue,
-    environmentValue: process.env.FOCUSBUDDY_APP_URL,
-    packagedValue,
+    environmentValue: process.env.FOCUSBUDDY_API_URL,
+    packagedValue: configuredApiUrl,
+    appUrl: app.isPackaged
+      ? configuredAppUrl
+      : legacyCommandLineValue || process.env.FOCUSBUDDY_APP_URL,
   })
 }
 
-function isSameKoneaOrigin(target) {
-  try {
-    return new URL(target).origin === new URL(requestedUrl).origin
-  } catch {
-    return false
-  }
-}
-
-async function openExternalUrl(target) {
-  try {
-    if (!isSafeExternalUrl(target)) return
-    await shell.openExternal(new URL(target).toString())
-  } catch {
-    // Las URL inválidas se ignoran deliberadamente.
+function connectionInfo() {
+  const endpoint = new URL(apiBaseUrl)
+  const isLocal = new Set(['localhost', '127.0.0.1', '[::1]']).has(
+    endpoint.hostname.toLowerCase(),
+  )
+  return {
+    apiBaseUrl,
+    url: apiBaseUrl,
+    server: endpoint.host,
+    environment: isLocal
+      ? 'API local'
+      : app.isPackaged
+        ? 'Producción'
+        : 'Desarrollo',
+    isPackaged: app.isPackaged,
+    version: app.getVersion(),
   }
 }
 
@@ -286,6 +297,18 @@ function buildTrayMenu() {
           updatePreferences({ companionAlwaysOnTop: item.checked }),
       },
       {
+        label: 'Personaje del compañero',
+        submenu: [
+          ['kuco', 'Kuco (búho animado)'],
+          ['chibi', 'Chibi oficial'],
+        ].map(([value, label]) => ({
+          label,
+          type: 'radio',
+          checked: preferences.companionCharacter === value,
+          click: () => updatePreferences({ companionCharacter: value }),
+        })),
+      },
+      {
         label: 'Tamaño del compañero',
         submenu: [
           ...[
@@ -399,59 +422,22 @@ function updateSessionState(value) {
   if (statusChanged) buildTrayMenu()
 }
 
-function loadFocusBuddy() {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  showingOfflineFallback = false
-  void mainWindow.loadURL(requestedUrl).catch(() => {})
-}
-
-function secureRemoteWindow(window) {
+function secureLocalWindow(window) {
   const appSession = window.webContents.session
-  appSession.setPermissionCheckHandler(
-    (_webContents, permission, requestingOrigin, details) => {
-      if (!isSameKoneaOrigin(requestingOrigin)) return false
-      if (permission === 'clipboard-sanitized-write') return true
-      return permission === 'media' && details.mediaType === 'video'
-    },
-  )
+  appSession.setPermissionCheckHandler(() => false)
   appSession.setPermissionRequestHandler(
-    (webContents, permission, callback, details) => {
-      const source = details.requestingUrl || webContents.getURL()
-      if (!isSameKoneaOrigin(source)) {
-        callback(false)
-        return
-      }
-      if (permission === 'clipboard-sanitized-write') {
-        callback(true)
-        return
-      }
-      const mediaTypes = Array.isArray(details.mediaTypes)
-        ? details.mediaTypes
-        : []
-      callback(
-        permission === 'media' &&
-          mediaTypes.length > 0 &&
-          mediaTypes.every((mediaType) => mediaType === 'video'),
-      )
-    },
+    (_webContents, _permission, callback) => callback(false),
   )
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    void openExternalUrl(url)
-    return { action: 'deny' }
-  })
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-attach-webview', (event) =>
     event.preventDefault(),
   )
-  window.webContents.on('will-navigate', (event, target) => {
-    if (isSameKoneaOrigin(target)) return
-    event.preventDefault()
-    void openExternalUrl(target)
-  })
+  window.webContents.on('will-navigate', (event) => event.preventDefault())
 }
 
 function createMainWindow() {
-  requestedUrl = resolveAppUrl()
+  apiBaseUrl = resolveApiBaseUrl()
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 880,
@@ -467,7 +453,12 @@ function createMainWindow() {
     }),
   })
 
-  secureRemoteWindow(mainWindow)
+  const appSession = mainWindow.webContents.session
+  desktopApi = createDesktopApiClient({
+    apiBaseUrl,
+    fetchImpl: appSession.fetch.bind(appSession),
+  })
+  secureLocalWindow(mainWindow)
   mainWindow.once('ready-to-show', () => {
     applyCompactMode()
     mainWindow?.show()
@@ -485,6 +476,7 @@ function createMainWindow() {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+    desktopApi = null
     if (!isQuitting && !preferences.closeToTray) {
       isQuitting = true
       app.quit()
@@ -492,29 +484,28 @@ function createMainWindow() {
   })
   mainWindow.webContents.on(
     'did-fail-load',
-    (_event, errorCode, _description, _validatedUrl, isMainFrame) => {
+    (_event, errorCode, description, validatedUrl, isMainFrame) => {
       if (!isMainFrame || errorCode === -3 || !mainWindow) return
       updateSessionState({
         status: 'offline',
-        title: 'Konea no está disponible',
+        title: 'FocusBuddy no pudo abrirse',
       })
-      if (showingOfflineFallback) {
-        if (!mainWindow.isVisible()) mainWindow.show()
-        return
-      }
-      showingOfflineFallback = true
-      void mainWindow
-        .loadFile(path.join(__dirname, 'offline.html'))
-        .catch((error) =>
-          console.error('No se pudo abrir la vista offline.', error),
-        )
+      console.error(
+        `No se pudo cargar la interfaz local (${errorCode}): ${description}`,
+        validatedUrl,
+      )
+      if (!mainWindow.isVisible()) mainWindow.show()
     },
   )
   mainWindow.webContents.on('did-finish-load', () => {
     if (!mainWindow?.isVisible()) mainWindow?.show()
   })
 
-  loadFocusBuddy()
+  void mainWindow
+    .loadFile(path.join(__dirname, 'desktop.html'))
+    .catch((error) =>
+      console.error('No se pudo abrir la interfaz local de FocusBuddy.', error),
+    )
 }
 
 function createCompanionWindow() {
@@ -581,10 +572,22 @@ function createTray() {
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('focusbuddy:retry', (event) => {
-    if (!isWindowSender(event, mainWindow)) return false
-    loadFocusBuddy()
-    return true
+  ipcMain.handle('focusbuddy:api', async (event, operation, payload) => {
+    if (!isWindowSender(event, mainWindow) || !desktopApi) {
+      return {
+        ok: false,
+        error: {
+          status: 0,
+          code: 'DESKTOP_BRIDGE_UNAVAILABLE',
+          message: 'La conexión local de FocusBuddy no está disponible.',
+        },
+      }
+    }
+    const result = await desktopApi.invoke(operation, payload)
+    if (operation === 'auth.logout' && result.ok) {
+      updateSessionState(DEFAULT_SESSION_STATE)
+    }
+    return result
   })
   ipcMain.handle('focusbuddy:open-main', (event) => {
     if (!isWindowSender(event, companionWindow)) return false
@@ -603,13 +606,21 @@ function registerIpcHandlers() {
     return true
   })
   ipcMain.handle('focusbuddy:get-preferences', (event) =>
-    isWindowSender(event, companionWindow) ? preferences : null,
+    isWindowSender(event, mainWindow) || isWindowSender(event, companionWindow)
+      ? preferences
+      : null,
+  )
+  ipcMain.handle('focusbuddy:update-preferences', (event, patch) =>
+    isWindowSender(event, mainWindow) ? updatePreferences(patch) : null,
+  )
+  ipcMain.handle('focusbuddy:get-connection-info', (event) =>
+    isWindowSender(event, mainWindow) ? connectionInfo() : null,
   )
   ipcMain.handle('focusbuddy:get-session-state', (event) =>
     isWindowSender(event, companionWindow) ? sessionState : null,
   )
   ipcMain.on('focusbuddy:update-session-state', (event, value) => {
-    if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return
+    if (!isWindowSender(event, mainWindow)) return
     updateSessionState(value)
   })
 }

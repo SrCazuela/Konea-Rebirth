@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict')
-const { readFileSync } = require('node:fs')
+const { existsSync, readFileSync } = require('node:fs')
 const { describe, it } = require('node:test')
 const path = require('node:path')
 const packageConfig = require('../package.json')
@@ -10,14 +10,17 @@ const { createWebPreferences } = require('./window-options.cjs')
 describe('FocusBuddy package security', () => {
   it('packages only the runtime files required by the desktop shell', () => {
     assert.deepEqual(packageConfig.build.files, [
-      'electron/app-url.cjs',
+      'electron/api-url.cjs',
+      'electron/assets/avatar-cutout/*.png',
       'electron/companion.css',
       'electron/companion.html',
       'electron/companion.js',
       'electron/companion-preload.cjs',
+      'electron/desktop-api.cjs',
+      'electron/desktop.css',
+      'electron/desktop.html',
+      'electron/desktop.js',
       'electron/main.cjs',
-      'electron/offline.html',
-      'electron/offline.js',
       'electron/owl-shimeji-provisional.png',
       'electron/preload.cjs',
       'electron/preferences.cjs',
@@ -79,14 +82,20 @@ describe('FocusBuddy package security', () => {
     assert.equal(result.PATH, result.Path)
   })
 
-  it('does not allow inline scripts in the local offline page', () => {
-    const offlineHtml = readFileSync(
-      path.join(__dirname, 'offline.html'),
+  it('loads a packaged local interface under a strict CSP', () => {
+    const desktopHtml = readFileSync(
+      path.join(__dirname, 'desktop.html'),
       'utf8',
     )
+    const mainSource = readFileSync(path.join(__dirname, 'main.cjs'), 'utf8')
 
-    assert.match(offlineHtml, /script-src 'self'/)
-    assert.doesNotMatch(offlineHtml, /script-src 'unsafe-inline'/)
+    assert.match(desktopHtml, /default-src 'none'/)
+    assert.match(desktopHtml, /script-src 'self'/)
+    assert.match(desktopHtml, /connect-src 'none'/)
+    assert.doesNotMatch(desktopHtml, /unsafe-inline/)
+    assert.doesNotMatch(desktopHtml, /<script[^>]*>[^<]+<\/script>/)
+    assert.match(mainSource, /loadFile\([^)]*desktop\.html/)
+    assert.doesNotMatch(mainSource, /\.loadURL\(/)
   })
 
   it('keeps the local companion under a strict content security policy', () => {
@@ -101,20 +110,43 @@ describe('FocusBuddy package security', () => {
     assert.doesNotMatch(companionHtml, /<script[^>]*>[^<]+<\/script>/)
   })
 
-  it('animates the owned sprite sheet and honors reduced motion', () => {
+  it('packages Kuco and transparent chibi derivatives while preserving the sources', () => {
+    const companionHtml = readFileSync(
+      path.join(__dirname, 'companion.html'),
+      'utf8',
+    )
     const companionCss = readFileSync(
       path.join(__dirname, 'companion.css'),
       'utf8',
     )
+    const companionScript = readFileSync(
+      path.join(__dirname, 'companion.js'),
+      'utf8',
+    )
+    const sourceDirectory = path.join(__dirname, 'assets', 'avatar-official')
+    const runtimeDirectory = path.join(__dirname, 'assets', 'avatar-cutout')
+    const manifest = JSON.parse(
+      readFileSync(path.join(sourceDirectory, 'source-manifest.json'), 'utf8'),
+    )
 
-    assert.match(companionCss, /companion-frames/)
-    assert.match(companionCss, /steps\(3, end\)/)
+    assert.match(companionHtml, /assets\/avatar-cutout\/idle-1\.png/)
+    assert.match(companionScript, /assets\/avatar-cutout/)
+    assert.match(companionScript, /typing-concentrated-3\.png/)
+    assert.doesNotMatch(companionHtml + companionScript, /avatar-official/)
+    assert.match(companionCss, /owl-shimeji-provisional\.png/)
+    assert.match(companionHtml, /data-character="kuco"/)
+    assert.ok(existsSync(path.join(__dirname, 'owl-shimeji-provisional.png')))
+    assert.equal(manifest.files.length, 12)
+    for (const asset of manifest.files) {
+      assert.ok(existsSync(path.join(sourceDirectory, asset.local)))
+      assert.ok(existsSync(path.join(runtimeDirectory, asset.local)))
+    }
     assert.match(companionCss, /prefers-reduced-motion: reduce/)
     assert.match(companionCss, /\.reduce-motion/)
   })
 
-  it('separates remote-page and local-companion preload capabilities', () => {
-    const remotePreload = readFileSync(
+  it('separates local desktop and companion preload capabilities', () => {
+    const desktopPreload = readFileSync(
       path.join(__dirname, 'preload.cjs'),
       'utf8',
     )
@@ -123,10 +155,15 @@ describe('FocusBuddy package security', () => {
       'utf8',
     )
 
-    assert.match(remotePreload, /updateSessionState/)
-    assert.doesNotMatch(remotePreload, /toggleCompact|getPreferences/)
+    assert.match(desktopPreload, /health\.get/)
+    assert.match(desktopPreload, /getPreferences|updatePreferences/)
+    assert.match(desktopPreload, /getConnectionInfo|updateSessionState/)
+    assert.doesNotMatch(desktopPreload, /toggleCompact|openMain|hideCompanion/)
     assert.match(companionPreload, /toggleCompact|getPreferences/)
-    assert.doesNotMatch(companionPreload, /updateSessionState/)
+    assert.doesNotMatch(
+      companionPreload,
+      /updateSessionState|updatePreferences|health\.get/,
+    )
   })
 
   it('keeps privileged renderer features disabled in packaged windows', () => {

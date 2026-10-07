@@ -30,6 +30,7 @@ export type ProfileAchievement = {
   issuedAt: string | null
   description: string
   credentialUrl: string | null
+  imageUrl: string | null
 }
 
 export type PublicUser = {

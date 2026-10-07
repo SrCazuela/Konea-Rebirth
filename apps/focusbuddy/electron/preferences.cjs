@@ -1,8 +1,10 @@
 const COMPANION_SCALES = new Set(['small', 'medium', 'large'])
+const COMPANION_CHARACTERS = new Set(['kuco', 'chibi'])
 
 const DEFAULT_PREFERENCES = Object.freeze({
   companionEnabled: true,
   companionAlwaysOnTop: true,
+  companionCharacter: 'kuco',
   companionScale: 'medium',
   compactMode: false,
   closeToTray: true,
@@ -36,6 +38,9 @@ function normalizePreferences(value) {
       typeof candidate.companionAlwaysOnTop === 'boolean'
         ? candidate.companionAlwaysOnTop
         : DEFAULT_PREFERENCES.companionAlwaysOnTop,
+    companionCharacter: COMPANION_CHARACTERS.has(candidate.companionCharacter)
+      ? candidate.companionCharacter
+      : DEFAULT_PREFERENCES.companionCharacter,
     companionScale: COMPANION_SCALES.has(candidate.companionScale)
       ? candidate.companionScale
       : DEFAULT_PREFERENCES.companionScale,

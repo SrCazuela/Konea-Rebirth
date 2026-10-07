@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Konea FocusBuddy</title>
+    <link rel="stylesheet" href="./desktop.css" />
+  </head>
+  <body>
+    <div class="desktop-shell" id="desktop-shell">
+      <aside class="sidebar" aria-label="FocusBuddy">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">K</span>
+          <span>
+            <strong>FocusBuddy</strong>
+            <small>por Konea</small>
+          </span>
+        </div>
+
+        <nav class="primary-nav" role="tablist" aria-label="Secciones">
+          <button
+            class="nav-button is-active"
+            id="tab-study"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="panel-study"
+            data-tab="study"
+          >
+            <span class="nav-icon" aria-hidden="true">◷</span>
+            <span>Estudio</span>
+          </button>
+          <button
+            class="nav-button"
+            id="tab-progress"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-progress"
+            data-tab="progress"
+          >
+            <span class="nav-icon" aria-hidden="true">▥</span>
+            <span>Progreso</span>
+          </button>
+          <button
+            class="nav-button"
+            id="tab-settings"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-settings"
+            data-tab="settings"
+          >
+            <span class="nav-icon" aria-hidden="true">⚙</span>
+            <span>Ajustes</span>
+          </button>
+          <button
+            class="nav-button"
+            id="tab-account"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-account"
+            data-tab="account"
+          >
+            <span class="nav-icon" aria-hidden="true">○</span>
+            <span>Cuenta</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-tip">
+          <span aria-hidden="true">✦</span>
+          <p>
+            <strong>Pequeños bloques, gran avance.</strong>
+            Tu progreso se sincroniza con Konea.
+          </p>
+        </div>
+
+        <div class="sidebar-account">
+          <span class="sidebar-avatar" id="sidebar-avatar" aria-hidden="true"
+            >?</span
+          >
+          <span>
+            <strong id="sidebar-user-name">Sin sesión</strong>
+            <small id="sidebar-user-handle">Inicia sesión para estudiar</small>
+          </span>
+        </div>
+      </aside>
+
+      <main class="main-shell">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Aplicación de escritorio</span>
+            <h1 id="page-title">Tu espacio de concentración</h1>
+          </div>
+          <div class="topbar-actions">
+            <span
+              class="connection-pill"
+              id="connection-pill"
+              data-state="checking"
+              role="status"
+            >
+              <i aria-hidden="true"></i>
+              <span id="connection-label">Comprobando Konea…</span>
+            </span>
+            <button
+              class="icon-button"
+              id="refresh-button"
+              type="button"
+              aria-label="Actualizar datos"
+              title="Actualizar datos"
+            >
+              ↻
+            </button>
+          </div>
+        </header>
+
+        <div
+          class="global-feedback"
+          id="global-feedback"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+
+        <section
+          class="tab-panel"
+          id="panel-study"
+          role="tabpanel"
+          aria-labelledby="tab-study"
+          tabindex="0"
+          data-panel="study"
+        >
+          <div class="study-layout">
+            <article class="session-card">
+              <div id="session-setup">
+                <header class="card-heading">
+                  <div>
+                    <span class="eyebrow">Nueva sesión</span>
+                    <h2>¿Cómo quieres estudiar hoy?</h2>
+                    <p>
+                      Elige un ritmo. Puedes vincular una materia y un
+                      pendiente.
+                    </p>
+                  </div>
+                </header>
+
+                <form id="session-form" novalidate>
+                  <fieldset class="method-grid">
+                    <legend class="sr-only">Método de estudio</legend>
+                    <label class="method-option">
+                      <input
+                        type="radio"
+                        name="study-method"
+                        value="pomodoro"
+                        checked
+                      />
+                      <span class="method-check" aria-hidden="true"></span>
+                      <strong>Pomodoro</strong>
+                      <b>25 / 5</b>
+                      <small>Un bloque breve para comenzar sin fricción.</small>
+                    </label>
+                    <label class="method-option">
+                      <input
+                        type="radio"
+                        name="study-method"
+                        value="pomodoro_extended"
+                      />
+                      <span class="method-check" aria-hidden="true"></span>
+                      <strong>Pomodoro extendido</strong>
+                      <b>50 / 10</b>
+                      <small>Más concentración y una pausa amplia.</small>
+                    </label>
+                    <label class="method-option">
+                      <input
+                        type="radio"
+                        name="study-method"
+                        value="deep_work"
+                      />
+                      <span class="method-check" aria-hidden="true"></span>
+                      <strong>Trabajo profundo</strong>
+                      <b>90 / 20</b>
+                      <small
+                        >Para proyectos exigentes y sin interrupciones.</small
+                      >
+                    </label>
+                    <label class="method-option">
+                      <input
+                        type="radio"
+                        name="study-method"
+                        value="flowtime"
+                      />
+                      <span class="method-check" aria-hidden="true"></span>
+                      <strong>Flowtime</strong>
+                      <b>Libre</b>
+                      <small
+                        >Continúa mientras mantengas el estado de flujo.</small
+                      >
+                    </label>
+                    <label class="method-option">
+                      <input type="radio" name="study-method" value="custom" />
+                      <span class="method-check" aria-hidden="true"></span>
+                      <strong>Personalizado</strong>
+                      <b>A tu ritmo</b>
+                      <small>Define un bloque que se adapte a tu día.</small>
+                    </label>
+                  </fieldset>
+
+                  <div class="custom-times" id="custom-times" hidden>
+                    <label>
+                      <span>Concentración <small>(minutos)</small></span>
+                      <input
+                        id="custom-focus"
+                        type="number"
+                        min="1"
+                        max="240"
+                        value="40"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Pausa <small>(minutos)</small></span>
+                      <input
+                        id="custom-break"
+                        type="number"
+                        min="0"
+                        max="120"
+                        value="10"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div class="session-fields">
+                    <label>
+                      <span>Asignatura <small>(opcional)</small></span>
+                      <select id="course-select">
+                        <option value="">Sesión libre</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Tarea <small>(opcional)</small></span>
+                      <select id="task-select">
+                        <option value="">Sin tarea vinculada</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="session-preview">
+                    <div class="preview-copy">
+                      <span class="preview-icon" aria-hidden="true">◷</span>
+                      <span>
+                        <strong id="preview-focus">25 min de enfoque</strong>
+                        <small id="preview-break"
+                          >5 min de pausa sugerida</small
+                        >
+                      </span>
+                    </div>
+                    <button
+                      class="button button-primary"
+                      id="start-button"
+                      type="submit"
+                    >
+                      <span aria-hidden="true">▶</span>
+                      <span id="start-button-label">Comenzar sesión</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="active-session" id="session-active" hidden>
+                <header class="active-heading">
+                  <div>
+                    <span class="eyebrow" id="active-kicker"
+                      >Concentración en curso</span
+                    >
+                    <h2 id="active-title">Sesión libre</h2>
+                  </div>
+                  <span
+                    class="status-badge"
+                    id="active-status"
+                    data-state="active"
+                    >En curso</span
+                  >
+                </header>
+
+                <div
+                  class="timer-block"
+                  id="timer-block"
+                  role="timer"
+                  aria-live="off"
+                >
+                  <strong id="timer-value">25:00</strong>
+                  <span id="timer-caption">tiempo restante</span>
+                </div>
+
+                <div class="session-meta" aria-label="Detalles de la sesión">
+                  <span id="active-method">Pomodoro</span>
+                  <span id="active-course">Sin asignatura</span>
+                  <span id="active-break">Pausa sugerida: 5 min</span>
+                </div>
+
+                <p
+                  class="completion-hint"
+                  id="completion-hint"
+                  role="status"
+                  hidden
+                >
+                  Cumpliste el bloque. Finaliza la sesión para guardar tu avance
+                  y tomar la pausa.
+                </p>
+
+                <div class="session-controls">
+                  <button
+                    class="button button-secondary"
+                    id="pause-button"
+                    type="button"
+                  >
+                    Ⅱ Pausar
+                  </button>
+                  <button
+                    class="button button-primary"
+                    id="resume-button"
+                    type="button"
+                    hidden
+                  >
+                    ▶ Reanudar
+                  </button>
+                  <button
+                    class="button button-success"
+                    id="complete-button"
+                    type="button"
+                  >
+                    ✓ Finalizar
+                  </button>
+                  <button
+                    class="button button-quiet"
+                    id="cancel-button"
+                    type="button"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </article>
+
+            <aside class="buddy-card" aria-labelledby="buddy-name">
+              <span class="buddy-spark buddy-spark-one" aria-hidden="true"
+                >✦</span
+              >
+              <span class="buddy-spark buddy-spark-two" aria-hidden="true"
+                >✦</span
+              >
+              <div
+                class="avatar-character buddy-image"
+                id="buddy-image"
+                data-character="kuco"
+                data-frame="0"
+                data-mood="idle"
+                role="img"
+                aria-label="Kuco está disponible y esperando"
+              >
+                <span class="avatar-kuco" aria-hidden="true"></span>
+                <img
+                  class="avatar-chibi"
+                  id="buddy-chibi"
+                  src="./assets/avatar-cutout/idle-1.png"
+                  alt=""
+                  draggable="false"
+                />
+              </div>
+              <div class="buddy-message" aria-live="polite">
+                <strong id="buddy-name">Kuco</strong>
+                <span id="buddy-copy">Estoy listo cuando tú lo estés.</span>
+              </div>
+            </aside>
+          </div>
+
+          <div class="quick-metrics" aria-label="Resumen de concentración">
+            <article>
+              <span>Hoy</span>
+              <strong id="quick-today">—</strong>
+              <small>tiempo concentrado</small>
+            </article>
+            <article>
+              <span>Esta semana</span>
+              <strong id="quick-week">—</strong>
+              <small>sesiones completadas</small>
+            </article>
+            <article>
+              <span>Racha actual</span>
+              <strong id="quick-streak">—</strong>
+              <small id="quick-best-streak">Mejor: —</small>
+            </article>
+          </div>
+        </section>
+
+        <section
+          class="tab-panel"
+          id="panel-progress"
+          role="tabpanel"
+          aria-labelledby="tab-progress"
+          tabindex="0"
+          data-panel="progress"
+          hidden
+        >
+          <header class="section-heading">
+            <div>
+              <span class="eyebrow">Tu progreso</span>
+              <h2>Panel de concentración</h2>
+              <p>Un resumen de los bloques que completaste en Konea.</p>
+            </div>
+            <button
+              class="button button-secondary"
+              id="progress-refresh"
+              type="button"
+            >
+              Actualizar
+            </button>
+          </header>
+
+          <div class="metric-grid">
+            <article>
+              <span>Hoy</span><strong id="metric-today">—</strong
+              ><small>tiempo concentrado</small>
+            </article>
+            <article>
+              <span>Esta semana</span><strong id="metric-week">—</strong
+              ><small>en sesiones completadas</small>
+            </article>
+            <article>
+              <span>Tiempo total</span><strong id="metric-total">—</strong
+              ><small>concentración acumulada</small>
+            </article>
+            <article>
+              <span>Sesiones</span><strong id="metric-sessions">—</strong
+              ><small id="metric-completed">— completadas</small>
+            </article>
+            <article>
+              <span>Racha actual</span><strong id="metric-streak">—</strong
+              ><small id="metric-best">Mejor: —</small>
+            </article>
+          </div>
+
+          <div class="progress-grid">
+            <article class="data-card">
+              <header>
+                <div>
+                  <span class="eyebrow">Últimos 7 días</span>
+                  <h3>Ritmo semanal</h3>
+                </div>
+                <strong id="week-total">—</strong>
+              </header>
+              <div
+                class="week-chart"
+                id="week-chart"
+                aria-label="Tiempo de estudio de los últimos siete días"
+              ></div>
+            </article>
+            <article class="data-card">
+              <header>
+                <div>
+                  <span class="eyebrow">Distribución</span>
+                  <h3>Tiempo por asignatura</h3>
+                </div>
+              </header>
+              <div class="course-chart" id="course-chart"></div>
+            </article>
+          </div>
+
+          <article class="data-card history-card">
+            <header>
+              <div>
+                <span class="eyebrow">Historial</span>
+                <h3>Sesiones recientes</h3>
+              </div>
+            </header>
+            <div class="history-list" id="history-list"></div>
+          </article>
+
+          <div class="empty-panel" id="progress-unavailable" hidden>
+            <strong>Tu progreso todavía no está disponible</strong>
+            <p>
+              Conéctate a Konea e inicia sesión para recuperar tus sesiones.
+            </p>
+          </div>
+        </section>
+
+        <section
+          class="tab-panel"
+          id="panel-settings"
+          role="tabpanel"
+          aria-labelledby="tab-settings"
+          tabindex="0"
+          data-panel="settings"
+          hidden
+        >
+          <header class="section-heading">
+            <div>
+              <span class="eyebrow">Personaliza la experiencia</span>
+              <h2>Ajustes de escritorio</h2>
+              <p>
+                Estas preferencias se guardan solo en este equipo y nunca
+                contienen credenciales.
+              </p>
+            </div>
+          </header>
+
+          <div class="settings-grid">
+            <article class="settings-card">
+              <header>
+                <span class="settings-icon" aria-hidden="true">✦</span>
+                <div>
+                  <h3>Compañero flotante</h3>
+                  <p>
+                    Decide cómo aparece Kuco o el chibi sobre tus otras
+                    ventanas.
+                  </p>
+                </div>
+              </header>
+              <label class="switch-row">
+                <span
+                  ><strong>Mostrar compañero</strong
+                  ><small
+                    >Mantiene visible la mascota de escritorio.</small
+                  ></span
+                >
+                <input type="checkbox" data-preference="companionEnabled" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="switch-row">
+                <span
+                  ><strong>Siempre visible</strong
+                  ><small>La coloca sobre las demás ventanas.</small></span
+                >
+                <input type="checkbox" data-preference="companionAlwaysOnTop" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="select-row">
+                <span
+                  ><strong>Personaje</strong
+                  ><small
+                    >Kuco viene seleccionado de forma predeterminada.</small
+                  ></span
+                >
+                <select
+                  data-preference="companionCharacter"
+                  aria-label="Personaje del compañero"
+                >
+                  <option value="kuco">Kuco · búho animado</option>
+                  <option value="chibi">Chibi oficial</option>
+                </select>
+              </label>
+              <label class="select-row">
+                <span
+                  ><strong>Tamaño</strong
+                  ><small>Puedes moverlo arrastrando el avatar.</small></span
+                >
+                <select
+                  data-preference="companionScale"
+                  aria-label="Tamaño del compañero"
+                >
+                  <option value="small">Pequeño</option>
+                  <option value="medium">Mediano</option>
+                  <option value="large">Grande</option>
+                </select>
+              </label>
+            </article>
+
+            <article class="settings-card">
+              <header>
+                <span class="settings-icon" aria-hidden="true">▣</span>
+                <div>
+                  <h3>Ventana y sistema</h3>
+                  <p>Controla el comportamiento de la aplicación instalada.</p>
+                </div>
+              </header>
+              <label class="switch-row">
+                <span
+                  ><strong>Modo compacto</strong
+                  ><small
+                    >Reduce la ventana para acompañar tu estudio.</small
+                  ></span
+                >
+                <input type="checkbox" data-preference="compactMode" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="switch-row">
+                <span
+                  ><strong>Cerrar a la bandeja</strong
+                  ><small>Continúa el bloque al cerrar la ventana.</small></span
+                >
+                <input type="checkbox" data-preference="closeToTray" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="switch-row">
+                <span
+                  ><strong>Iniciar con Windows</strong
+                  ><small
+                    >Abre FocusBuddy al iniciar tu sesión del equipo.</small
+                  ></span
+                >
+                <input type="checkbox" data-preference="launchAtLogin" />
+                <i aria-hidden="true"></i>
+              </label>
+            </article>
+
+            <article class="settings-card">
+              <header>
+                <span class="settings-icon" aria-hidden="true">◉</span>
+                <div>
+                  <h3>Avisos y accesibilidad</h3>
+                  <p>Elige cuándo FocusBuddy llama tu atención.</p>
+                </div>
+              </header>
+              <label class="switch-row">
+                <span
+                  ><strong>Avisar al cumplir el bloque</strong
+                  ><small>La notificación no finaliza la sesión.</small></span
+                >
+                <input type="checkbox" data-preference="notificationsEnabled" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="switch-row">
+                <span
+                  ><strong>Reducir animaciones</strong
+                  ><small>Usa una presentación más tranquila.</small></span
+                >
+                <input type="checkbox" data-preference="reducedMotion" />
+                <i aria-hidden="true"></i>
+              </label>
+            </article>
+
+            <article class="settings-card connection-card">
+              <header>
+                <span class="settings-icon" aria-hidden="true">⌁</span>
+                <div>
+                  <h3>Conexión</h3>
+                  <p>Información pública de la instalación actual.</p>
+                </div>
+              </header>
+              <dl>
+                <div>
+                  <dt>Servidor Konea</dt>
+                  <dd id="connection-server">—</dd>
+                </div>
+                <div>
+                  <dt>Entorno</dt>
+                  <dd id="connection-environment">—</dd>
+                </div>
+                <div>
+                  <dt>Versión</dt>
+                  <dd id="connection-version">—</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+          <p
+            class="settings-status"
+            id="settings-status"
+            role="status"
+            aria-live="polite"
+          ></p>
+        </section>
+
+        <section
+          class="tab-panel"
+          id="panel-account"
+          role="tabpanel"
+          aria-labelledby="tab-account"
+          tabindex="0"
+          data-panel="account"
+          hidden
+        >
+          <div class="account-layout">
+            <article class="login-card" id="login-card">
+              <span class="account-mark" aria-hidden="true">K</span>
+              <span class="eyebrow">Tu cuenta Konea</span>
+              <h2>Qué bueno verte de nuevo</h2>
+              <p>
+                Ingresa con la misma cuenta que usas en Konea. FocusBuddy no
+                guarda tu contraseña: la envía únicamente a la API configurada.
+              </p>
+              <form id="login-form" novalidate>
+                <label>
+                  <span>Correo o usuario</span>
+                  <input
+                    id="login-identifier"
+                    name="identifier"
+                    type="text"
+                    autocomplete="username"
+                    maxlength="320"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Contraseña</span>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    maxlength="128"
+                    required
+                  />
+                </label>
+                <p class="form-error" id="login-error" role="alert" hidden></p>
+                <button
+                  class="button button-primary button-wide"
+                  id="login-button"
+                  type="submit"
+                >
+                  Ingresar a Konea
+                </button>
+              </form>
+            </article>
+
+            <article class="account-card" id="account-card" hidden>
+              <div class="account-identity">
+                <span
+                  class="account-avatar"
+                  id="account-avatar"
+                  aria-hidden="true"
+                  >K</span
+                >
+                <div>
+                  <span class="eyebrow">Sesión activa</span>
+                  <h2 id="account-name">Estudiante Konea</h2>
+                  <p id="account-handle">@usuario</p>
+                </div>
+              </div>
+              <dl>
+                <div>
+                  <dt>Correo</dt>
+                  <dd id="account-email">—</dd>
+                </div>
+                <div>
+                  <dt>Rol</dt>
+                  <dd id="account-role">Estudiante</dd>
+                </div>
+                <div>
+                  <dt>Sincronización</dt>
+                  <dd id="account-sync">Conectada</dd>
+                </div>
+              </dl>
+              <button
+                class="button button-danger"
+                id="logout-button"
+                type="button"
+              >
+                Cerrar sesión
+              </button>
+              <p class="account-note">
+                Al cerrar sesión, el compañero descarta de inmediato el título y
+                la asignatura del bloque actual.
+              </p>
+            </article>
+
+            <aside class="account-visual" aria-hidden="true">
+              <div
+                class="avatar-character account-character"
+                id="account-character"
+                data-character="kuco"
+                data-frame="1"
+                data-mood="idle"
+              >
+                <span class="avatar-kuco"></span>
+                <img
+                  class="avatar-chibi"
+                  id="account-chibi"
+                  src="./assets/avatar-cutout/idle-2.png"
+                  alt=""
+                  draggable="false"
+                />
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div
+      class="startup-overlay"
+      id="startup-overlay"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="startup-mark" aria-hidden="true">K</span>
+      <span class="spinner" aria-hidden="true"></span>
+      <p id="startup-label">Preparando FocusBuddy…</p>
+    </div>
+
+    <script src="./desktop.js"></script>
+  </body>
+</html>

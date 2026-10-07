@@ -17,9 +17,19 @@ function readableError(error: unknown) {
 }
 
 function resultMessage(result: AvaImportResult) {
+  const reactivated = result.reactivatedCourses ?? 0
   const imported = result.importedCourses + result.importedTasks
   const existing = result.existingCourses + result.existingTasks
-  return `${imported} ${imported === 1 ? 'elemento importado' : 'elementos importados'}${existing ? ` · ${existing} ya existían` : ''}.`
+  const parts = [
+    imported > 0
+      ? `${imported} ${imported === 1 ? 'elemento importado' : 'elementos importados'}`
+      : '',
+    reactivated > 0
+      ? `${reactivated} ${reactivated === 1 ? 'materia reactivada' : 'materias reactivadas'}`
+      : '',
+    existing > 0 ? `${existing} ya existían` : '',
+  ].filter(Boolean)
+  return `${parts.join(' · ') || 'No se realizaron cambios'}.`
 }
 
 export function AvaDomImport({ onImported }: { onImported?: () => void }) {
@@ -211,6 +221,7 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
                 <label key={course.clientId}>
                   <input
                     type="checkbox"
+                    disabled={course.existing}
                     checked={courseIds.has(course.clientId)}
                     onChange={() =>
                       toggle(courseIds, setCourseIds, course.clientId)
@@ -219,14 +230,16 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
                   <span>
                     <strong>{course.name}</strong>
                     <small>
-                      {course.existing
-                        ? 'Ya existe en Konea'
-                        : [
-                            course.code,
-                            course.section && `Sección ${course.section}`,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ') || 'Nueva materia'}
+                      {course.reactivatable
+                        ? 'Archivada · se reactivará'
+                        : course.existing
+                          ? 'Ya existe en Konea'
+                          : [
+                              course.code,
+                              course.section && `Sección ${course.section}`,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ') || 'Nueva materia'}
                     </small>
                   </span>
                 </label>
@@ -244,6 +257,7 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
                 <label key={activity.clientId}>
                   <input
                     type="checkbox"
+                    disabled={activity.existing}
                     checked={activityIds.has(activity.clientId)}
                     onChange={() =>
                       toggle(activityIds, setActivityIds, activity.clientId)
@@ -276,7 +290,9 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={
+                  busy || (courseIds.size === 0 && activityIds.size === 0)
+                }
                 onClick={() => void confirm()}
               >
                 Confirmar e importar

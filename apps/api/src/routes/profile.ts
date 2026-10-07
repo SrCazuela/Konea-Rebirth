@@ -70,6 +70,9 @@ const achievementSchema = z.strictObject({
     .transform((value) => value || null),
   description: z.string().trim().max(600),
   credentialUrl: nullableUrl,
+  imageUrl: z
+    .union([httpOrLocalUploadUrlSchema, z.literal(''), z.null()])
+    .transform((value) => value || null),
 })
 
 const uniqueEntryIds = <T extends { id: string }>(entries: T[]) =>
@@ -189,6 +192,9 @@ profileRouter.patch('/', async (request, response) => {
     requireOwnedLocalUpload(currentUser.id, input.coverUrl, 'image'),
     ...(input.projects ?? []).map((project) =>
       requireOwnedLocalUpload(currentUser.id, project.imageUrl, 'image'),
+    ),
+    ...(input.achievements ?? []).map((achievement) =>
+      requireOwnedLocalUpload(currentUser.id, achievement.imageUrl, 'image'),
     ),
   ])
 

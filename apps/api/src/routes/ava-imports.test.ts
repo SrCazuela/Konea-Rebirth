@@ -127,6 +127,7 @@ describe.sequential('AVA DOM import API', () => {
     expect(confirmation.status).toBe(200)
     expect(confirmation.body.result).toEqual({
       importedCourses: 1,
+      reactivatedCourses: 0,
       importedTasks: 1,
       existingCourses: 0,
       existingTasks: 0,
@@ -179,6 +180,166 @@ describe.sequential('AVA DOM import API', () => {
         ),
       )
     expect(taskTotal!.value).toBe(1)
+  })
+
+  it('reactivates an archived AVA extension course when importing the same capture again', async () => {
+    const payload = capture('reactivate')
+    const firstPreview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    await studentAgent
+      .post(
+        `/api/v1/ava-imports/previews/${firstPreview.body.import.id}/confirm`,
+      )
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+
+    const [storedCourse] = await db
+      .select({ id: academicCourses.id })
+      .from(academicCourses)
+      .where(
+        and(
+          eq(academicCourses.userId, userId),
+          eq(
+            academicCourses.normalizedName,
+            payload.courses[0]!.name.toLowerCase(),
+          ),
+        ),
+      )
+      .limit(1)
+    expect(storedCourse).toBeDefined()
+    await db
+      .update(academicCourses)
+      .set({ active: false, code: null })
+      .where(eq(academicCourses.id, storedCourse!.id))
+
+    const repeatedPreview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(200)
+    expect(repeatedPreview.body.import).toMatchObject({
+      id: firstPreview.body.import.id,
+      status: 'draft',
+      result: null,
+    })
+    expect(repeatedPreview.body.courses).toMatchObject([
+      {
+        clientId: payload.courses[0]!.clientId,
+        existing: false,
+        reactivatable: true,
+        state: 'reactivatable',
+      },
+    ])
+
+    const confirmation = await studentAgent
+      .post(
+        `/api/v1/ava-imports/previews/${repeatedPreview.body.import.id}/confirm`,
+      )
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    expect(confirmation.body.result).toEqual({
+      importedCourses: 0,
+      reactivatedCourses: 1,
+      importedTasks: 0,
+      existingCourses: 0,
+      existingTasks: 0,
+    })
+
+    const matchingCourses = await db
+      .select({
+        id: academicCourses.id,
+        active: academicCourses.active,
+        code: academicCourses.code,
+      })
+      .from(academicCourses)
+      .where(
+        and(
+          eq(academicCourses.userId, userId),
+          eq(
+            academicCourses.normalizedName,
+            payload.courses[0]!.name.toLowerCase(),
+          ),
+        ),
+      )
+    expect(matchingCourses).toEqual([
+      {
+        id: storedCourse!.id,
+        active: true,
+        code: payload.courses[0]!.code,
+      },
+    ])
+  })
+
+  it('does not reactivate or overwrite an archived manual course with the same name', async () => {
+    const payload = capture('manual-conflict')
+    const [manualCourse] = await db
+      .insert(academicCourses)
+      .values({
+        userId,
+        name: payload.courses[0]!.name,
+        normalizedName: payload.courses[0]!.name.toLowerCase(),
+        code: 'MANUAL-CODE',
+        section: 'MANUAL-SECTION',
+        term: 'Manual term',
+        source: 'manual',
+        active: false,
+      })
+      .returning({ id: academicCourses.id })
+
+    const preview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    expect(preview.body.courses).toMatchObject([
+      {
+        clientId: payload.courses[0]!.clientId,
+        existing: true,
+        reactivatable: false,
+        state: 'existing',
+      },
+    ])
+
+    const confirmation = await studentAgent
+      .post(`/api/v1/ava-imports/previews/${preview.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    expect(confirmation.body.result).toEqual({
+      importedCourses: 0,
+      reactivatedCourses: 0,
+      importedTasks: 0,
+      existingCourses: 1,
+      existingTasks: 0,
+    })
+
+    const [unchangedCourse] = await db
+      .select({
+        id: academicCourses.id,
+        source: academicCourses.source,
+        active: academicCourses.active,
+        code: academicCourses.code,
+        section: academicCourses.section,
+        term: academicCourses.term,
+      })
+      .from(academicCourses)
+      .where(eq(academicCourses.id, manualCourse!.id))
+    expect(unchangedCourse).toEqual({
+      id: manualCourse!.id,
+      source: 'manual',
+      active: false,
+      code: 'MANUAL-CODE',
+      section: 'MANUAL-SECTION',
+      term: 'Manual term',
+    })
   })
 
   it('never deactivates courses missing from a later capture', async () => {

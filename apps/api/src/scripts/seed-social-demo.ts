@@ -221,59 +221,37 @@ export async function seedSocialDemo() {
   )
 
   await db.transaction(async (transaction) => {
-    await transaction
-      .insert(users)
-      .values(
-        SOCIAL_DEMO_PROFILES.map((profile, index) => {
-          const createdAt = new Date(
-            seededAt.getTime() - (120 + index * 4) * 24 * 60 * 60 * 1_000,
-          )
-          return {
-            id: profile.id,
+    for (const [index, profile] of SOCIAL_DEMO_PROFILES.entries()) {
+      const createdAt = new Date(
+        seededAt.getTime() - (120 + index * 4) * 24 * 60 * 60 * 1_000,
+      )
+      await transaction
+        .insert(users)
+        .values({
+          id: profile.id,
+          email: profile.email,
+          passwordHash: inaccessiblePasswordHash,
+          role: profile.role,
+          status: 'active',
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .onConflictDoUpdate({
+          target: users.id,
+          set: {
             email: profile.email,
             passwordHash: inaccessiblePasswordHash,
             role: profile.role,
-            status: 'active' as const,
-            createdAt,
-            updatedAt: createdAt,
-          }
-        }),
-      )
-      .onConflictDoNothing()
-
-    await transaction
-      .insert(profiles)
-      .values(
-        SOCIAL_DEMO_PROFILES.map((profile, index) => {
-          const createdAt = new Date(
-            seededAt.getTime() - (120 + index * 4) * 24 * 60 * 60 * 1_000,
-          )
-          return {
-            userId: profile.id,
-            username: profile.username,
-            displayName: profile.displayName,
-            bio: profile.bio,
-            institution: profile.institution,
-            campus: profile.campus,
-            career: profile.career,
-            avatarUrl: uploadUrl(assets, profile.avatarMediaKey),
-            coverUrl: null,
-            website: null,
-            education: profile.education,
-            projects: profile.projects,
-            achievements: profile.achievements,
-            lastSeenAt: new Date(seededAt.getTime() - index * 23 * 60 * 1_000),
-            createdAt,
+            status: 'active',
             updatedAt: seededAt,
-          }
-        }),
-      )
-      .onConflictDoNothing()
+          },
+        })
+    }
 
-    await transaction
-      .insert(uploadedFiles)
-      .values(
-        [...assets.values()].map((asset) => ({
+    for (const asset of assets.values()) {
+      await transaction
+        .insert(uploadedFiles)
+        .values({
           id: asset.id,
           ownerId: asset.ownerId,
           storedName: asset.storedName,
@@ -281,9 +259,61 @@ export async function seedSocialDemo() {
           mimeType: asset.mimeType,
           size: asset.size,
           createdAt: seededAt,
-        })),
+        })
+        .onConflictDoUpdate({
+          target: uploadedFiles.id,
+          set: {
+            ownerId: asset.ownerId,
+            storedName: asset.storedName,
+            originalName: asset.sourceName,
+            mimeType: asset.mimeType,
+            size: asset.size,
+          },
+        })
+    }
+
+    for (const [index, profile] of SOCIAL_DEMO_PROFILES.entries()) {
+      const createdAt = new Date(
+        seededAt.getTime() - (120 + index * 4) * 24 * 60 * 60 * 1_000,
       )
-      .onConflictDoNothing()
+      const projects = profile.projects.map(
+        ({ imageMediaKey, ...project }) => ({
+          ...project,
+          imageUrl: uploadUrl(assets, imageMediaKey),
+        }),
+      )
+      const achievements = profile.achievements.map(
+        ({ imageMediaKey, ...achievement }) => ({
+          ...achievement,
+          imageUrl: uploadUrl(assets, imageMediaKey),
+        }),
+      )
+      const profileValues = {
+        userId: profile.id,
+        username: profile.username,
+        displayName: profile.displayName,
+        bio: profile.bio,
+        institution: profile.institution,
+        campus: profile.campus,
+        career: profile.career,
+        avatarUrl: uploadUrl(assets, profile.avatarMediaKey),
+        coverUrl: uploadUrl(assets, profile.coverMediaKey),
+        website: null,
+        education: profile.education,
+        projects,
+        achievements,
+        lastSeenAt: new Date(seededAt.getTime() - index * 23 * 60 * 1_000),
+        updatedAt: seededAt,
+      }
+
+      await transaction
+        .insert(profiles)
+        .values({ ...profileValues, createdAt })
+        .onConflictDoUpdate({
+          target: profiles.userId,
+          set: profileValues,
+        })
+    }
 
     await transaction
       .insert(posts)

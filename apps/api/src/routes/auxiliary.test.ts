@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import cookieParser from 'cookie-parser'
 import express, { type ErrorRequestHandler } from 'express'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, or } from 'drizzle-orm'
 import request from 'supertest'
 import {
   afterAll,
@@ -230,6 +230,20 @@ describe.sequential('auxiliary backend routes', () => {
   })
 
   afterAll(async () => {
+    // Notifications sent to an administrator are not removed by deleting the
+    // test actor (the FK intentionally uses SET NULL). Remove them first so a
+    // local test run cannot pollute the real administrator inbox.
+    if (studentId && moderatorId) {
+      const testUserIds = [studentId, moderatorId]
+      await db
+        .delete(notifications)
+        .where(
+          or(
+            inArray(notifications.userId, testUserIds),
+            inArray(notifications.actorId, testUserIds),
+          ),
+        )
+    }
     await db.delete(users).where(inArray(users.email, createdEmails))
 
     await Promise.all(

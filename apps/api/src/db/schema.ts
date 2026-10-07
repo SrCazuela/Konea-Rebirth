@@ -109,6 +109,7 @@ export type AvaDomImportPayload = {
 
 export type AvaDomImportResult = {
   importedCourses: number
+  reactivatedCourses: number
   importedTasks: number
   existingCourses: number
   existingTasks: number
@@ -221,6 +222,7 @@ export type ProfileAchievement = {
   issuedAt: string | null
   description: string
   credentialUrl: string | null
+  imageUrl: string | null
 }
 
 export type DucoRequestDraft = {

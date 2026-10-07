@@ -10,16 +10,15 @@ const MOOD_MESSAGES: Record<AvatarMood, string> = {
 }
 
 const MOOD_LABELS: Record<AvatarMood, string> = {
-  idle: 'FocusBuddy está disponible y esperando',
-  focus: 'FocusBuddy estudia durante la sesión activa',
-  paused: 'FocusBuddy descansa durante la pausa',
-  completed: 'FocusBuddy celebra la sesión completada',
+  idle: 'Kuco está disponible y esperando',
+  focus: 'Kuco estudia durante la sesión activa',
+  paused: 'Kuco descansa durante la pausa',
+  completed: 'Kuco celebra la sesión completada',
 }
 
 /**
- * Hoja provisional original 4x4: una fila por estado y cuatro fotogramas por
- * animación. Mantener esta frontera permite reemplazarla por los sprites del
- * artista sin mezclar presentación con el temporizador o la persistencia.
+ * Hoja de Kuco 4x4: una fila por estado y cuatro fotogramas por animación.
+ * La presentación permanece separada del temporizador y la persistencia.
  */
 export function FocusAvatar({ mood }: { mood: AvatarMood }) {
   return (
@@ -47,7 +46,7 @@ export function FocusAvatar({ mood }: { mood: AvatarMood }) {
         </div>
       </div>
       <div className="focus-avatar__speech" aria-live="polite">
-        <strong>FocusBuddy</strong>
+        <strong>Kuco</strong>
         <span>{MOOD_MESSAGES[mood]}</span>
       </div>
     </div>

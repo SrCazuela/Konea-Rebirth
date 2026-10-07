@@ -14,10 +14,14 @@
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed:dev": "tsx src/scripts/ensure-development-admin.ts",
-    "db:seed:social": "tsx src/scripts/seed-social-demo.ts",
+    "db:seed:dev": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/ensure-development-admin.ts",
+    "db:seed:social": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/seed-social-demo.ts",
+    "db:seed:demo:chats": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/seed-capstone-demo-chats.ts",
+    "db:seed:demo:requests": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/seed-capstone-demo-requests.ts",
+    "db:seed:demo:academic": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/seed-capstone-demo-academic.ts",
+    "db:seed:demo": "npm run db:seed:demo:chats && npm run db:seed:demo:requests && npm run db:seed:demo:academic",
     "db:studio": "drizzle-kit studio",
-    "user:role": "tsx src/scripts/set-user-role.ts"
+    "user:role": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/set-user-role.ts"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

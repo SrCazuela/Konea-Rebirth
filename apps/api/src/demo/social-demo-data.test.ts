@@ -65,6 +65,40 @@ describe('social demo dataset', () => {
     ).toHaveLength(3)
   })
 
+  it('gives every demo student a complete, media-rich fictional portfolio', () => {
+    const students = SOCIAL_DEMO_PROFILES.filter(
+      (profile) => profile.role === 'student',
+    )
+
+    for (const student of students) {
+      expect(student.email.endsWith('@demo.konea.local')).toBe(true)
+      expect(student.coverMediaKey).not.toBeNull()
+      expect(student.projects.length).toBeGreaterThanOrEqual(1)
+      expect(student.projects.length).toBeLessThanOrEqual(2)
+      expect(student.achievements.length).toBeGreaterThanOrEqual(1)
+      expect(student.achievements.length).toBeLessThanOrEqual(2)
+      expect(
+        student.projects.every(
+          (project) =>
+            SOCIAL_DEMO_MEDIA[project.imageMediaKey].ownerId === student.id,
+        ),
+      ).toBe(true)
+      expect(
+        student.achievements.every(
+          (achievement) =>
+            SOCIAL_DEMO_MEDIA[achievement.imageMediaKey].ownerId === student.id,
+        ),
+      ).toBe(true)
+      expect(
+        student.achievements.every(
+          (achievement) =>
+            achievement.issuer.includes('escenario ficticio') &&
+            /(fictici|simulad|demostr)/i.test(achievement.description),
+        ),
+      ).toBe(true)
+    }
+  })
+
   it('resolves every repository asset and validates its real file signature', async () => {
     const assets = await resolveSocialDemoAssets()
     expect(assets.size).toBe(Object.keys(SOCIAL_DEMO_MEDIA).length)
@@ -74,6 +108,9 @@ describe('social demo dataset', () => {
         (asset) => asset.size > 0 && asset.size <= 5 * 1024 * 1024,
       ),
     ).toBe(true)
+    expect(new Set([...assets.values()].map((asset) => asset.id)).size).toBe(
+      assets.size,
+    )
   })
 
   it('reports all accepted filenames when a required asset is missing', async () => {

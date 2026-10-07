@@ -1,9 +1,11 @@
 # FocusBuddy: alcance e integración
 
-FocusBuddy es el espacio de concentración de Konea. Existe como una pestaña de
-la SPA y como un cliente Electron descargable; ambos usan la misma cuenta, API
-y base PostgreSQL. El ejecutable no duplica las reglas de negocio ni incorpora
-un servidor oculto.
+FocusBuddy es el espacio de concentración de Konea. Existe como una pestaña web
+y como una aplicación Electron descargable con interfaz local propia. No abre
+ni incrusta la SPA: carga `electron/desktop.html` desde el paquete. Ambos
+clientes usan la misma cuenta y API, y PostgreSQL continúa siendo la fuente de
+verdad detrás de esa API. El ejecutable no incorpora un servidor ni accede
+directamente a la base de datos.
 
 ## Alcance actual
 
@@ -37,16 +39,16 @@ Las agregaciones usan sesiones completadas y asignan todo el bloque al día en
 que comenzó. Es una decisión de MVP; dividir una sesión que cruce medianoche
 requiere un modelo de segmentos posterior.
 
-## Flujo web y API
+## Flujo de clientes y API
 
-La implementación se divide en cuatro fronteras:
+La implementación conserva una sola autoridad de negocio con dos interfaces:
 
 ```text
-FocusBuddy.tsx ─────────────┐
-FocusAvatar.tsx (presentación) ─├─▶ src/api/study.ts ─▶ /api/v1/study
-Agenda académica (materias/tareas) ─┘                         │
-                                                               ▼
-                                                PostgreSQL + eventos
+Web: FocusBuddy.tsx ───────────────┐
+Web: src/api/study.ts ─────────────┤
+                                    ├─▶ API /api/v1 ─▶ PostgreSQL + eventos
+Electron: desktop.html + preload ──┤
+Electron: operaciones allowlist ───┘
 ```
 
 `POST /study/sessions` recibe un `clientRequestId` UUID para hacer idempotente
@@ -66,14 +68,25 @@ Los contratos HTTP completos se encuentran en [api.md](./api.md) y el esquema
 se define en `apps/api/src/db/schema.ts`, con la migración correspondiente en
 `apps/api/drizzle/`.
 
-## Avatar provisional y sprites definitivos
+## Sprites web y escritorio
 
-El avatar actual es una hoja PNG original de 4 × 4 creada para este prototipo,
-no un personaje Shimeji descargado de terceros. Su procedencia y contrato se
-documentan en `apps/web/src/assets/focusbuddy/README.md`; la interfaz web la
-consume desde `FocusAvatar.tsx` y el compañero de escritorio incluye una copia
-en su paquete. El temporizador no depende de la implementación visual. El
-avatar recibe un único estado:
+La web y el escritorio usan por defecto la hoja transparente 4 × 4 de **Kuco**,
+documentada en `apps/web/src/assets/focusbuddy/README.md` y consumida por
+`FocusAvatar.tsx`. Sus filas representan reposo, concentración, pausa y
+celebración, con cuatro fotogramas por estado. Electron conserva doce PNG fuente
+entregados por el equipo en
+`apps/focusbuddy/electron/assets/avatar-official/`: tres poses de reposo, tres
+de escritura, tres de escritura concentrada, un parpadeo y dos poses de
+estudio. Esa carpeta incluye un manifiesto con nombre original e identificador
+de Drive.
+
+Los PNG fuente miden 2136 × 2136 y conservan el fondo opaco `#B7B7B7`. El
+runtime de Electron consume copias derivadas con transparencia desde
+`apps/focusbuddy/electron/assets/avatar-cutout/`; la extracción del fondo no
+sobrescribe los originales ni su trazabilidad. El chibi sigue siendo una
+alternativa seleccionable y todavía reutiliza poses porque no tiene fotogramas
+dedicados para pausa y celebración. El temporizador y las reglas de sesión no
+dependen de estos recursos. Kuco conserva este contrato:
 
 | Estado      | Cuándo se usa                        |
 | ----------- | ------------------------------------ |
@@ -82,27 +95,18 @@ avatar recibe un único estado:
 | `paused`    | sesión pausada                       |
 | `completed` | celebración tras completar un bloque |
 
-Cada fila representa `idle`, `focus`, `paused` o `completed` y contiene cuatro
-poses. Se anima por pasos, mantiene texto alternativo y respeta
-`prefers-reduced-motion`. Cuando lleguen los sprites del dibujante, la
-sustitución recomendada es:
-
-1. exportar una hoja o secuencia por estado con dimensiones y punto de anclaje
-   consistentes;
-2. guardar los recursos optimizados bajo
-   `apps/web/src/assets/focusbuddy/` sin datos personales;
-3. reemplazar el recurso web y su copia de empaquetado, conservando la prop
-   `mood`, los cuatro estados, el texto accesible y la clase exterior;
-4. implementar un fallback estático y respetar `prefers-reduced-motion`;
-5. probar escalado en escritorio, tablet y móvil antes de retirar la hoja
-   provisional.
+Ambos clientes respetan movimiento reducido. El escritorio guarda la elección
+`Kuco`/`Chibi oficial` como preferencia local y migra las configuraciones
+anteriores a Kuco. La interfaz evita aros o marcos alrededor del personaje.
 
 ## Cliente Electron
 
-El cliente en `apps/focusbuddy` carga `#focusbuddy` y conserva esa misma
-`webContents` al alternar entre ventana normal y compacta. Por eso no existe un
-segundo temporizador ni una implementación local de las reglas: React presenta
-la sesión y la API/PostgreSQL siguen siendo la única autoridad.
+El cliente en `apps/focusbuddy` carga `electron/desktop.html` mediante
+`loadFile`. Su interfaz morada contiene las pestañas Estudio, Progreso, Ajustes
+y Cuenta, incluido un login propio. Permite elegir método, materia y pendiente,
+controlar la sesión, revisar métricas y administrar preferencias de escritorio.
+El reloj se presenta localmente, pero la API/PostgreSQL siguen siendo la única
+autoridad del tiempo y las transiciones.
 
 Además incluye un compañero flotante opcional inspirado en el patrón de los
 Shimeji, pero implementado desde cero con el avatar propio de Konea. Es una
@@ -114,8 +118,8 @@ ventana transparente que:
 - se puede arrastrar, redimensionar entre tres tamaños, mantener sobre otras
   ventanas, ocultar o usar para abrir/enfocar FocusBuddy;
 - respeta la preferencia de movimiento reducido y es operable con teclado;
-- no permite pausar, finalizar ni modificar una sesión: esas acciones continúan
-  en la SPA para reutilizar validaciones y confirmaciones existentes.
+- no recibe credenciales ni llama a la API: los controles de sesión permanecen
+  en la ventana principal local.
 
 La bandeja del sistema permite abrir la aplicación, alternar el modo compacto,
 mostrar el compañero, configurar tamaño/movimiento, cerrar a la bandeja y, en
@@ -125,13 +129,25 @@ como completada por sí solas. Posición y preferencias se guardan como JSON
 local acotado en el perfil Electron. No se sincronizan ni contienen datos de
 autenticación.
 
-La superficie privilegiada del preload expone únicamente operaciones acotadas
-de ventana, preferencias, reintento y snapshots sanitizados. Todos los mensajes
-IPC validan que el emisor sea una ventana creada por la aplicación. El renderer
-no tiene Node.js, usa aislamiento de contexto y sandbox, bloquea webviews y
-ventanas internas, mantiene seguridad web, rechaza navegación a otro origen y
-solo deriva enlaces HTTPS (o HTTP local) al navegador del sistema. Los permisos
-se limitan al origen Konea y a vídeo para el escáner QR; nunca se concede audio.
+La pestaña Ajustes permite mostrar u ocultar el compañero, elegir entre Kuco y
+el chibi oficial, mantenerlo siempre visible, elegir su escala, activar el modo compacto, cerrar a la bandeja,
+iniciar con Windows, habilitar notificaciones y reducir movimiento. Son
+preferencias del dispositivo; la cuenta, las materias, los pendientes y las
+sesiones sí se sincronizan mediante la API.
+
+La superficie privilegiada del preload expone únicamente preferencias,
+snapshots sanitizados y una lista cerrada de operaciones de API: salud,
+login/me/logout, dashboard académico, resumen de estudio, inicio y transición
+de sesiones. No existe un `fetch` genérico. El proceso principal valida cada
+operación y payload, rechaza redirecciones y realiza la solicitud con
+`credentials: include` desde una sesión persistente de Electron. La cookie
+`HttpOnly` no se expone a `desktop.html`.
+
+Todos los mensajes IPC validan que el emisor sea una ventana creada por la
+aplicación. El renderer no tiene Node.js, usa aislamiento de contexto y sandbox,
+bloquea webviews, ventanas nuevas, navegación y permisos. Su CSP también
+rechaza conexiones directas: toda sincronización pasa por la allowlist del
+proceso principal.
 
 En el paquete de distribución también se desactivan DevTools, ejecución como
 Node, `NODE_OPTIONS`, inspector y privilegios adicionales de `file://`; se
@@ -139,35 +155,35 @@ activan cifrado de cookies, integridad de ASAR y carga exclusiva desde ASAR. El
 throttling en segundo plano se desactiva para que el heartbeat continúe al
 minimizar la ventana.
 
-### Configuración de URL
+### Configuración de API
 
-- Desarrollo: `http://localhost:5173/#focusbuddy` por defecto. Se permiten
-  `FOCUSBUDDY_APP_URL` y `--app-url=...` para probar un endpoint HTTPS.
-- `iniciar-focusbuddy.bat`: fuerza la URL local y guarda el perfil Electron en
-  `.local/focusbuddy-desktop/`, junto al proyecto e ignorado por Git.
-- Distribución: `FOCUSBUDDY_APP_URL` se valida durante el build y se incorpora
-  como dato público. El ejecutable ignora overrides de URL en runtime para
-  reducir phishing; cambiar de servidor exige volver a empaquetar.
+- Desarrollo: `http://localhost:3000/api/v1` por defecto. Se permiten
+  `FOCUSBUDDY_API_URL` y `--api-url=...`.
+- `iniciar-focusbuddy.bat`: pasa la API local al cliente, guarda el perfil en
+  `.local/focusbuddy-desktop/` y no inicia Vite ni la web.
+- Distribución: `FOCUSBUDDY_API_URL` se valida durante el build y se incorpora
+  como dato público. El ejecutable empaquetado ignora overrides de runtime;
+  cambiar de servidor exige volver a empaquetar.
 
-La normalización elimina credenciales, query strings y hashes ajenos. Un
-endpoint remoto debe usar HTTPS; HTTP se reserva a `localhost`, `127.0.0.1` o
-`[::1]`.
+La URL base no admite credenciales, query string ni fragmento y debe terminar
+en `/api/v1` para la publicación. Un endpoint remoto requiere HTTPS; HTTP se
+reserva a `localhost`, `127.0.0.1` o `[::1]`.
 
 ### Comandos
 
 ```powershell
-# API, web, migraciones y cliente local
+# PostgreSQL, migraciones, API y cliente local (sin Vite)
 .\iniciar-focusbuddy.bat
 
-# Solo el shell, cuando API y web ya están activos
+# Solo Electron, cuando la API ya está activa
 npm run focusbuddy
 
-# Instalador demostrable contra la web local (todavía sin hosting)
-Remove-Item Env:FOCUSBUDDY_APP_URL -ErrorAction SilentlyContinue
+# Instalador demostrable contra la API local (todavía sin hosting)
+Remove-Item Env:FOCUSBUDDY_API_URL -ErrorAction SilentlyContinue
 npm run dist:focusbuddy
 
-# Instalador enlazado a una instalación publicada
-$env:FOCUSBUDDY_APP_URL = 'https://konea.example'
+# Instalador enlazado a una API publicada
+$env:FOCUSBUDDY_API_URL = 'https://api.konea.example/api/v1'
 npm run dist:focusbuddy
 ```
 
@@ -176,22 +192,22 @@ endpoint y los fuses del ejecutable. El resultado se escribe en
 `apps/focusbuddy/release/`, carpeta ignorada por Git. La URL es pública; nunca se
 deben incorporar API keys, cookies, contraseñas ni enlaces ICS de AVA.
 
-Mientras no exista hosting, omitir `FOCUSBUDDY_APP_URL` genera honestamente un
-instalador local fijado a `http://localhost:5173/#focusbuddy`; la excepción HTTP
-solo aplica al loopback del mismo equipo. Para demostrar ese instalador se debe
-mantener `iniciar.bat` abierto (levanta PostgreSQL, migraciones, API y web) y
-abrir después la aplicación instalada. `iniciar-focusbuddy.bat` sigue siendo el
-recorrido más directo para desarrollo: levanta esos servicios y abre el shell
-Electron no empaquetado. Un instalador destinado a otros equipos no será
-autónomo hasta publicar web/API; ese build remoto exige una URL HTTPS.
+Mientras no exista hosting, omitir `FOCUSBUDDY_API_URL` genera un instalador
+local fijado a `http://localhost:3000/api/v1`; la excepción HTTP solo aplica al
+loopback del mismo equipo. Para demostrarlo se deben mantener PostgreSQL y la
+API activos. `iniciar-focusbuddy.bat` es el recorrido más directo: prepara esos
+servicios y abre Electron sin Vite. Un instalador para otros equipos requiere
+una API publicada mediante HTTPS; publicar la web no es un requisito técnico
+del cliente de escritorio.
 
 ### Publicación y descarga
 
 El workflow `.github/workflows/focusbuddy-release.yml` publica una versión de
 Windows x64 cuando se envía un tag `focusbuddy-v*`; el tag debe coincidir
 exactamente con `focusbuddy-v<version>` de `apps/focusbuddy/package.json`. La
-variable de repositorio `FOCUSBUDDY_APP_URL` debe apuntar a la instalación HTTPS
-de Konea; el workflow rechaza valores vacíos, HTTP o con credenciales. El release
+variable de repositorio `FOCUSBUDDY_API_URL` debe apuntar a la API HTTPS y
+terminar en `/api/v1`; el workflow rechaza valores vacíos, HTTP remoto,
+credenciales, query o fragmento. El release
 incluye:
 
 - `Konea-FocusBuddy-Windows-x64.exe`;
@@ -216,22 +232,23 @@ configure un certificado de firma de código.
 
 ## Limitaciones y siguiente fase
 
-El MVP no funciona sin una web/API accesible, no inicia ciclos automáticos de
-descanso, no divide tiempo entre días y no incluye actualizaciones automáticas.
-La notificación local opcional depende de que la SPA emita el snapshot mientras
-está abierta y no sustituye un servicio push. El instalador local tampoco está
-firmado.
+El cliente de escritorio no funciona plenamente sin una API accesible, no
+incluye cola offline, no inicia ciclos automáticos de descanso, no divide tiempo
+entre días y no incluye actualizaciones automáticas. La notificación local
+opcional depende de que la ventana principal mantenga el snapshot de sesión y
+no sustituye un servicio push. El instalador local tampoco está firmado.
 
 La siguiente fase recomendada es:
 
-1. reemplazar la hoja provisional por los sprites definitivos y validar sus
-   anclas tanto en la web como en el compañero flotante;
+1. reemplazar los derivados por exportaciones transparentes entregadas por el
+   equipo y agregar estados de pausa/celebración para que el chibi alcance la
+   misma cobertura visual de Kuco;
 2. agregar ciclos de descanso configurables y, después del consentimiento,
    notificaciones push que funcionen con la ventana cerrada;
 3. validar con estudiantes qué dashboards aportan valor (por método, tarea,
    franja horaria u objetivo semanal) antes de acumular gráficos;
 4. materializar sesiones abandonadas con un trabajo programado del servidor;
-5. publicar web/API con HTTPS, regenerar el cliente contra ese endpoint, firmar
+5. publicar la API con HTTPS, regenerar el cliente contra ese endpoint, firmar
    el instalador y definir actualizaciones verificadas;
 6. ejecutar pruebas E2E del recorrido login → sesión → pausa → cierre
    abrupto → recuperación → finalización.

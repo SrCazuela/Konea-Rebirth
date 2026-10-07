@@ -13,7 +13,7 @@ type Point = { x: number; y: number }
 
 const outputSize = {
   avatar: { width: 800, height: 800 },
-  cover: { width: 1500, height: 500 },
+  cover: { width: 1600, height: 320 },
 } as const
 
 export function ImageCropDialog({

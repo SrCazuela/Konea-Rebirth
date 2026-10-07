@@ -368,10 +368,23 @@ function Stop-ProcessTree {
 }
 
 function Start-FocusBuddyDesktop {
+  param(
+    [int]$ApiPort = 3000,
+    [Parameter(Mandatory = $true)]
+    [string]$NodePath
+  )
+
   $ElectronPath = Join-Path $ProjectRoot 'node_modules\electron\dist\electron.exe'
   $FocusBuddyDirectory = Join-Path $ProjectRoot 'apps\focusbuddy'
   if (-not (Test-Path -LiteralPath $ElectronPath -PathType Leaf)) {
-    throw 'Falta Electron para FocusBuddy. Ejecuta npm install y vuelve a intentarlo.'
+    Write-Host 'Completando la instalacion local de Electron...' -ForegroundColor Yellow
+    Invoke-NativeCommand `
+      -FilePath $NodePath `
+      -Arguments @('-e', "require('electron')") `
+      -FailureMessage 'Electron no pudo preparar su ejecutable local'
+  }
+  if (-not (Test-Path -LiteralPath $ElectronPath -PathType Leaf)) {
+    throw 'Electron no dejo disponible su ejecutable despues de reconstruirse.'
   }
   if (-not (Test-Path -LiteralPath $FocusBuddyDirectory -PathType Container)) {
     throw 'No se encontro el cliente apps\focusbuddy.'
@@ -385,7 +398,7 @@ function Start-FocusBuddyDesktop {
     -FilePath $ElectronPath `
     -ArgumentList @(
       "`"$FocusBuddyDirectory`"",
-      '--app-url=http://localhost:5173/'
+      "--api-url=http://127.0.0.1:$ApiPort/api/v1"
     ) `
     -WorkingDirectory $ProjectRoot `
     -PassThru
@@ -472,7 +485,7 @@ try {
     Write-Host "Cuenta local omitida en NODE_ENV=$NodeEnvironment."
   }
 
-  Write-Step -Number 6 -Total 8 -Message 'Preparando contenido social de demostracion'
+  Write-Step -Number 6 -Total 8 -Message 'Preparando contenido de demostracion'
   if ([string]::IsNullOrWhiteSpace($NodeEnvironment) -or $NodeEnvironment -eq 'development') {
     $SeedSocialDemo = Get-DotEnvValue -Name 'SEED_SOCIAL_DEMO'
     if ([string]::IsNullOrWhiteSpace($SeedSocialDemo)) {
@@ -493,9 +506,34 @@ try {
         throw "SEED_SOCIAL_DEMO='$SeedSocialDemo' no es valido. Usa true o false."
       }
     }
+
+    $SeedCapstoneDemo = Get-DotEnvValue -Name 'SEED_CAPSTONE_DEMO'
+    if ([string]::IsNullOrWhiteSpace($SeedCapstoneDemo)) {
+      $SeedCapstoneDemo = 'true'
+    }
+
+    switch ($SeedCapstoneDemo.ToLowerInvariant()) {
+      'true' {
+        if ($SeedSocialDemo.ToLowerInvariant() -eq 'false') {
+          Write-Host 'Escenario Capstone omitido porque SEED_SOCIAL_DEMO=false.'
+        }
+        else {
+          Invoke-NativeCommand `
+            -FilePath $NpmPath `
+            -Arguments @('run', 'db:seed:demo') `
+            -FailureMessage 'No se pudo preparar el escenario Capstone de demostracion'
+        }
+      }
+      'false' {
+        Write-Host 'Escenario Capstone de demostracion omitido por configuracion.'
+      }
+      default {
+        throw "SEED_CAPSTONE_DEMO='$SeedCapstoneDemo' no es valido. Usa true o false."
+      }
+    }
   }
   else {
-    Write-Host "Contenido social de demostracion omitido en NODE_ENV=$NodeEnvironment."
+    Write-Host "Contenido de demostracion omitido en NODE_ENV=$NodeEnvironment."
   }
 
   Write-Step -Number 7 -Total 8 -Message 'Preparando el proveedor de IA de DUCO'
@@ -580,7 +618,8 @@ try {
     }
   }
 
-  Write-Step -Number 8 -Total 8 -Message 'Iniciando API y web'
+  $RuntimeDescription = if ($FocusBuddy) { 'API y FocusBuddy' } else { 'API y web' }
+  Write-Step -Number 8 -Total 8 -Message "Iniciando $RuntimeDescription"
   $ApiPortText = Get-DotEnvValue -Name 'API_PORT'
   if ([string]::IsNullOrWhiteSpace($ApiPortText)) {
     $ApiPortText = '3000'
@@ -599,16 +638,24 @@ try {
   $ApiHealthUrl = "http://127.0.0.1:$ApiPort/api/v1/health"
   $WebUrl = 'http://localhost:5173/'
   $WebHealthUrl = "${WebUrl}api/v1/health"
+  $NeedsWeb = -not $FocusBuddy
   $ApiIsRunning = Test-KoneaHealthEndpoint -Uri $ApiHealthUrl
-  $WebIsRunning = Test-KoneaHealthEndpoint -Uri $WebHealthUrl
+  $WebIsRunning = if ($NeedsWeb) {
+    Test-KoneaHealthEndpoint -Uri $WebHealthUrl
+  }
+  else {
+    $true
+  }
 
   if ($ApiIsRunning -and $WebIsRunning) {
     Write-Host ''
-    Write-Host 'Konea ya estaba en ejecucion y ambos servicios responden correctamente.' -ForegroundColor Green
-    Write-Host "Web: $WebUrl"
+    Write-Host "$RuntimeDescription ya estaba en ejecucion y responde correctamente." -ForegroundColor Green
+    if ($NeedsWeb) {
+      Write-Host "Web: $WebUrl"
+    }
     Write-Host "API: $ApiHealthUrl"
     if ($FocusBuddy) {
-      Start-FocusBuddyDesktop | Out-Null
+      Start-FocusBuddyDesktop -ApiPort $ApiPort -NodePath $NodePath | Out-Null
       Write-Host 'FocusBuddy se abrio como aplicacion de escritorio.' -ForegroundColor Green
     }
     return
@@ -621,16 +668,18 @@ try {
     Write-Host 'La API ya esta activa; se reutilizara esta instancia.' -ForegroundColor Green
   }
 
-  if (-not $WebIsRunning) {
-    Assert-PortAvailable -Port 5173 -ServiceName 'la web'
-  }
-  else {
-    Write-Host 'La web ya esta activa; se reutilizara esta instancia.' -ForegroundColor Green
+  if ($NeedsWeb) {
+    if (-not $WebIsRunning) {
+      Assert-PortAvailable -Port 5173 -ServiceName 'la web'
+    }
+    else {
+      Write-Host 'La web ya esta activa; se reutilizara esta instancia.' -ForegroundColor Green
+    }
   }
 
   Write-Host ''
-  Write-Host 'Iniciando los servidores de Konea...'
-  Write-Host 'Para detener API y web, presiona Ctrl+C en esta ventana.'
+  Write-Host "Iniciando $RuntimeDescription..."
+  Write-Host "Para detener $RuntimeDescription, presiona Ctrl+C en esta ventana."
   if ($Provider -eq 'ollama') {
     Write-Host 'PostgreSQL y Ollama permaneceran activos para el siguiente inicio.'
   }
@@ -656,7 +705,7 @@ try {
         -NoNewWindow `
         -PassThru
     }
-    if (-not $WebIsRunning) {
+    if ($NeedsWeb -and -not $WebIsRunning) {
       $WebProcess = Start-Process `
         -FilePath $NodePath `
         -ArgumentList @('--no-maglev', "`"$WebEntryPoint`"") `
@@ -683,27 +732,29 @@ try {
 
       if (
         (Test-KoneaHealthEndpoint -Uri $ApiHealthUrl) -and
-        (Test-KoneaHealthEndpoint -Uri $WebHealthUrl)
+        (-not $NeedsWeb -or (Test-KoneaHealthEndpoint -Uri $WebHealthUrl))
       ) {
         $ServicesAreReady = $true
         break
       }
 
       if ($Attempt % 20 -eq 0) {
-        Write-Host 'Esperando a que API y web esten listas...'
+        Write-Host "Esperando a que $RuntimeDescription este listo..."
       }
     }
 
     if (-not $ServicesAreReady) {
-      throw 'API y web no respondieron correctamente dentro de 60 segundos.'
+      throw "$RuntimeDescription no respondio correctamente dentro de 60 segundos."
     }
 
     Write-Host ''
     Write-Host 'Konea esta lista.' -ForegroundColor Green
-    Write-Host "Web: $WebUrl"
+    if ($NeedsWeb) {
+      Write-Host "Web: $WebUrl"
+    }
     Write-Host "API: $ApiHealthUrl"
     if ($FocusBuddy) {
-      $FocusBuddyProcess = Start-FocusBuddyDesktop
+      $FocusBuddyProcess = Start-FocusBuddyDesktop -ApiPort $ApiPort -NodePath $NodePath
       Write-Host 'FocusBuddy se abrio como aplicacion de escritorio.' -ForegroundColor Green
     }
     Write-Host ''
@@ -730,7 +781,7 @@ try {
         if (-not (Test-KoneaHealthEndpoint -Uri $ApiHealthUrl)) {
           throw 'La API dejo de responder correctamente.'
         }
-        if (-not (Test-KoneaHealthEndpoint -Uri $WebHealthUrl)) {
+        if ($NeedsWeb -and -not (Test-KoneaHealthEndpoint -Uri $WebHealthUrl)) {
           throw 'La web dejo de responder correctamente.'
         }
       }

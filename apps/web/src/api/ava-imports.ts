@@ -26,6 +26,7 @@ export type AvaDomImportPayload = {
 
 export type AvaImportResult = {
   importedCourses: number
+  reactivatedCourses: number
   importedTasks: number
   existingCourses: number
   existingTasks: number
@@ -38,7 +39,13 @@ export type AvaImportPreview = {
     expiresAt: string
     result: AvaImportResult | null
   }
-  courses: Array<AvaDomImportPayload['courses'][number] & { existing: boolean }>
+  courses: Array<
+    AvaDomImportPayload['courses'][number] & {
+      existing: boolean
+      reactivatable: boolean
+      state: 'new' | 'reactivatable' | 'existing'
+    }
+  >
   activities: Array<
     AvaDomImportPayload['activities'][number] & { existing: boolean }
   >

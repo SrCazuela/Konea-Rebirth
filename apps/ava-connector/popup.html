@@ -22,6 +22,11 @@
       </p>
 
       <section id="status" role="status">Revisando la pestaña activa…</section>
+      <p id="stream-warning" class="warning" hidden>
+        La fecha lateral de Actividad corresponde a la publicación del aviso, no
+        a su vencimiento. Para importar próximas evaluaciones abre Calendario en
+        AVA.
+      </p>
       <form id="preview" hidden>
         <section>
           <div class="section-title">
@@ -32,12 +37,23 @@
         </section>
         <section>
           <div class="section-title">
-            <h2>Actividades con fecha</h2>
+            <h2 id="activity-heading">Tareas con vencimiento</h2>
             <span id="activity-count">0</span>
           </div>
           <div id="activities" class="items"></div>
         </section>
-        <p class="hint">
+        <section id="recent-activity-section" hidden>
+          <div class="section-title">
+            <h2>Actividad reciente <small>Solo lectura</small></h2>
+            <span id="recent-activity-count">0</span>
+          </div>
+          <div id="recent-activities" class="items"></div>
+          <p class="read-only-note">
+            Estas fechas indican cuándo se publicó cada novedad en AVA. No se
+            exportan como tareas ni fechas de entrega.
+          </p>
+        </section>
+        <p id="selection-hint" class="hint">
           Revisa la selección. Konea volverá a pedir tu confirmación antes de
           guardar cualquier dato.
         </p>

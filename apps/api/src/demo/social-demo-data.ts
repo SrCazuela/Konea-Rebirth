@@ -26,6 +26,16 @@ export const SOCIAL_DEMO_USER_IDS = {
   news: stableId('d1', 13),
 } as const
 
+const demoMedia = (
+  sequence: number,
+  ownerId: string,
+  candidates: string[],
+) => ({
+  id: stableId('d2', sequence),
+  ownerId,
+  candidates,
+})
+
 export const SOCIAL_DEMO_MEDIA = {
   avatarOrangeCat: {
     id: stableId('d2', 1),
@@ -91,6 +101,92 @@ export const SOCIAL_DEMO_MEDIA = {
     ownerId: SOCIAL_DEMO_USER_IDS.anto,
     candidates: ['post-purple-workspace.jpg'],
   },
+  coverVale: demoMedia(13, SOCIAL_DEMO_USER_IDS.vale, [
+    'post-purple-workspace.jpg',
+  ]),
+  projectVale: demoMedia(14, SOCIAL_DEMO_USER_IDS.vale, ['profile-code.jpg']),
+  achievementVale: demoMedia(15, SOCIAL_DEMO_USER_IDS.vale, [
+    'profile-certificate.png',
+  ]),
+  coverMati: demoMedia(16, SOCIAL_DEMO_USER_IDS.mati, ['profile-code.jpg']),
+  projectMati: demoMedia(17, SOCIAL_DEMO_USER_IDS.mati, ['profile-code.jpg']),
+  achievementMati: demoMedia(18, SOCIAL_DEMO_USER_IDS.mati, [
+    'profile-certificate.png',
+  ]),
+  coverFer: demoMedia(19, SOCIAL_DEMO_USER_IDS.fer, ['profile-workspace.jpg']),
+  projectFer: demoMedia(20, SOCIAL_DEMO_USER_IDS.fer, [
+    'profile-workspace.jpg',
+  ]),
+  achievementFer: demoMedia(21, SOCIAL_DEMO_USER_IDS.fer, [
+    'profile-certificate.png',
+  ]),
+  coverDiego: demoMedia(22, SOCIAL_DEMO_USER_IDS.diego, [
+    'profile-mixing-console.jpg',
+  ]),
+  projectDiego: demoMedia(23, SOCIAL_DEMO_USER_IDS.diego, [
+    'profile-mixing-console.jpg',
+  ]),
+  achievementDiego: demoMedia(24, SOCIAL_DEMO_USER_IDS.diego, [
+    'profile-certificate.png',
+  ]),
+  coverCami: demoMedia(25, SOCIAL_DEMO_USER_IDS.cami, [
+    'profile-warehouse.jpg',
+  ]),
+  projectCami: demoMedia(26, SOCIAL_DEMO_USER_IDS.cami, [
+    'profile-warehouse.jpg',
+  ]),
+  achievementCami: demoMedia(27, SOCIAL_DEMO_USER_IDS.cami, [
+    'profile-certificate.png',
+  ]),
+  coverTomas: demoMedia(28, SOCIAL_DEMO_USER_IDS.tomas, ['profile-code.jpg']),
+  projectTomas: demoMedia(29, SOCIAL_DEMO_USER_IDS.tomas, ['profile-code.jpg']),
+  achievementTomas: demoMedia(30, SOCIAL_DEMO_USER_IDS.tomas, [
+    'profile-certificate.png',
+  ]),
+  coverAnto: demoMedia(31, SOCIAL_DEMO_USER_IDS.anto, [
+    'profile-film-production.jpg',
+  ]),
+  projectAnto: demoMedia(32, SOCIAL_DEMO_USER_IDS.anto, [
+    'profile-film-production.jpg',
+  ]),
+  achievementAnto: demoMedia(33, SOCIAL_DEMO_USER_IDS.anto, [
+    'profile-certificate.png',
+  ]),
+  coverBenja: demoMedia(34, SOCIAL_DEMO_USER_IDS.benja, ['profile-code.jpg']),
+  projectBenja: demoMedia(35, SOCIAL_DEMO_USER_IDS.benja, ['profile-code.jpg']),
+  achievementBenja: demoMedia(36, SOCIAL_DEMO_USER_IDS.benja, [
+    'profile-certificate.png',
+  ]),
+  coverJavi: demoMedia(37, SOCIAL_DEMO_USER_IDS.javi, [
+    'profile-workspace.jpg',
+  ]),
+  projectJavi: demoMedia(38, SOCIAL_DEMO_USER_IDS.javi, [
+    'profile-workspace.jpg',
+  ]),
+  achievementJavi: demoMedia(39, SOCIAL_DEMO_USER_IDS.javi, [
+    'profile-certificate.png',
+  ]),
+  coverNico: demoMedia(40, SOCIAL_DEMO_USER_IDS.nico, [
+    'profile-workspace.jpg',
+  ]),
+  projectNico: demoMedia(41, SOCIAL_DEMO_USER_IDS.nico, [
+    'profile-workspace.jpg',
+  ]),
+  achievementNico: demoMedia(42, SOCIAL_DEMO_USER_IDS.nico, [
+    'profile-certificate.png',
+  ]),
+  coverIsi: demoMedia(43, SOCIAL_DEMO_USER_IDS.isi, ['profile-warehouse.jpg']),
+  projectIsi: demoMedia(44, SOCIAL_DEMO_USER_IDS.isi, [
+    'profile-workspace.jpg',
+  ]),
+  achievementIsi: demoMedia(45, SOCIAL_DEMO_USER_IDS.isi, [
+    'profile-certificate.png',
+  ]),
+  coverSeba: demoMedia(46, SOCIAL_DEMO_USER_IDS.seba, ['profile-code.jpg']),
+  projectSeba: demoMedia(47, SOCIAL_DEMO_USER_IDS.seba, ['profile-code.jpg']),
+  achievementSeba: demoMedia(48, SOCIAL_DEMO_USER_IDS.seba, [
+    'profile-certificate.png',
+  ]),
 } as const
 
 export type SocialDemoMediaKey = keyof typeof SOCIAL_DEMO_MEDIA
@@ -219,6 +315,14 @@ export async function resolveSocialDemoAssets(
   return resolved
 }
 
+type SocialDemoProject = Omit<ProfileProject, 'imageUrl'> & {
+  imageMediaKey: SocialDemoMediaKey
+}
+
+type SocialDemoAchievement = Omit<ProfileAchievement, 'imageUrl'> & {
+  imageMediaKey: SocialDemoMediaKey
+}
+
 type SocialDemoProfile = {
   id: string
   email: string
@@ -230,9 +334,10 @@ type SocialDemoProfile = {
   campus: string
   career: string
   avatarMediaKey: SocialDemoMediaKey | null
+  coverMediaKey: SocialDemoMediaKey | null
   education: ProfileEducation[]
-  projects: ProfileProject[]
-  achievements: ProfileAchievement[]
+  projects: SocialDemoProject[]
+  achievements: SocialDemoAchievement[]
 }
 
 const currentEducation = (
@@ -261,20 +366,42 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede San Joaquín',
     career: 'Ingeniería en Informática',
     avatarMediaKey: 'postCatLaptop',
+    coverMediaKey: 'coverVale',
     education: currentEducation(1, 'Ingeniería en Informática'),
     projects: [
       {
         id: stableId('d6', 1),
         title: 'Mapa colaborativo de salas',
         description:
-          'Prototipo móvil para ubicar laboratorios, salas y servicios dentro de la sede.',
+          'Proyecto académico de demostración para ubicar laboratorios, salas y servicios dentro de la sede.',
         url: null,
         repositoryUrl: null,
-        imageUrl: null,
+        imageMediaKey: 'projectVale',
         technologies: ['React', 'TypeScript', 'PostgreSQL'],
       },
+      {
+        id: stableId('d6', 5),
+        title: 'Panel de acompañamiento de Capstone',
+        description:
+          'Prototipo ficticio que resume hitos, bloqueos y acuerdos de un equipo estudiantil.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectVale',
+        technologies: ['Node.js', 'Figma', 'SQL'],
+      },
     ],
-    achievements: [],
+    achievements: [
+      {
+        id: stableId('d7', 2),
+        title: 'Prototipo colaborativo destacado',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-08',
+        description:
+          'Reconocimiento ficticio creado exclusivamente para demostrar el portafolio de Konea.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementVale',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.mati,
@@ -287,9 +414,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Antonio Varas',
     career: 'Analista Programador',
     avatarMediaKey: 'avatarGodot',
+    coverMediaKey: 'coverMati',
     education: currentEducation(2, 'Analista Programador'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 6),
+        title: 'Bitácora de errores jugable',
+        description:
+          'Proyecto ficticio de demostración que convierte ejercicios de lógica en desafíos breves.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectMati',
+        technologies: ['Godot', 'GDScript', 'Git'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 3),
+        title: 'Mención por depuración creativa',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-05',
+        description:
+          'Hito ficticio incorporado para mostrar certificaciones y logros dentro del perfil.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementMati',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.fer,
@@ -302,20 +452,52 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Viña del Mar',
     career: 'Ilustración para Contextos Globales',
     avatarMediaKey: 'avatarKiki',
+    coverMediaKey: 'coverFer',
     education: currentEducation(3, 'Ilustración para Contextos Globales'),
     projects: [
       {
         id: stableId('d6', 2),
         title: 'Bestiario del transporte público',
         description:
-          'Serie de personajes inspirados en trayectos cotidianos por Valparaíso y Viña del Mar.',
+          'Serie ficticia de personajes inspirados en trayectos cotidianos por Valparaíso y Viña del Mar.',
         url: null,
         repositoryUrl: null,
-        imageUrl: null,
+        imageMediaKey: 'projectFer',
         technologies: ['Procreate', 'Photoshop'],
       },
+      {
+        id: stableId('d6', 7),
+        title: 'Guía visual de emociones académicas',
+        description:
+          'Proyecto de demostración con recursos gráficos para comunicar estados de ánimo sin exponer datos personales.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectFer',
+        technologies: ['Krita', 'Illustrator'],
+      },
     ],
-    achievements: [],
+    achievements: [
+      {
+        id: stableId('d7', 4),
+        title: 'Selección de narrativa visual',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-07',
+        description:
+          'Selección simulada para enseñar cómo Konea presenta hitos creativos en un portafolio.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementFer',
+      },
+      {
+        id: stableId('d7', 5),
+        title: 'Taller de accesibilidad gráfica',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-09',
+        description:
+          'Constancia ficticia utilizada únicamente como contenido demostrativo.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementFer',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.diego,
@@ -328,9 +510,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede San Carlos de Apoquindo',
     career: 'Ingeniería en Sonido',
     avatarMediaKey: 'avatarSupertuxkart',
+    coverMediaKey: 'coverDiego',
     education: currentEducation(4, 'Ingeniería en Sonido'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 8),
+        title: 'Paisaje sonoro de la sede',
+        description:
+          'Proyecto ficticio de demostración que mezcla sonidos cotidianos para una pieza inmersiva.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectDiego',
+        technologies: ['Reaper', 'Pro Tools', 'Field Recording'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 6),
+        title: 'Mezcla estudiantil destacada',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-06',
+        description:
+          'Reconocimiento ficticio incluido para la demostración del módulo de portafolio.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementDiego',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.cami,
@@ -343,17 +548,40 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Plaza Oeste',
     career: 'Ingeniería en Gestión Logística',
     avatarMediaKey: 'avatarBlackCat',
+    coverMediaKey: 'coverCami',
     education: currentEducation(5, 'Ingeniería en Gestión Logística'),
-    projects: [],
+    projects: [
+      {
+        id: stableId('d6', 9),
+        title: 'Simulador de preparación de pedidos',
+        description:
+          'Caso ficticio de portafolio para comparar recorridos y tiempos de preparación en bodega.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectCami',
+        technologies: ['Power BI', 'Excel', 'SQL'],
+      },
+    ],
     achievements: [
       {
         id: stableId('d7', 1),
         title: 'Finalista desafío de mejora de procesos',
-        issuer: 'Duoc UC',
+        issuer: 'Konea · escenario ficticio',
         issuedAt: '2026-06',
         description:
-          'Propuesta estudiantil para reducir tiempos de preparación.',
+          'Reconocimiento ficticio a una propuesta estudiantil para reducir tiempos de preparación.',
         credentialUrl: null,
+        imageMediaKey: 'achievementCami',
+      },
+      {
+        id: stableId('d7', 7),
+        title: 'Taller de visualización de operaciones',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-08',
+        description:
+          'Constancia ficticia creada para mostrar múltiples logros en un perfil de demostración.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementCami',
       },
     ],
   },
@@ -368,9 +596,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Padre Alonso de Ovalle',
     career: 'Ingeniería en Informática',
     avatarMediaKey: 'postStudyDesk',
+    coverMediaKey: 'coverTomas',
     education: currentEducation(6, 'Ingeniería en Informática'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 10),
+        title: 'API para grupos de estudio',
+        description:
+          'Proyecto ficticio de demostración para coordinar sesiones, materias y disponibilidad.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectTomas',
+        technologies: ['Node.js', 'Express', 'PostgreSQL'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 8),
+        title: 'Buenas prácticas de bases de datos',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-05',
+        description:
+          'Insignia ficticia preparada exclusivamente para la experiencia demo de Konea.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementTomas',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.anto,
@@ -383,20 +634,42 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Viña del Mar',
     career: 'Comunicación Audiovisual',
     avatarMediaKey: 'postPurpleWorkspace',
+    coverMediaKey: 'coverAnto',
     education: currentEducation(7, 'Comunicación Audiovisual'),
     projects: [
       {
         id: stableId('d6', 3),
         title: 'Último recorrido',
         description:
-          'Cortometraje estudiantil sobre las historias que coinciden en el último bus de la noche.',
+          'Cortometraje ficticio sobre las historias que coinciden en el último bus de la noche.',
         url: null,
         repositoryUrl: null,
-        imageUrl: null,
+        imageMediaKey: 'projectAnto',
         technologies: ['DaVinci Resolve', 'Premiere Pro'],
       },
+      {
+        id: stableId('d6', 11),
+        title: 'Detrás de una entrega',
+        description:
+          'Microdocumental de demostración sobre la coordinación de un equipo audiovisual estudiantil.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectAnto',
+        technologies: ['After Effects', 'Audition'],
+      },
     ],
-    achievements: [],
+    achievements: [
+      {
+        id: stableId('d7', 9),
+        title: 'Muestra audiovisual estudiantil',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-07',
+        description:
+          'Participación ficticia incluida para enseñar la sección de logros del perfil.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementAnto',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.benja,
@@ -409,9 +682,42 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede San Joaquín',
     career: 'Ingeniería en Redes y Telecomunicaciones',
     avatarMediaKey: 'postBlackCatComputer',
+    coverMediaKey: 'coverBenja',
     education: currentEducation(8, 'Ingeniería en Redes y Telecomunicaciones'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 12),
+        title: 'Monitor del laboratorio 302',
+        description:
+          'Proyecto ficticio de demostración que registra disponibilidad y alertas de una red de laboratorio.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectBenja',
+        technologies: ['Linux', 'Docker', 'Grafana'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 10),
+        title: 'Laboratorio de redes seguras',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-04',
+        description:
+          'Constancia ficticia utilizada para demostrar medios adjuntos a certificaciones.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementBenja',
+      },
+      {
+        id: stableId('d7', 11),
+        title: 'Desafío de observabilidad',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-09',
+        description:
+          'Hito simulado para mostrar una trayectoria técnica más completa.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementBenja',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.javi,
@@ -424,20 +730,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Plaza Vespucio',
     career: 'Diseño Gráfico',
     avatarMediaKey: 'avatarPepper',
+    coverMediaKey: 'coverJavi',
     education: currentEducation(9, 'Diseño Gráfico'),
     projects: [
       {
         id: stableId('d6', 4),
         title: 'Señalética accesible para talleres',
         description:
-          'Sistema visual de alto contraste probado en recorridos y espacios de trabajo.',
+          'Proyecto ficticio de alto contraste para recorridos y espacios de trabajo.',
         url: null,
         repositoryUrl: null,
-        imageUrl: null,
+        imageMediaKey: 'projectJavi',
         technologies: ['Figma', 'Illustrator'],
       },
     ],
-    achievements: [],
+    achievements: [
+      {
+        id: stableId('d7', 12),
+        title: 'Mención de diseño inclusivo',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-06',
+        description:
+          'Reconocimiento ficticio incorporado para visualizar un portafolio de diseño completo.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementJavi',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.nico,
@@ -450,9 +768,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Puente Alto',
     career: 'Técnico en Enfermería',
     avatarMediaKey: 'avatarGreyKitten',
+    coverMediaKey: 'coverNico',
     education: currentEducation(10, 'Técnico en Enfermería'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 13),
+        title: 'Checklist de preparación de turno',
+        description:
+          'Recurso ficticio de demostración para organizar materiales, pausas y aprendizajes de práctica.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectNico',
+        technologies: ['Notion', 'Canva', 'Excel'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 13),
+        title: 'Taller simulado de primeros auxilios',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-08',
+        description:
+          'Constancia completamente ficticia para demostrar la presentación de formación complementaria.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementNico',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.isi,
@@ -465,9 +806,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Maipú',
     career: 'Ingeniería en Marketing Digital',
     avatarMediaKey: 'avatarOrangeCat',
+    coverMediaKey: 'coverIsi',
     education: currentEducation(11, 'Ingeniería en Marketing Digital'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 14),
+        title: 'Panel de campaña para feria estudiantil',
+        description:
+          'Caso ficticio de portafolio para analizar alcance, interacción y conversiones de una campaña.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectIsi',
+        technologies: ['Looker Studio', 'Figma', 'Google Sheets'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 14),
+        title: 'Pitch de campaña destacado',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-07',
+        description:
+          'Reconocimiento ficticio preparado para mostrar logros vinculados al área de marketing.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementIsi',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.seba,
@@ -480,9 +844,32 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Sede Plaza Norte',
     career: 'Ingeniería en Informática',
     avatarMediaKey: 'avatarGrumpyCat',
+    coverMediaKey: 'coverSeba',
     education: currentEducation(12, 'Ingeniería en Informática'),
-    projects: [],
-    achievements: [],
+    projects: [
+      {
+        id: stableId('d6', 15),
+        title: 'Radar de entregas críticas',
+        description:
+          'Aplicación ficticia de demostración para priorizar entregas y detectar plazos demasiado ajustados.',
+        url: null,
+        repositoryUrl: null,
+        imageMediaKey: 'projectSeba',
+        technologies: ['Vue', 'TypeScript', 'SQLite'],
+      },
+    ],
+    achievements: [
+      {
+        id: stableId('d7', 15),
+        title: 'Reto de prototipado rápido',
+        issuer: 'Konea · escenario ficticio',
+        issuedAt: '2026-05',
+        description:
+          'Hito ficticio creado para poblar la vista de logros durante la demostración.',
+        credentialUrl: null,
+        imageMediaKey: 'achievementSeba',
+      },
+    ],
   },
   {
     id: SOCIAL_DEMO_USER_IDS.news,
@@ -495,6 +882,7 @@ export const SOCIAL_DEMO_PROFILES: SocialDemoProfile[] = [
     campus: 'Campus Virtual',
     career: 'Administración Pública',
     avatarMediaKey: null,
+    coverMediaKey: null,
     education: [],
     projects: [],
     achievements: [],
@@ -1147,6 +1535,15 @@ export function validateSocialDemoData() {
   const userIds = new Set(SOCIAL_DEMO_PROFILES.map((profile) => profile.id))
   const postIds = new Set(SOCIAL_DEMO_POSTS.map((post) => post.id))
   const mediaKeys = new Set(Object.keys(SOCIAL_DEMO_MEDIA))
+  const educationIds = SOCIAL_DEMO_PROFILES.flatMap((profile) =>
+    profile.education.map((entry) => entry.id),
+  )
+  const projectIds = SOCIAL_DEMO_PROFILES.flatMap((profile) =>
+    profile.projects.map((entry) => entry.id),
+  )
+  const achievementIds = SOCIAL_DEMO_PROFILES.flatMap((profile) =>
+    profile.achievements.map((entry) => entry.id),
+  )
   const commentsById = new Map(
     SOCIAL_DEMO_COMMENTS.map((comment) => [comment.id, comment]),
   )
@@ -1160,6 +1557,9 @@ export function validateSocialDemoData() {
     ['post id', SOCIAL_DEMO_POSTS.map((post) => post.id)],
     ['comment id', SOCIAL_DEMO_COMMENTS.map((comment) => comment.id)],
     ['media id', Object.values(SOCIAL_DEMO_MEDIA).map((media) => media.id)],
+    ['education id', educationIds],
+    ['project id', projectIds],
+    ['achievement id', achievementIds],
   ] as const
 
   for (const [label, values] of duplicateGroups) {
@@ -1173,6 +1573,9 @@ export function validateSocialDemoData() {
     ...SOCIAL_DEMO_POSTS.map((post) => post.id),
     ...SOCIAL_DEMO_COMMENTS.map((comment) => comment.id),
     ...Object.values(SOCIAL_DEMO_MEDIA).map((media) => media.id),
+    ...educationIds,
+    ...projectIds,
+    ...achievementIds,
   ]
   for (const id of allIds) {
     if (!uuidPattern.test(id)) errors.push(`UUID demo inválido: ${id}`)
@@ -1200,6 +1603,84 @@ export function validateSocialDemoData() {
       SOCIAL_DEMO_MEDIA[profile.avatarMediaKey].ownerId !== profile.id
     ) {
       errors.push(`el avatar de ${profile.username} pertenece a otra cuenta`)
+    }
+    if (profile.coverMediaKey && !mediaKeys.has(profile.coverMediaKey)) {
+      errors.push(`portada inexistente para ${profile.username}`)
+    }
+    if (
+      profile.coverMediaKey &&
+      SOCIAL_DEMO_MEDIA[profile.coverMediaKey].ownerId !== profile.id
+    ) {
+      errors.push(`la portada de ${profile.username} pertenece a otra cuenta`)
+    }
+    if (profile.bio.length > 280) {
+      errors.push(`bio fuera de rango para ${profile.username}`)
+    }
+    for (const value of [profile.institution, profile.campus, profile.career]) {
+      if (value.length < 2 || value.length > 160) {
+        errors.push(`dato académico fuera de rango para ${profile.username}`)
+      }
+    }
+    for (const project of profile.projects) {
+      if (!mediaKeys.has(project.imageMediaKey)) {
+        errors.push(`imagen inexistente para proyecto ${project.id}`)
+      } else if (
+        SOCIAL_DEMO_MEDIA[project.imageMediaKey].ownerId !== profile.id
+      ) {
+        errors.push(
+          `la imagen del proyecto ${project.id} pertenece a otra cuenta`,
+        )
+      }
+      if (
+        project.title.length < 2 ||
+        project.title.length > 120 ||
+        project.description.length < 2 ||
+        project.description.length > 1_000 ||
+        project.technologies.length > 12 ||
+        project.technologies.some(
+          (technology) => technology.length < 1 || technology.length > 30,
+        )
+      ) {
+        errors.push(`proyecto fuera de rango: ${project.id}`)
+      }
+    }
+    for (const achievement of profile.achievements) {
+      if (!mediaKeys.has(achievement.imageMediaKey)) {
+        errors.push(`imagen inexistente para logro ${achievement.id}`)
+      } else if (
+        SOCIAL_DEMO_MEDIA[achievement.imageMediaKey].ownerId !== profile.id
+      ) {
+        errors.push(
+          `la imagen del logro ${achievement.id} pertenece a otra cuenta`,
+        )
+      }
+      if (
+        achievement.title.length < 2 ||
+        achievement.title.length > 160 ||
+        achievement.issuer.length < 2 ||
+        achievement.issuer.length > 160 ||
+        achievement.description.length > 600 ||
+        (achievement.issuedAt &&
+          !/^\d{4}-(0[1-9]|1[0-2])$/.test(achievement.issuedAt))
+      ) {
+        errors.push(`logro fuera de rango: ${achievement.id}`)
+      }
+    }
+  }
+
+  for (const student of students) {
+    if (!student.coverMediaKey) {
+      errors.push(`el estudiante ${student.username} no tiene portada`)
+    }
+    if (student.projects.length < 1 || student.projects.length > 2) {
+      errors.push(
+        `el estudiante ${student.username} debe tener entre 1 y 2 proyectos`,
+      )
+    }
+    if (student.achievements.length < 1 || student.achievements.length > 2) {
+      errors.push(
+        `el estudiante ${student.username} debe tener entre 1 y 2 logros`,
+      )
     }
   }
 

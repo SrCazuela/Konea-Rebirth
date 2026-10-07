@@ -10,7 +10,6 @@ import {
   connections,
   notifications,
   posts,
-  profiles,
   reports,
   uploadedFiles,
   users,
@@ -38,6 +37,7 @@ describe.sequential('authenticated portal API', () => {
   let secondUserId = ''
   let sharedPostId = ''
   let projectUploadName = ''
+  let achievementUploadName = ''
 
   beforeAll(async () => {
     const firstRegistration = await firstAgent
@@ -75,6 +75,9 @@ describe.sequential('authenticated portal API', () => {
     if (projectUploadName) {
       await rm(join(UPLOAD_DIRECTORY, projectUploadName), { force: true })
     }
+    if (achievementUploadName) {
+      await rm(join(UPLOAD_DIRECTORY, achievementUploadName), { force: true })
+    }
     await closeDatabaseConnection()
   })
 
@@ -102,6 +105,24 @@ describe.sequential('authenticated portal API', () => {
       .send({ website: 'javascript:alert(1)' })
     expect(unsafeWebsite.status).toBe(400)
     expect(unsafeWebsite.body.error.code).toBe('VALIDATION_ERROR')
+
+    const unsafeAchievementImage = await firstAgent
+      .patch('/api/v1/profile')
+      .send({
+        achievements: [
+          {
+            id: randomUUID(),
+            title: 'Certificación insegura',
+            issuer: 'Emisor de prueba',
+            issuedAt: '2026-10',
+            description: 'No debe aceptar protocolos ejecutables.',
+            credentialUrl: null,
+            imageUrl: 'javascript:alert(1)',
+          },
+        ],
+      })
+    expect(unsafeAchievementImage.status).toBe(400)
+    expect(unsafeAchievementImage.body.error.code).toBe('VALIDATION_ERROR')
 
     const emptyProfileUpdate = await secondAgent.patch('/api/v1/profile').send({
       username: secondAccount.username,
@@ -283,7 +304,7 @@ describe.sequential('authenticated portal API', () => {
     ).toContain(privatePost.body.post.id)
   })
 
-  it('serves a local project image to profile visitors and enforces the total quota', async () => {
+  it('validates portfolio image ownership, serves project and achievement images to visitors, and enforces the total quota', async () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       Buffer.from('portfolio-test-image'),
@@ -297,24 +318,91 @@ describe.sequential('authenticated portal API', () => {
     expect(upload.status).toBe(201)
     projectUploadName = upload.body.file.name
 
-    await db
-      .update(profiles)
-      .set({
-        projects: [
+    const achievementUpload = await firstAgent
+      .post('/api/v1/uploads/files')
+      .attach('file', png, {
+        filename: 'certificate.png',
+        contentType: 'image/png',
+      })
+    expect(achievementUpload.status).toBe(201)
+    achievementUploadName = achievementUpload.body.file.name
+
+    const projectId = randomUUID()
+    const achievementId = randomUUID()
+    const profileUpdate = await firstAgent.patch('/api/v1/profile').send({
+      projects: [
+        {
+          id: projectId,
+          title: 'Proyecto Konea',
+          description: 'Imagen visible dentro del portafolio.',
+          url: null,
+          repositoryUrl: null,
+          imageUrl: upload.body.file.url,
+          technologies: ['TypeScript'],
+        },
+      ],
+      achievements: [
+        {
+          id: achievementId,
+          title: 'Certificación profesional',
+          issuer: 'Entidad certificadora',
+          issuedAt: '2026-10',
+          description: 'Certificado visible dentro del portafolio.',
+          credentialUrl: null,
+          imageUrl: achievementUpload.body.file.url,
+        },
+      ],
+    })
+    expect(profileUpdate.status).toBe(200)
+    expect(profileUpdate.body.user).toMatchObject({
+      projects: [
+        {
+          id: projectId,
+          imageUrl: upload.body.file.url,
+        },
+      ],
+      achievements: [
+        {
+          id: achievementId,
+          imageUrl: achievementUpload.body.file.url,
+        },
+      ],
+    })
+
+    const publicProfile = await secondAgent.get(`/api/v1/users/${firstUserId}`)
+    expect(publicProfile.status).toBe(200)
+    expect(publicProfile.body.user).toMatchObject({
+      projects: [{ id: projectId, imageUrl: upload.body.file.url }],
+      achievements: [
+        {
+          id: achievementId,
+          imageUrl: achievementUpload.body.file.url,
+        },
+      ],
+    })
+
+    await secondAgent.get(upload.body.file.url).expect(200)
+    await secondAgent.get(achievementUpload.body.file.url).expect(200)
+
+    const foreignAchievementImage = await secondAgent
+      .patch('/api/v1/profile')
+      .send({
+        achievements: [
           {
             id: randomUUID(),
-            title: 'Proyecto Konea',
-            description: 'Imagen visible dentro del portafolio.',
-            url: null,
-            repositoryUrl: null,
-            imageUrl: upload.body.file.url,
-            technologies: ['TypeScript'],
+            title: 'Certificación ajena',
+            issuer: 'Entidad certificadora',
+            issuedAt: null,
+            description: 'No debe poder reutilizar un archivo ajeno.',
+            credentialUrl: null,
+            imageUrl: achievementUpload.body.file.url,
           },
         ],
       })
-      .where(eq(profiles.userId, firstUserId))
-
-    await secondAgent.get(upload.body.file.url).expect(200)
+    expect(foreignAchievementImage.status).toBe(403)
+    expect(foreignAchievementImage.body.error.code).toBe(
+      'UPLOAD_OWNERSHIP_REQUIRED',
+    )
 
     await db.insert(uploadedFiles).values({
       ownerId: firstUserId,

@@ -1,9 +1,9 @@
 # Conector AVA experimental
 
-Extensión local Manifest V3 para Edge o Chrome. Lee únicamente materias y
-actividades que ya están visibles en una pestaña de
-`https://campusvirtual.duoc.cl/`, permite desmarcarlas y genera un archivo JSON
-para revisar e importar desde Konea.
+Extensión local Manifest V3 para Edge o Chrome. Lee únicamente materias,
+tareas con vencimiento y actividad reciente que ya están visibles en una
+pestaña de `https://campusvirtual.duoc.cl/`. Permite seleccionar los datos
+importables y genera un archivo JSON para revisarlo nuevamente en Konea.
 
 No lee campos de formulario, contraseñas, cookies, almacenamiento del navegador,
 notas, mensajes, compañeros, archivos ni entregas. Tampoco automatiza el inicio
@@ -33,3 +33,10 @@ reemplazará durante el empaquetado de la extensión.
 La extracción depende de la interfaz visible de Blackboard y podría requerir
 ajustes si el proveedor cambia su HTML. El enlace ICS continúa siendo el método
 de respaldo.
+
+En la pantalla **Actividad**, la fecha lateral indica cuándo se publicó un
+aviso. El popup muestra esas publicaciones en una sección informativa de solo
+lectura, pero no las exporta ni inventa una fecha de entrega. El conector solo
+propone una tarea cuando el contenido visible incluye una señal explícita de
+vencimiento, como `Fecha de entrega` o `Vence`. Para próximas evaluaciones, la
+fuente recomendada es **Calendario**.

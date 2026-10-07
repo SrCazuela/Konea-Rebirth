@@ -281,6 +281,15 @@
   padding: 38px clamp(26px, 4vw, 64px) 72px;
 }
 
+.portal-main--chat {
+  height: 100dvh;
+  min-height: 0;
+  padding: 18px clamp(18px, 2vw, 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .portal-page-header {
   width: min(100%, 1160px);
   min-height: 72px;
@@ -306,6 +315,27 @@
   font-weight: 760;
   letter-spacing: -0.05em;
   line-height: 1.05;
+}
+
+.portal-page-header--chat {
+  width: 100%;
+  min-height: 58px;
+  margin-bottom: 14px;
+  flex: 0 0 auto;
+}
+
+.portal-page-header--chat h1 {
+  margin-top: 4px;
+  font-size: clamp(1.6rem, 2vw, 2rem);
+}
+
+.portal-main--chat > .chat-shell {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  flex: 1 1 auto;
 }
 
 .portal-page-actions,
@@ -1067,7 +1097,8 @@
 }
 
 .portal-profile-cover {
-  height: 132px;
+  width: 100%;
+  aspect-ratio: 5 / 1;
   background:
     radial-gradient(
       circle at 75% 28%,
@@ -1092,6 +1123,8 @@
 }
 
 .portal-profile-summary__body > .portal-avatar {
+  position: relative;
+  z-index: 2;
   margin-top: -47px;
 }
 
@@ -2180,6 +2213,11 @@
   border-radius: 50%;
 }
 
+.portal-profile-upload--cover .portal-profile-upload__preview {
+  height: auto;
+  aspect-ratio: 5 / 1;
+}
+
 .portal-profile-upload__preview img {
   width: 100%;
   height: 100%;
@@ -2204,6 +2242,64 @@
   min-height: 35px;
   padding: 0 11px;
   font-size: 0.65rem;
+}
+
+.portal-portfolio-image-upload {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: white;
+}
+
+.portal-portfolio-image-upload__preview {
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed #d7cce3;
+  border-radius: 10px;
+  color: var(--soft-ink);
+  background: var(--portal-surface-muted);
+}
+
+.portal-portfolio-image-upload__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portal-portfolio-image-upload__preview > span {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  padding: 10px;
+  font-size: 0.62rem;
+  text-align: center;
+}
+
+.portal-portfolio-image-upload__content {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.portal-portfolio-image-upload__content > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.portal-portfolio-image-upload__content strong {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.portal-portfolio-image-upload__content small {
+  color: var(--soft-ink);
+  font-size: 0.62rem;
 }
 
 .portal-image-crop-backdrop {
@@ -2284,7 +2380,7 @@
 }
 
 .portal-image-crop-viewport--cover {
-  aspect-ratio: 3 / 1;
+  aspect-ratio: 5 / 1;
   border-radius: 14px;
 }
 
@@ -2473,6 +2569,16 @@
   border: 1px solid var(--border);
   border-radius: 11px;
   object-fit: cover;
+}
+
+.portal-own-portfolio__achievement-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+  object-fit: contain;
 }
 
 .portal-own-portfolio__grid article:first-of-type {
@@ -3133,6 +3239,13 @@
     padding: 12px 10px 0;
   }
 
+  .portal-main--chat {
+    height: auto;
+    min-height: auto;
+    display: block;
+    overflow: visible;
+  }
+
   .portal-main--immersive .chat-shell {
     height: calc(100dvh - 158px);
   }
@@ -3383,7 +3496,7 @@
   }
 
   .portal-profile-cover {
-    height: 104px;
+    aspect-ratio: 5 / 1;
   }
 
   .portal-profile-summary__body > .portal-avatar {
@@ -3507,6 +3620,14 @@
 @media (max-width: 780px) {
   .portal-own-portfolio__grid {
     grid-template-columns: 1fr;
+  }
+
+  .portal-portfolio-image-upload {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-portfolio-image-upload__preview {
+    max-width: 320px;
   }
 
   .portal-portfolio-editor__heading {

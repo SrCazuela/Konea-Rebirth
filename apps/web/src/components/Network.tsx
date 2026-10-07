@@ -287,7 +287,7 @@ function Portfolio({ person }: { person: PublicUser }) {
               {project.imageUrl && (
                 <img
                   src={absoluteUploadUrl(project.imageUrl)}
-                  alt=""
+                  alt={`Vista previa de ${project.title}`}
                   loading="lazy"
                 />
               )}
@@ -322,7 +322,16 @@ function Portfolio({ person }: { person: PublicUser }) {
               <div className="network-achievement-list">
                 {person.achievements.map((achievement) => (
                   <article key={achievement.id}>
-                    <span aria-hidden="true">★</span>
+                    {achievement.imageUrl ? (
+                      <img
+                        className="network-achievement-list__image"
+                        src={absoluteUploadUrl(achievement.imageUrl)}
+                        alt={`Credencial de ${achievement.title}`}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span aria-hidden="true">★</span>
+                    )}
                     <div>
                       <h4>{achievement.title}</h4>
                       <p>
@@ -383,10 +392,25 @@ function PublicProfile({
                 }
               : undefined
           }
-        />
+        >
+          <span className="network-profile-cover__label">
+            Comunidad Konea · {roleLabel(person.role)}
+          </span>
+        </div>
         <div className="network-profile-card__body">
           <div className="network-profile-card__avatar-row">
-            <NetworkAvatar user={person} size="large" />
+            <div className="network-profile-card__identity">
+              <NetworkAvatar user={person} size="large" />
+              <div className="network-profile-card__title">
+                <div>
+                  <h2>{person.displayName}</h2>
+                  <p>@{person.username}</p>
+                </div>
+                <span className={`network-role network-role--${person.role}`}>
+                  {roleLabel(person.role)}
+                </span>
+              </div>
+            </div>
             {person.isMe ? (
               <button
                 className="network-follow-button network-follow-button--following"
@@ -414,34 +438,50 @@ function PublicProfile({
               </div>
             )}
           </div>
-          <div className="network-profile-card__title">
-            <div>
-              <h2>{person.displayName}</h2>
-              <p>@{person.username}</p>
+          <div className="network-profile-card__overview">
+            <div className="network-profile-card__about">
+              <span className="network-profile-card__eyebrow">
+                Sobre {person.displayName.split(' ')[0] || person.displayName}
+              </span>
+              <p className="network-profile-card__bio">
+                {person.bio || 'Todavía no ha agregado una presentación.'}
+              </p>
+              <div className="network-profile-card__meta">
+                {person.institution && <span>{person.institution}</span>}
+                {person.campus && <span>{person.campus}</span>}
+                {person.career && <span>{person.career}</span>}
+                <span>En Konea desde {formatDate(person.createdAt)}</span>
+                {person.website && (
+                  <SafeExternalLink href={person.website}>
+                    Sitio web
+                  </SafeExternalLink>
+                )}
+              </div>
+              {person.connectionStatus === 'requested' && (
+                <p className="network-private-request-note">
+                  La solicitud es privada. La otra persona solo será notificada
+                  si también solicita conectarse contigo.
+                </p>
+              )}
             </div>
-            <span className={`network-role network-role--${person.role}`}>
-              {roleLabel(person.role)}
-            </span>
+            <dl
+              className="network-profile-stats"
+              aria-label="Resumen del perfil"
+            >
+              <div>
+                <dt>{person.stats.posts}</dt>
+                <dd>Publicaciones</dd>
+              </div>
+              <div>
+                <dt>{person.stats.projects}</dt>
+                <dd>Proyectos</dd>
+              </div>
+              <div>
+                <dt>{person.stats.achievements}</dt>
+                <dd>Logros</dd>
+              </div>
+            </dl>
           </div>
-          <p className="network-profile-card__bio">
-            {person.bio || 'Todavía no ha agregado una presentación.'}
-          </p>
-          <div className="network-profile-card__meta">
-            {person.institution && <span>{person.institution}</span>}
-            {person.campus && <span>{person.campus}</span>}
-            {person.career && <span>{person.career}</span>}
-            {person.website && (
-              <SafeExternalLink href={person.website}>
-                Sitio web
-              </SafeExternalLink>
-            )}
-          </div>
-          {person.connectionStatus === 'requested' && (
-            <p className="network-private-request-note">
-              La solicitud es privada. La otra persona solo será notificada si
-              también solicita conectarse contigo.
-            </p>
-          )}
         </div>
       </section>
       <Portfolio person={person} />

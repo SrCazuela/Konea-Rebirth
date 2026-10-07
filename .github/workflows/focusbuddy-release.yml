@@ -13,7 +13,7 @@ jobs:
     name: Build and publish Windows installer
     runs-on: windows-latest
     env:
-      FOCUSBUDDY_APP_URL: ${{ vars.FOCUSBUDDY_APP_URL }}
+      FOCUSBUDDY_API_URL: ${{ vars.FOCUSBUDDY_API_URL }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -26,7 +26,7 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Validate the public Konea URL
+      - name: Validate the public Konea API URL
         shell: pwsh
         run: |
           $package = Get-Content -LiteralPath 'apps/focusbuddy/package.json' -Raw | ConvertFrom-Json
@@ -35,20 +35,27 @@ jobs:
             throw "Release tag '$env:GITHUB_REF_NAME' must exactly match package version '$expectedTag'."
           }
 
-          $candidate = $env:FOCUSBUDDY_APP_URL
+          $candidate = $env:FOCUSBUDDY_API_URL
           if ([string]::IsNullOrWhiteSpace($candidate)) {
-            throw 'Repository variable FOCUSBUDDY_APP_URL is required for a public FocusBuddy release.'
+            throw 'Repository variable FOCUSBUDDY_API_URL is required for a public FocusBuddy release.'
           }
 
           $parsed = $null
           if (-not [Uri]::TryCreate($candidate, [UriKind]::Absolute, [ref]$parsed)) {
-            throw 'FOCUSBUDDY_APP_URL must be an absolute URL.'
+            throw 'FOCUSBUDDY_API_URL must be an absolute URL.'
           }
           if ($parsed.Scheme -ne 'https' -or [string]::IsNullOrWhiteSpace($parsed.Host)) {
-            throw 'FOCUSBUDDY_APP_URL must use HTTPS and include a host.'
+            throw 'FOCUSBUDDY_API_URL must use HTTPS and include a host.'
           }
           if (-not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-            throw 'FOCUSBUDDY_APP_URL must not contain embedded credentials.'
+            throw 'FOCUSBUDDY_API_URL must not contain embedded credentials.'
+          }
+          if (-not [string]::IsNullOrEmpty($parsed.Query) -or -not [string]::IsNullOrEmpty($parsed.Fragment)) {
+            throw 'FOCUSBUDDY_API_URL must not contain a query string or fragment.'
+          }
+          $apiPath = $parsed.AbsolutePath.TrimEnd('/')
+          if (-not $apiPath.EndsWith('/api/v1', [StringComparison]::Ordinal)) {
+            throw 'FOCUSBUDDY_API_URL must end with /api/v1.'
           }
 
       - name: Install dependencies

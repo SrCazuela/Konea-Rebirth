@@ -1,0 +1,26 @@
+[
+  {
+    "courseId": "_24624451_1",
+    "href": "/ultra/courses/_24624451_1/outline",
+    "textContent": "CAPSTONE_002D 2026_2_SJ_PTY4614_24624451_PCT Abierto Abierto KARLA MARILYN ROCO RAMIREZ Tiene excepciones Más información",
+    "innerText": "CAPSTONE_002D\n2026_2_SJ_PTY4614_24624451_PCT\nAbierto\nAbierto\nKARLA MARILYN ROCO RAMIREZ\nTiene excepciones\nMás información",
+    "expectedName": "CAPSTONE_002D",
+    "expectedSection": "002D"
+  },
+  {
+    "courseId": "_24624465_1",
+    "href": "/ultra/courses/_24624465_1/outline",
+    "textContent": "INTEGRATED ENGLISH PRACTICE_002D 2026_2_SJ_ESP1513_24624465_PCT Abierto Abierto VICTOR ANDRES ROBLERO ROJAS Tiene excepciones Más información",
+    "innerText": "INTEGRATED ENGLISH PRACTICE_002D\n2026_2_SJ_ESP1513_24624465_PCT\nAbierto\nAbierto\nVICTOR ANDRES ROBLERO ROJAS\nTiene excepciones\nMás información",
+    "expectedName": "INTEGRATED ENGLISH PRACTICE_002D",
+    "expectedSection": "002D"
+  },
+  {
+    "courseId": "_24643898_1",
+    "href": "/ultra/courses/_24643898_1/outline",
+    "textContent": "MACHINE LEARNING_005D_OLS 2026_2_VS_MLY0100_24643898_PCT Abierto Abierto DANIEL MAURICIO HORMAZABAL OCAMPO Tiene excepciones Más información",
+    "innerText": "MACHINE LEARNING_005D_OLS\n2026_2_VS_MLY0100_24643898_PCT\nAbierto\nAbierto\nDANIEL MAURICIO HORMAZABAL OCAMPO\nTiene excepciones\nMás información",
+    "expectedName": "MACHINE LEARNING_005D_OLS",
+    "expectedSection": "005D"
+  }
+]

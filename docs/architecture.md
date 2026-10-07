@@ -6,22 +6,17 @@ mantiene en [backlog.md](./backlog.md).
 
 ## Vista general
 
-Konea usa una SPA compartida por el navegador y un shell Electron, con una API
-como única frontera de negocio:
+Konea ofrece dos interfaces separadas —la SPA web y FocusBuddy para Electron—
+con una API como única frontera de negocio:
 
 ```text
-┌─────────────────┐  ┌────────────────────┐
-│ Navegador       │  │ Electron           │
-│ portal completo │  │ ruta #focusbuddy   │
-└────────┬────────┘  └─────────┬──────────┘
-         └────────────┬────────┘
-                      ▼
-┌──────────────────────────┐
-│ React + Vite             │
-│ SPA, puerto 5173 en dev  │
-└────────────┬─────────────┘
-             │ HTTP(S)/JSON + cookie de sesión
-             ▼
+┌──────────────────────┐     ┌──────────────────────────┐
+│ Navegador            │     │ FocusBuddy Electron      │
+│ React + Vite         │     │ desktop.html local       │
+└──────────┬───────────┘     └────────────┬─────────────┘
+           └──────────────┬───────────────┘
+                          │ HTTP(S)/JSON + cookie de sesión
+                          ▼
 ┌──────────────────────────┐       ┌──────────────────────────┐
 │ Express + TypeScript     │──────▶│ .local/uploads          │
 │ API REST, puerto 3000    │       │ imágenes y PDF locales  │
@@ -56,24 +51,37 @@ en el cliente, pero toda acción se vuelve a validar en el servidor.
 
 ### Cliente de escritorio FocusBuddy
 
-`apps/focusbuddy` es un shell Electron que carga la ruta `#focusbuddy` de la SPA.
-En desarrollo usa `http://localhost:5173` y permite elegir el endpoint mediante
-la variable del proceso `FOCUSBUDDY_APP_URL` o `--app-url`. Durante
+`apps/focusbuddy` es una aplicación Electron con interfaz propia. La ventana
+carga `electron/desktop.html` desde el paquete: no abre la ruta `#focusbuddy`, no
+incrusta la SPA y no necesita que Vite esté activo. Presenta login, sesiones,
+progreso, ajustes y cuenta con la identidad visual morada de Konea.
+
+El renderer local no tiene acceso general a red ni a Node.js. Su preload solo
+expone operaciones allowlist de salud, login/sesión, dashboard académico y
+sesiones de estudio. El proceso principal valida operación y payload y usa
+`session.fetch` con `credentials: include`; así la cookie `HttpOnly` permanece en
+una partición persistente de Electron y nunca se entrega al renderer. No existe
+conexión directa a PostgreSQL ni una ruta arbitraria de proxy.
+
+En desarrollo la API predeterminada es `http://localhost:3000/api/v1` y puede
+elegirse con `FOCUSBUDDY_API_URL` o `--api-url`. Durante
 `npm run dist:focusbuddy`, el endpoint se valida y queda incorporado como recurso
 público del instalador. Una aplicación empaquetada ignora variables y argumentos
-de runtime: cambiar el servidor exige regenerar el instalador, lo que impide
-redirigirlo a una pantalla de phishing desde un acceso directo manipulado. No se
-carga desde el `.env` de Express. Las URL remotas requieren HTTPS y HTTP se
-reserva para localhost. El cliente no contiene otra base de datos ni duplica las
-reglas de las sesiones.
+de runtime: cambiar el servidor exige regenerar el instalador. Las URL remotas
+requieren HTTPS y HTTP se reserva para loopback.
 
-La ventana usa `contextIsolation`, `sandbox`, `nodeIntegration: false`, una
-partición persistente propia y bloqueo de segunda instancia. Solo concede vídeo
-de cámara al origen de Konea (no micrófono). La navegación fuera del origen
-configurado se abre en el navegador del sistema únicamente para HTTPS o HTTP
-local. Si no encuentra la web, muestra una pantalla local con reintento. Por
-tanto, el instalador actual es un cliente del servicio Konea y no ofrece
-funcionamiento offline autónomo.
+Las ventanas usan `contextIsolation`, `sandbox`, `nodeIntegration: false`, una
+partición persistente propia y bloqueo de segunda instancia. Se rechazan
+permisos, webviews, ventanas nuevas y navegación externa. La CSP de
+`desktop.html` impide que el renderer haga conexiones directas. El instalador es
+un cliente de la API Konea: la interfaz funciona sin la web, pero las operaciones
+persistentes no funcionan sin una API y PostgreSQL accesibles.
+
+El paquete incluye derivados transparentes de los sprites oficiales obtenidos
+desde el Drive del equipo. Los PNG fuente opacos y su manifiesto de procedencia
+permanecen preservados en el repositorio. Esos derivados se usan solo en
+Electron por ahora; la SPA conserva el recurso provisional hasta portar el
+personaje y completar los estados visuales faltantes.
 
 ### API
 
@@ -266,10 +274,12 @@ estudiante reemplaza lógicamente el conjunto activo de eventos y materias con
 origen `ava`; esas materias son de solo lectura. El conector experimental MV3
 exporta el DOM visible a un archivo local: Konea valida y persiste una vista
 previa, compara duplicados y exige otra confirmación antes de crear materias
-`ava_extension` y pendientes. Repetir una captura es idempotente y una captura
-posterior nunca desactiva elementos ausentes. Las materias manuales y las
-importadas por extensión pueden editarse o desactivarse. El diseño de seguridad,
-permisos y fallback se documenta en [ava-connector.md](./ava-connector.md).
+`ava_extension` y pendientes con vencimiento explícito. Las publicaciones del
+flujo reciente se muestran de forma efímera en el popup y no se persisten como
+tareas. Repetir una captura es idempotente y una captura posterior nunca
+desactiva elementos ausentes. Las materias manuales y las importadas por
+extensión pueden editarse o desactivarse. El diseño de seguridad, permisos y
+fallback se documenta en [ava-connector.md](./ava-connector.md).
 
 El flujo de una sesión de estudio es:
 
@@ -424,12 +434,13 @@ créditos, sin cambiar los contratos del cliente. En los tres modos la API, y no
 el modelo ni el navegador, conserva la autoridad sobre persistencia, permisos y
 transiciones de estado.
 
-### Una SPA para navegador y Electron
+### Dos interfaces, una autoridad de negocio
 
-FocusBuddy reutiliza el frontend, los contratos REST y la sesión del dominio en
-vez de mantener dos aplicaciones divergentes. El shell de escritorio puede
-apuntar a la instancia local o a una URL publicada; empaquetarlo no despliega por
-sí mismo React, Express ni PostgreSQL.
+La web y FocusBuddy tienen renderers distintos, pero reutilizan los contratos
+REST y las reglas de la API. Electron mantiene su propia cookie de sesión y
+sincroniza materias, pendientes, sesiones e indicadores contra PostgreSQL a
+través de la API. Empaquetarlo incorpora `desktop.html`, estilos, scripts y
+sprites; no despliega Express ni PostgreSQL.
 
 ## Entornos y despliegue
 
@@ -444,8 +455,8 @@ sí mismo React, Express ni PostgreSQL.
   cuando la API esté directamente detrás de un reverse proxy confiable.
 - datos y archivos permanecen en `D:` con la instalación actual.
 - `iniciar.bat -FocusBuddy` (o `iniciar-focusbuddy.bat`) prepara Docker,
-  migraciones, cuenta demo y proveedor DUCO, levanta API/web y abre Electron una
-  vez que ambos healthchecks responden.
+  migraciones, cuenta demo y proveedor DUCO, levanta o reutiliza la API y abre
+  Electron cuando su healthcheck responde. Este modo no inicia Vite ni la web.
 - El launcher define `FOCUSBUDDY_DATA_DIR=.local/focusbuddy-desktop`; caché,
   cookies y datos de sesión de Electron permanecen en el disco del proyecto y no
   en el perfil de Windows de `C:`.
@@ -455,12 +466,10 @@ sí mismo React, Express ni PostgreSQL.
 ### Producción prevista
 
 ```text
-Navegador ─HTTPS─┐
-Electron  ─HTTPS─┴─▶ web estática / reverse proxy
-                              │
-                              └─HTTPS─▶ API Node persistente
-                                              ├─TLS─▶ PostgreSQL administrado
-                                              └─────▶ almacenamiento de objetos
+Navegador ─HTTPS─▶ web estática ─HTTPS─┐
+                                       ├─▶ API Node persistente
+Electron  ─────────────────────HTTPS───┘          ├─TLS─▶ PostgreSQL administrado
+                                                  └─────▶ almacenamiento de objetos
 ```
 
 Secuencia de migración:
@@ -471,8 +480,8 @@ Secuencia de migración:
 4. sustituir el adaptador de archivos y migrar objetos;
 5. desplegar API con `NODE_ENV=production`, secretos, HTTPS y health checks;
 6. desplegar la web con `VITE_API_URL` correcto;
-7. compilar el instalador con `FOCUSBUDDY_APP_URL` HTTPS y comprobar cookies,
-   navegación y actualizaciones;
+7. compilar el instalador con `FOCUSBUDDY_API_URL` HTTPS y comprobar login,
+   cookie persistente, sincronización y actualizaciones;
 8. configurar `CORS_ORIGIN`, `TRUST_PROXY_HOPS`, dominio de cookie, backups y
    observabilidad;
 9. ejecutar pruebas de humo con una base no productiva antes de importar datos.

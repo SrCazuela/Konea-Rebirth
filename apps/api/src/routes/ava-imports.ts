@@ -3,6 +3,7 @@ import { and, eq, inArray, lte, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
+import { env } from '../config/env.js'
 import { db } from '../db/client.js'
 import {
   academicCourses,
@@ -122,6 +123,7 @@ const selectionSchema = z.strictObject({
 const importLimiter = rateLimit({
   windowMs: 15 * 60 * 1_000,
   limit: 15,
+  skip: () => env.NODE_ENV === 'test',
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: {
@@ -183,7 +185,11 @@ async function buildPreview(userId: string, payload: AvaDomImportPayload) {
   const [courses, tasks] = await Promise.all([
     courseNames.length
       ? db
-          .select({ normalizedName: academicCourses.normalizedName })
+          .select({
+            normalizedName: academicCourses.normalizedName,
+            active: academicCourses.active,
+            source: academicCourses.source,
+          })
           .from(academicCourses)
           .where(
             and(
@@ -205,16 +211,33 @@ async function buildPreview(userId: string, payload: AvaDomImportPayload) {
           )
       : [],
   ])
-  const existingCourseNames = new Set(
-    courses.map((course) => course.normalizedName),
+  const coursesByName = new Map(
+    courses.map((course) => [course.normalizedName, course]),
   )
   const existingTaskIds = new Set(tasks.map((task) => task.externalId))
 
   return {
-    courses: payload.courses.map((course) => ({
-      ...course,
-      existing: existingCourseNames.has(normalizeCourseName(course.name)),
-    })),
+    courses: payload.courses.map((course) => {
+      const storedCourse = coursesByName.get(normalizeCourseName(course.name))
+      const reactivatable = Boolean(
+        storedCourse &&
+        !storedCourse.active &&
+        storedCourse.source === EXTERNAL_SOURCE,
+      )
+      return {
+        ...course,
+        // `existing` means that there is nothing the importer can do. Keeping
+        // it false for a reactivatable course also makes older clients select
+        // it instead of silently skipping it.
+        existing: Boolean(storedCourse) && !reactivatable,
+        reactivatable,
+        state: !storedCourse
+          ? ('new' as const)
+          : reactivatable
+            ? ('reactivatable' as const)
+            : ('existing' as const),
+      }
+    }),
     activities: payload.activities.map((activity) => ({
       ...activity,
       existing: existingTaskIds.has(
@@ -314,7 +337,48 @@ avaImportsRouter.post('/previews', importLimiter, async (request, response) => {
       })
       .where(eq(avaDomImports.id, avaImport.id))
       .returning()
+    const refreshedImport = refreshedImports[0]
+    if (!refreshedImport) {
+      throw new ApiError(
+        409,
+        'AVA_IMPORT_CONFLICT',
+        'No pudimos actualizar la captura. Intenta nuevamente.',
+      )
+    }
+    avaImport = refreshedImport
+  }
+
+  if (!avaImport) {
+    throw new ApiError(
+      409,
+      'AVA_IMPORT_CONFLICT',
+      'No pudimos preparar la captura. Intenta nuevamente.',
+    )
+  }
+
+  let preview = await buildPreview(currentUser.id, payload)
+  const canImportAnything =
+    preview.courses.some((course) => !course.existing) ||
+    preview.activities.some((activity) => !activity.existing)
+
+  // A confirmed capture is normally idempotent. If its persisted data was
+  // later archived or removed, however, the same file must become actionable
+  // again instead of returning a stale "already confirmed" result.
+  if (avaImport.status === 'confirmed' && canImportAnything) {
+    const refreshedImports = await db
+      .update(avaDomImports)
+      .set({
+        payload,
+        status: 'draft',
+        result: null,
+        expiresAt,
+        confirmedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(avaDomImports.id, avaImport.id))
+      .returning()
     avaImport = refreshedImports[0]
+    preview = await buildPreview(currentUser.id, payload)
   }
 
   if (!avaImport) {
@@ -332,7 +396,7 @@ avaImportsRouter.post('/previews', importLimiter, async (request, response) => {
       expiresAt: avaImport.expiresAt,
       result: avaImport.result,
     },
-    ...(await buildPreview(currentUser.id, payload)),
+    ...preview,
   })
 })
 
@@ -372,6 +436,7 @@ avaImportsRouter.post(
         return (
           avaImport.result ?? {
             importedCourses: 0,
+            reactivatedCourses: 0,
             importedTasks: 0,
             existingCourses: 0,
             existingTasks: 0,
@@ -406,11 +471,77 @@ avaImportsRouter.post(
       )
       const now = new Date()
 
-      const insertedCourses = selectedCourses.length
+      const selectedCourseNames = selectedCourses.map((course) =>
+        normalizeCourseName(course.name),
+      )
+      const storedCourses = selectedCourseNames.length
+        ? await transaction
+            .select({
+              id: academicCourses.id,
+              normalizedName: academicCourses.normalizedName,
+              active: academicCourses.active,
+              source: academicCourses.source,
+              code: academicCourses.code,
+              section: academicCourses.section,
+              term: academicCourses.term,
+            })
+            .from(academicCourses)
+            .where(
+              and(
+                eq(academicCourses.userId, currentUser.id),
+                inArray(academicCourses.normalizedName, selectedCourseNames),
+              ),
+            )
+        : []
+      const storedCoursesByName = new Map(
+        storedCourses.map((course) => [course.normalizedName, course]),
+      )
+      const coursesToReactivate = new Map(
+        selectedCourses.flatMap((course) => {
+          const normalizedName = normalizeCourseName(course.name)
+          const storedCourse = storedCoursesByName.get(normalizedName)
+          return storedCourse &&
+            !storedCourse.active &&
+            storedCourse.source === EXTERNAL_SOURCE
+            ? [[storedCourse.id, { course, storedCourse }] as const]
+            : []
+        }),
+      )
+      let reactivatedCourses = 0
+      for (const [courseId, { course, storedCourse }] of coursesToReactivate) {
+        const name = cleanCourseName(course.name)
+        const reactivated = await transaction
+          .update(academicCourses)
+          .set({
+            name,
+            normalizedName: normalizeCourseName(name),
+            code: course.code ?? storedCourse.code,
+            section: course.section ?? storedCourse.section,
+            term: course.term ?? storedCourse.term,
+            active: true,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(academicCourses.id, courseId),
+              eq(academicCourses.userId, currentUser.id),
+              eq(academicCourses.active, false),
+              eq(academicCourses.source, EXTERNAL_SOURCE),
+            ),
+          )
+          .returning({ id: academicCourses.id })
+        reactivatedCourses += reactivated.length
+      }
+
+      const coursesToInsert = selectedCourses.filter(
+        (course) => !storedCoursesByName.has(normalizeCourseName(course.name)),
+      )
+
+      const insertedCourses = coursesToInsert.length
         ? await transaction
             .insert(academicCourses)
             .values(
-              selectedCourses.map((course) => {
+              coursesToInsert.map((course) => {
                 const name = cleanCourseName(course.name)
                 return {
                   userId: currentUser.id,
@@ -495,8 +626,10 @@ avaImportsRouter.post(
 
       const importResult: AvaDomImportResult = {
         importedCourses: insertedCourses.length,
+        reactivatedCourses,
         importedTasks: insertedTasks.length,
-        existingCourses: selectedCourses.length - insertedCourses.length,
+        existingCourses:
+          selectedCourses.length - insertedCourses.length - reactivatedCourses,
         existingTasks: selectedActivities.length - insertedTasks.length,
       }
       await transaction

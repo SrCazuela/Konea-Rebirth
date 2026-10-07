@@ -1898,6 +1898,111 @@ function ProfileImageUpload({
   )
 }
 
+function PortfolioImageUpload({
+  label,
+  value,
+  disabled,
+  onChange,
+  onUploadingChange,
+}: {
+  label: string
+  value: string | null
+  disabled: boolean
+  onChange: (value: string | null) => void
+  onUploadingChange: (uploading: boolean) => void
+}) {
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+
+  const selectFile = async (file: File | undefined) => {
+    if (!file) return
+
+    const validationError = validateImage(file)
+    if (validationError) {
+      setError(validationError)
+      if (input.current) input.current.value = ''
+      return
+    }
+
+    setError('')
+    setProgress(1)
+    onUploadingChange(true)
+    try {
+      const uploaded = await uploadImage(file, setProgress)
+      onChange(uploaded.url)
+    } catch (uploadError) {
+      setError(
+        readableError(uploadError, `No pudimos subir ${label.toLowerCase()}.`),
+      )
+    } finally {
+      setProgress(0)
+      onUploadingChange(false)
+      if (input.current) input.current.value = ''
+    }
+  }
+
+  const previewUrl = value ? absoluteUploadUrl(value) : ''
+
+  return (
+    <div className="portal-portfolio-image-upload">
+      <div className="portal-portfolio-image-upload__preview">
+        {previewUrl ? (
+          <img src={previewUrl} alt={`Vista previa: ${label}`} />
+        ) : (
+          <span>
+            <PortalIcon name="image" />
+            {value ? 'Imagen no disponible' : 'Sin imagen'}
+          </span>
+        )}
+      </div>
+      <div className="portal-portfolio-image-upload__content">
+        <div>
+          <strong>{label}</strong>
+          <small>JPEG, PNG, WebP o GIF · máximo 5 MB</small>
+        </div>
+        {progress > 0 && (
+          <div className="portal-upload-progress" role="status">
+            <span style={{ width: `${progress}%` }} />
+            <small>Subiendo: {progress}%</small>
+          </div>
+        )}
+        <div className="portal-profile-upload__actions">
+          <label className="portal-secondary-button">
+            <PortalIcon name="image" />
+            {value ? 'Cambiar imagen' : 'Subir imagen'}
+            <input
+              ref={input}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={(event) => void selectFile(event.target.files?.[0])}
+              disabled={disabled || progress > 0}
+            />
+          </label>
+          {value && (
+            <button
+              className="portal-secondary-button"
+              type="button"
+              onClick={() => {
+                setError('')
+                onChange(null)
+              }}
+              disabled={disabled || progress > 0}
+            >
+              Quitar
+            </button>
+          )}
+        </div>
+        {error && (
+          <p className="portal-inline-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 type ProfileActivityTab = 'posts' | 'likes' | 'media'
 type ProfileActivityErrors = {
   profile: string
@@ -1917,6 +2022,7 @@ function ProfileView({
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [portfolioUploads, setPortfolioUploads] = useState<string[]>([])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [activityTab, setActivityTab] = useState<ProfileActivityTab>('posts')
@@ -2073,6 +2179,18 @@ function ProfileView({
         entry.id === id ? { ...entry, ...update } : entry,
       ),
     )
+  const setPortfolioUploadBusy = useCallback(
+    (entryKey: string, uploading: boolean) => {
+      setPortfolioUploads((current) =>
+        uploading
+          ? current.includes(entryKey)
+            ? current
+            : [...current, entryKey]
+          : current.filter((key) => key !== entryKey),
+      )
+    },
+    [],
+  )
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2171,6 +2289,7 @@ function ProfileView({
         issuer: entry.issuer.trim(),
         description: entry.description.trim(),
         credentialUrl: entry.credentialUrl?.trim() || null,
+        imageUrl: entry.imageUrl?.trim() || null,
       })),
     }
     try {
@@ -2245,7 +2364,8 @@ function ProfileView({
     activityTab === 'likes' ? activityErrors.likes : activityErrors.profile
   const inactiveActivityError =
     activityTab === 'likes' ? activityErrors.profile : activityErrors.likes
-  const uploadsBusy = uploadingAvatar || uploadingCover
+  const uploadsBusy =
+    uploadingAvatar || uploadingCover || portfolioUploads.length > 0
 
   return (
     <div className="portal-profile-layout">
@@ -2655,20 +2775,18 @@ function ProfileView({
                         placeholder="https://github.com/usuario/proyecto"
                       />
                     </label>
-                    <label>
-                      <span>Imagen del proyecto</span>
-                      <input
-                        type="url"
-                        value={entry.imageUrl ?? ''}
-                        onChange={(event) =>
-                          updateProject(entry.id, {
-                            imageUrl: event.target.value,
-                          })
-                        }
-                        placeholder="https://…"
-                      />
-                    </label>
                   </div>
+                  <PortfolioImageUpload
+                    label="Imagen del proyecto"
+                    value={entry.imageUrl}
+                    disabled={saving || uploadsBusy}
+                    onChange={(imageUrl) =>
+                      updateProject(entry.id, { imageUrl })
+                    }
+                    onUploadingChange={(uploading) =>
+                      setPortfolioUploadBusy(`project:${entry.id}`, uploading)
+                    }
+                  />
                   <label>
                     <span>Descripción</span>
                     <textarea
@@ -2686,6 +2804,7 @@ function ProfileView({
                   <button
                     className="portal-text-danger"
                     type="button"
+                    disabled={saving || uploadsBusy}
                     onClick={() =>
                       setField(
                         'projects',
@@ -2721,6 +2840,7 @@ function ProfileView({
                         issuedAt: null,
                         description: '',
                         credentialUrl: null,
+                        imageUrl: null,
                       },
                     ])
                   }
@@ -2784,6 +2904,20 @@ function ProfileView({
                       />
                     </label>
                   </div>
+                  <PortfolioImageUpload
+                    label="Imagen de la certificación o logro"
+                    value={entry.imageUrl}
+                    disabled={saving || uploadsBusy}
+                    onChange={(imageUrl) =>
+                      updateAchievement(entry.id, { imageUrl })
+                    }
+                    onUploadingChange={(uploading) =>
+                      setPortfolioUploadBusy(
+                        `achievement:${entry.id}`,
+                        uploading,
+                      )
+                    }
+                  />
                   <label>
                     <span>Descripción opcional</span>
                     <textarea
@@ -2800,6 +2934,7 @@ function ProfileView({
                   <button
                     className="portal-text-danger"
                     type="button"
+                    disabled={saving || uploadsBusy}
                     onClick={() =>
                       setField(
                         'achievements',
@@ -3001,6 +3136,14 @@ function ProfileView({
                   </header>
                   {user.achievements.map((entry) => (
                     <article key={entry.id}>
+                      {entry.imageUrl && (
+                        <img
+                          className="portal-own-portfolio__achievement-image"
+                          src={absoluteUploadUrl(entry.imageUrl)}
+                          alt={`Credencial de ${entry.title}`}
+                          loading="lazy"
+                        />
+                      )}
                       <strong>{entry.title}</strong>
                       <span>{entry.issuer}</span>
                       {entry.issuedAt && (
@@ -4492,12 +4635,12 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
       </header>
 
       <main
-        className={`portal-main${view === 'chat' || view === 'duco' ? ' portal-main--immersive' : ''}`}
+        className={`portal-main${view === 'chat' || view === 'duco' ? ' portal-main--immersive' : ''}${view === 'chat' ? ' portal-main--chat' : ''}`}
         id="portal-main"
         tabIndex={-1}
       >
         <header
-          className={`portal-page-header${view === 'chat' || view === 'duco' ? ' portal-page-header--immersive' : ''}`}
+          className={`portal-page-header${view === 'chat' || view === 'duco' ? ' portal-page-header--immersive' : ''}${view === 'chat' ? ' portal-page-header--chat' : ''}`}
         >
           <div>
             <span>{pageDetails[view].eyebrow}</span>

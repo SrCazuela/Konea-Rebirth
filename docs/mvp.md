@@ -24,7 +24,8 @@ La pregunta que responde el MVP es:
   Ollama o OpenAI Luna; toda acción propuesta se valida en la API y requiere
   confirmación humana.
 - **FocusBuddy:** acompaña sesiones de concentración y presenta el progreso; el
-  avatar actual es provisional y no toma decisiones por el estudiante.
+  escritorio usa derivados transparentes de los fotogramas oficiales y el avatar
+  no toma decisiones por el estudiante.
 
 ## Funciones implementadas
 
@@ -90,8 +91,8 @@ La pregunta que responde el MVP es:
 
 ### 5. FocusBuddy
 
-- Disponible como pestaña de Konea (`#focusbuddy`) y dentro de un shell Electron
-  para Windows que reutiliza la misma SPA y API.
+- Disponible como pestaña web de Konea (`#focusbuddy`) y como aplicación
+  Electron para Windows con interfaz local propia, login y la misma API.
 - Métodos Pomodoro 25/5, Pomodoro extendido 50/10, trabajo profundo 90/20,
   Flowtime libre y tiempos personalizados.
 - Asociación opcional de una sesión con materia y pendiente propios.
@@ -104,9 +105,10 @@ La pregunta que responde el MVP es:
 - Dashboard con tiempo de hoy, semana y total, sesiones completadas, racha
   actual/máxima, últimos siete días, distribución por materia e historial
   reciente.
-- Avatar provisional original en una hoja PNG 4×4 que reacciona a estados
-  inactivo, concentrado, pausado y completado; está preparado para reemplazarse
-  por los sprites animados definitivos.
+- Kuco es el avatar transparente y animado predeterminado en web y escritorio.
+  El escritorio también incluye doce derivados transparentes del chibi como
+  alternativa y preserva los PNG fuente; todavía faltan exportaciones alfa
+  oficiales y poses dedicadas para pausa/celebración de ese personaje.
 
 ### 6. Actividad, reportes y moderación
 
@@ -195,8 +197,9 @@ B y moderador; opcionalmente un profesor.
 7. Preguntar a DUCO “organiza mis tareas” y comprobar que usa la tarea creada.
 8. Abrir FocusBuddy, elegir materia/pendiente, iniciar un Pomodoro, pausar,
    reanudar y completar; comprobar que el dashboard y el historial cambian.
-9. Abrir el mismo espacio con `iniciar-focusbuddy.bat` y mostrar el avatar
-   provisional dentro del cliente Electron.
+9. Abrir `iniciar-focusbuddy.bat`, iniciar sesión en la interfaz local de
+   Electron y mostrar que la sesión y sus métricas coinciden con la web, junto
+   con los derivados transparentes del chibi oficial.
 10. Reportar una publicación y, con la cuenta moderadora, revisar el reporte.
 11. Con aprobación activada, crear un post como estudiante y resolverlo en el
     centro de moderación.
@@ -253,9 +256,11 @@ red externa.
 - FocusBuddy no ejecuta descansos automáticamente. La pausa por pérdida de
   heartbeat se materializa cuando llega la siguiente consulta o transición,
   aunque el tiempo computable ya queda limitado a 90 segundos de gracia.
-- El cliente Electron carga una instalación Konea accesible; no incluye modo
-  offline ni despliega la web/API por sí mismo. Los sprites definitivos y sus
-  animaciones dependen del trabajo visual futuro.
+- El cliente Electron incorpora su interfaz, pero no incluye cola offline ni
+  despliega API/PostgreSQL por sí mismo. Solo sincroniza mediante las operaciones
+  de API permitidas. Kuco cubre los cuatro estados principales; los PNG del
+  runtime del chibi son derivados transparentes y aún carecen de
+  pausa/celebración dedicadas.
 - Los límites de tasa y la concurrencia de DUCO usan memoria local del proceso;
   varias réplicas requerirán un almacén compartido como Redis.
 
@@ -272,8 +277,9 @@ red externa.
 7. Añadir un proceso de mantenimiento para materializar sesiones abandonadas
    sin esperar otra consulta y ciclos automáticos configurables de
    concentración/descanso.
-8. Sustituir el avatar provisional por sprites animados y definir dashboards
-   adicionales a partir de pruebas con estudiantes.
-9. Publicar web/API, configurar `FOCUSBUDDY_APP_URL`, firmar el instalador y
+8. Sustituir los derivados por exportaciones alfa oficiales del chibi, completar
+   sus estados faltantes y definir dashboards adicionales a partir de pruebas con
+   estudiantes.
+9. Publicar web/API, configurar `FOCUSBUDDY_API_URL`, firmar el instalador y
    preparar su estrategia de actualización.
 10. Mover rate limits y concurrencia a Redis antes de escalar horizontalmente.

@@ -84,6 +84,7 @@ describe.sequential('private connections and portfolio API', () => {
           issuedAt: '2026-08',
           description: 'Reconocimiento académico.',
           credentialUrl: null,
+          imageUrl: 'https://cdn.example.com/capstone-destacado.webp',
         },
       ],
     })
@@ -98,7 +99,13 @@ describe.sequential('private connections and portfolio API', () => {
       stats: { projects: 1, achievements: 1 },
       education: [{ id: educationId, institution: 'Duoc UC' }],
       projects: [{ id: projectId, title: 'Konea' }],
-      achievements: [{ id: achievementId, title: 'Capstone destacado' }],
+      achievements: [
+        {
+          id: achievementId,
+          title: 'Capstone destacado',
+          imageUrl: 'https://cdn.example.com/capstone-destacado.webp',
+        },
+      ],
     })
     expect(response.body.user).not.toHaveProperty('email')
   })

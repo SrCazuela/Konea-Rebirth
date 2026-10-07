@@ -12,6 +12,7 @@ apps/focusbuddy/build/focusbuddy.config.json
 .env
 .env.*
 !.env.example
+/tes
 
 # Editors and operating systems
 .idea/
