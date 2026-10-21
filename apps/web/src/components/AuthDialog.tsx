@@ -1,4 +1,10 @@
-import { useState, type FormEvent, type MouseEvent } from 'react'
+import {
+  useId,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react'
 import { ApiClientError, login, register, type KoneaUser } from '../api/auth'
 import { useModalDialog } from '../hooks/useModalDialog'
 import './AuthDialog.css'
@@ -34,13 +40,32 @@ function getFieldError(
   return fields?.[field]?.[0] ? fieldMessages[field] : undefined
 }
 
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      {visible ? (
+        <path d="m4 4 16 16" stroke="currentColor" strokeWidth="1.8" />
+      ) : null}
+    </svg>
+  )
+}
+
 export function AuthDialog({
   mode,
   onModeChange,
   onClose,
   onAuthenticated,
 }: AuthDialogProps) {
+  const id = useId()
   const [submitting, setSubmitting] = useState(false)
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<
     Record<string, string[] | undefined> | undefined
@@ -53,9 +78,28 @@ export function AuthDialog({
   })
 
   function switchMode(nextMode: AuthMode) {
+    if (submitting || nextMode === mode) return
     setError(null)
     setFields(undefined)
+    setPasswordVisible(false)
     onModeChange(nextMode)
+  }
+
+  function handleTabKey(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const nextMode =
+      event.key === 'Home'
+        ? 'login'
+        : event.key === 'End'
+          ? 'register'
+          : mode === 'login'
+            ? 'register'
+            : 'login'
+    switchMode(nextMode)
+    dialogRef.current
+      ?.querySelector<HTMLButtonElement>('[data-auth-mode="' + nextMode + '"]')
+      ?.focus()
   }
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
@@ -64,6 +108,7 @@ export function AuthDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (submitting) return
     setSubmitting(true)
     setError(null)
     setFields(undefined)
@@ -96,7 +141,7 @@ export function AuthDialog({
         setFields(requestError.fields)
       } else {
         setError(
-          'No fue posible conectar con Konea. Comprueba que la API esté activa.',
+          'No pudimos conectarnos con Konea. Espera un momento e inténtalo otra vez.',
         )
       }
     } finally {
@@ -105,7 +150,8 @@ export function AuthDialog({
   }
 
   const isRegistration = mode === 'register'
-  const title = isRegistration ? 'Crea tu cuenta' : 'Qué bueno verte de nuevo'
+  const identifierField = isRegistration ? 'email' : 'identifier'
+  const passwordError = getFieldError(fields, 'password')
 
   return (
     <div className="dialog-backdrop" onMouseDown={closeFromBackdrop}>
@@ -114,7 +160,7 @@ export function AuthDialog({
         className="auth-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="auth-dialog-title"
+        aria-labelledby={id + '-title'}
         tabIndex={-1}
       >
         <button
@@ -124,147 +170,360 @@ export function AuthDialog({
           disabled={submitting}
           aria-label="Cerrar"
         >
-          ×
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="m6 6 12 12M18 6 6 18"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+          </svg>
         </button>
 
-        <div className="dialog-brand">
-          <span className="brand-mark" aria-hidden="true">
-            K
-          </span>
-          Konea
-        </div>
+        <aside className="auth-story" aria-label="Tu espacio en Konea">
+          <p className="auth-story__eyebrow">
+            <span aria-hidden="true" /> Tu campus, contigo
+          </p>
+          <h2>
+            Conecta con tu gente.
+            <br />
+            <em>Encuentra tu ritmo.</em>
+          </h2>
+          <p className="auth-story__description">
+            Las personas, las ideas y los pequeños avances que hacen grande tu
+            vida estudiantil. Todo en un mismo lugar.
+          </p>
 
-        <div
-          className="auth-mode-tabs"
-          role="tablist"
-          aria-label="Acceso a Konea"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={!isRegistration}
-            className={!isRegistration ? 'is-active' : undefined}
-            onClick={() => switchMode('login')}
-          >
-            Ingresar
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={isRegistration}
-            className={isRegistration ? 'is-active' : undefined}
-            onClick={() => switchMode('register')}
-          >
-            Crear cuenta
-          </button>
-        </div>
+          <div className="auth-story__scene" aria-hidden="true">
+            <div className="auth-story__orbit auth-story__orbit--one" />
+            <div className="auth-story__orbit auth-story__orbit--two" />
+            <div className="auth-story__spark">✦</div>
+            <div className="auth-story__focus-card">
+              <span className="auth-story__card-eyebrow">
+                Un momento para avanzar
+              </span>
+              <div className="auth-story__timer">
+                <svg viewBox="0 0 70 70" fill="none">
+                  <circle
+                    cx="35"
+                    cy="35"
+                    r="30"
+                    stroke="currentColor"
+                    strokeOpacity=".14"
+                    strokeWidth="4"
+                  />
+                  <circle
+                    cx="35"
+                    cy="35"
+                    r="30"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeDasharray="145 189"
+                    strokeLinecap="round"
+                    transform="rotate(-90 35 35)"
+                  />
+                  <path
+                    d="M35 19v16l10 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div>
+                  <strong>25:00</strong>
+                  <span>A tu ritmo, con Kuco</span>
+                </div>
+              </div>
+              <div className="auth-story__task">
+                <span>✓</span> Un pendiente menos. Un paso más.
+              </div>
+            </div>
+            <div className="auth-story__community-card">
+              <div className="auth-story__avatars">
+                <span>VA</span>
+                <span>MA</span>
+                <span>TÚ</span>
+              </div>
+              <div>
+                <strong>Tu próxima gran idea</strong>
+                <span>puede empezar con una conexión.</span>
+              </div>
+            </div>
+          </div>
 
-        <div className="dialog-heading">
-          <h2 id="auth-dialog-title">{title}</h2>
-          <p>
-            {isRegistration
-              ? 'Empieza a construir tu comunidad universitaria.'
-              : 'Ingresa para volver a conectar con tu campus.'}
+          <p className="auth-story__closing">
+            La vida universitaria se vive mejor en comunidad.
+          </p>
+        </aside>
+
+        <div className="auth-dialog__content">
+          <div className="dialog-brand">
+            <img src="/konea-logo.svg" alt="Konea" width="124" height="44" />
+          </div>
+
+          <div
+            className="auth-mode-tabs"
+            role="tablist"
+            aria-label="Acceso a Konea"
+          >
+            <button
+              id={id + '-login-tab'}
+              type="button"
+              role="tab"
+              data-auth-mode="login"
+              aria-controls={id + '-panel'}
+              aria-selected={!isRegistration}
+              tabIndex={!isRegistration ? 0 : -1}
+              className={!isRegistration ? 'is-active' : undefined}
+              onClick={() => switchMode('login')}
+              onKeyDown={handleTabKey}
+              disabled={submitting}
+            >
+              Ingresar
+            </button>
+            <button
+              id={id + '-register-tab'}
+              type="button"
+              role="tab"
+              data-auth-mode="register"
+              aria-controls={id + '-panel'}
+              aria-selected={isRegistration}
+              tabIndex={isRegistration ? 0 : -1}
+              className={isRegistration ? 'is-active' : undefined}
+              onClick={() => switchMode('register')}
+              onKeyDown={handleTabKey}
+              disabled={submitting}
+            >
+              Crear cuenta
+            </button>
+          </div>
+
+          <div
+            id={id + '-panel'}
+            role="tabpanel"
+            aria-labelledby={id + '-' + mode + '-tab'}
+          >
+            <div className="dialog-heading">
+              <p className="dialog-heading__eyebrow">
+                {isRegistration
+                  ? 'Tu historia empieza aquí'
+                  : 'Tu comunidad te espera'}
+              </p>
+              <h2 id={id + '-title'}>
+                {isRegistration
+                  ? 'Haz espacio para lo que viene.'
+                  : 'Qué bueno tenerte de vuelta.'}
+              </h2>
+              <p>
+                {isRegistration
+                  ? 'Crea tu cuenta y empieza a vivir tu campus a tu manera.'
+                  : 'Entra a tu espacio. Sigue donde lo dejaste.'}
+              </p>
+            </div>
+
+            {error ? (
+              <div className="form-alert" role="alert">
+                {error}
+              </div>
+            ) : null}
+
+            <form
+              key={mode}
+              className="auth-form"
+              onSubmit={submit}
+              aria-busy={submitting}
+            >
+              <fieldset disabled={submitting}>
+                {isRegistration ? (
+                  <div className="form-row">
+                    <div className="auth-field">
+                      <label htmlFor={id + '-display-name'}>
+                        Nombre visible
+                      </label>
+                      <input
+                        id={id + '-display-name'}
+                        name="displayName"
+                        type="text"
+                        autoComplete="name"
+                        placeholder="Tu nombre"
+                        minLength={2}
+                        maxLength={100}
+                        required
+                        data-modal-initial-focus
+                        aria-invalid={Boolean(
+                          getFieldError(fields, 'displayName'),
+                        )}
+                        aria-describedby={
+                          getFieldError(fields, 'displayName')
+                            ? id + '-name-error'
+                            : undefined
+                        }
+                      />
+                      {getFieldError(fields, 'displayName') ? (
+                        <small id={id + '-name-error'}>
+                          {getFieldError(fields, 'displayName')}
+                        </small>
+                      ) : null}
+                    </div>
+                    <div className="auth-field">
+                      <label htmlFor={id + '-username'}>Usuario</label>
+                      <input
+                        id={id + '-username'}
+                        name="username"
+                        type="text"
+                        autoComplete="username"
+                        minLength={3}
+                        maxLength={30}
+                        pattern="[A-Za-z0-9._]+"
+                        placeholder="nombre.apellido"
+                        required
+                        aria-invalid={Boolean(
+                          getFieldError(fields, 'username'),
+                        )}
+                        aria-describedby={
+                          getFieldError(fields, 'username')
+                            ? id + '-username-error'
+                            : undefined
+                        }
+                      />
+                      {getFieldError(fields, 'username') ? (
+                        <small id={id + '-username-error'}>
+                          {getFieldError(fields, 'username')}
+                        </small>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="auth-field">
+                  <label htmlFor={id + '-identifier'}>
+                    {isRegistration ? 'Correo electrónico' : 'Correo o usuario'}
+                  </label>
+                  <input
+                    id={id + '-identifier'}
+                    name={identifierField}
+                    type={isRegistration ? 'email' : 'text'}
+                    autoComplete={isRegistration ? 'email' : 'username'}
+                    placeholder={
+                      isRegistration
+                        ? 'tu.correo@institucion.cl'
+                        : 'Tu correo o nombre de usuario'
+                    }
+                    maxLength={320}
+                    required
+                    data-modal-initial-focus={!isRegistration || undefined}
+                    aria-invalid={Boolean(
+                      getFieldError(fields, identifierField),
+                    )}
+                    aria-describedby={
+                      getFieldError(fields, identifierField)
+                        ? id + '-identifier-error'
+                        : undefined
+                    }
+                  />
+                  {getFieldError(fields, identifierField) ? (
+                    <small id={id + '-identifier-error'}>
+                      {getFieldError(fields, identifierField)}
+                    </small>
+                  ) : null}
+                </div>
+
+                <div className="auth-field">
+                  <label htmlFor={id + '-password'}>Contraseña</label>
+                  <div className="auth-password-control">
+                    <input
+                      id={id + '-password'}
+                      name="password"
+                      type={passwordVisible ? 'text' : 'password'}
+                      autoComplete={
+                        isRegistration ? 'new-password' : 'current-password'
+                      }
+                      placeholder={
+                        isRegistration
+                          ? 'Crea una contraseña segura'
+                          : 'Tu contraseña'
+                      }
+                      minLength={isRegistration ? 10 : 1}
+                      maxLength={128}
+                      required
+                      aria-invalid={Boolean(passwordError)}
+                      aria-describedby={
+                        passwordError || isRegistration
+                          ? id + '-password-help'
+                          : undefined
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setPasswordVisible((visible) => !visible)}
+                      aria-label={
+                        passwordVisible
+                          ? 'Ocultar contraseña'
+                          : 'Mostrar contraseña'
+                      }
+                      aria-pressed={passwordVisible}
+                      aria-controls={id + '-password'}
+                    >
+                      <PasswordVisibilityIcon visible={passwordVisible} />
+                    </button>
+                  </div>
+                  {passwordError || isRegistration ? (
+                    <small
+                      id={id + '-password-help'}
+                      className={
+                        !passwordError ? 'auth-field__hint' : undefined
+                      }
+                    >
+                      {passwordError ??
+                        'Al menos 10 caracteres. Hazla tuya, mantenla privada.'}
+                    </small>
+                  ) : null}
+                </div>
+
+                <button
+                  className="auth-submit"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <span className="auth-submit__spinner" aria-hidden="true" />
+                  ) : null}
+                  <span>
+                    {submitting
+                      ? 'Un momento…'
+                      : isRegistration
+                        ? 'Crear mi cuenta'
+                        : 'Entrar a Konea'}
+                  </span>
+                  {!submitting ? (
+                    <span className="auth-submit__arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                  ) : null}
+                </button>
+              </fieldset>
+            </form>
+          </div>
+
+          <p className="dialog-footnote">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path
+                d="m10 2 6 2.5v4.7c0 3.4-2.4 6.3-6 8.8-3.6-2.5-6-5.4-6-8.8V4.5L10 2Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="m7 9.5 2 2 4-4"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+            </svg>
+            <span>
+              Tu espacio, tus decisiones. Tú eliges qué compartir y con quién
+              conectar.
+            </span>
           </p>
         </div>
-
-        {error ? (
-          <div className="form-alert" role="alert">
-            {error}
-          </div>
-        ) : null}
-
-        <form key={mode} className="auth-form" onSubmit={submit} noValidate>
-          {isRegistration ? (
-            <div className="form-row">
-              <label>
-                Nombre visible
-                <input
-                  name="displayName"
-                  type="text"
-                  autoComplete="name"
-                  minLength={2}
-                  maxLength={100}
-                  required
-                  autoFocus
-                  aria-invalid={Boolean(getFieldError(fields, 'displayName'))}
-                />
-                <small>{getFieldError(fields, 'displayName')}</small>
-              </label>
-
-              <label>
-                Usuario
-                <input
-                  name="username"
-                  type="text"
-                  autoComplete="username"
-                  minLength={3}
-                  maxLength={30}
-                  pattern="[A-Za-z0-9._]+"
-                  placeholder="nombre.apellido"
-                  required
-                  aria-invalid={Boolean(getFieldError(fields, 'username'))}
-                />
-                <small>{getFieldError(fields, 'username')}</small>
-              </label>
-            </div>
-          ) : null}
-
-          <label>
-            {isRegistration ? 'Correo electrónico' : 'Correo o usuario'}
-            <input
-              name={isRegistration ? 'email' : 'identifier'}
-              type={isRegistration ? 'email' : 'text'}
-              autoComplete={isRegistration ? 'email' : 'username'}
-              placeholder={
-                isRegistration
-                  ? 'estudiante@universidad.cl'
-                  : 'correo o usuario'
-              }
-              maxLength={320}
-              required
-              autoFocus={!isRegistration}
-              aria-invalid={Boolean(
-                getFieldError(fields, isRegistration ? 'email' : 'identifier'),
-              )}
-            />
-            <small>
-              {getFieldError(fields, isRegistration ? 'email' : 'identifier')}
-            </small>
-          </label>
-
-          <label>
-            Contraseña
-            <input
-              name="password"
-              type="password"
-              autoComplete={
-                isRegistration ? 'new-password' : 'current-password'
-              }
-              minLength={isRegistration ? 10 : 1}
-              maxLength={128}
-              required
-              aria-invalid={Boolean(getFieldError(fields, 'password'))}
-            />
-            <small>
-              {getFieldError(fields, 'password') ??
-                (isRegistration ? 'Mínimo 10 caracteres.' : '')}
-            </small>
-          </label>
-
-          <button className="auth-submit" type="submit" disabled={submitting}>
-            {submitting
-              ? 'Procesando…'
-              : isRegistration
-                ? 'Crear mi cuenta'
-                : 'Ingresar a Konea'}
-          </button>
-        </form>
-
-        <p className="dialog-footnote">
-          Tu sesión se guarda en una cookie segura y no exponemos credenciales
-          en el navegador.
-        </p>
       </section>
     </div>
   )

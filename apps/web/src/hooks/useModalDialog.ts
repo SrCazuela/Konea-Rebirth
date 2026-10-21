@@ -69,7 +69,9 @@ export function useModalDialog<TElement extends HTMLElement>({
     const focusFrame = window.requestAnimationFrame(() => {
       const dialog = dialogRef.current
       if (!dialog) return
-      const preferred = dialog.querySelector<HTMLElement>('[autofocus]')
+      const preferred = dialog.querySelector<HTMLElement>(
+        '[data-modal-initial-focus], [autofocus]',
+      )
       const target = preferred ?? focusableElements(dialog)[0] ?? dialog
       target.focus()
     })

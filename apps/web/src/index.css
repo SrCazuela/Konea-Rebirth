@@ -49,3 +49,9 @@ button:focus-visible {
   color: white;
   background: var(--primary);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    scroll-behavior: auto;
+  }
+}
