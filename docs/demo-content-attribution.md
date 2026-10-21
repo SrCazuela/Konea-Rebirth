@@ -1,8 +1,8 @@
 # Atribuciones de los activos del contenido demo
 
-Los archivos de `apps/api/demo-assets/social/` se descargaron desde Internet para poblar el entorno demostrativo de Konea. No fueron generados con IA y no representan a estudiantes reales. Los nombres, perfiles, publicaciones y conversaciones que los utilicen deben mantenerse explícitamente ficticios.
+Los archivos de `apps/api/demo-assets/social/` se descargaron desde Internet para poblar el entorno demostrativo de Konea. No fueron generados con IA. Los nombres, perfiles y conversaciones de los usuarios demo son ficticios; las fotografías de noticias institucionales corresponden a las personas y actividades publicadas en sus fuentes oficiales.
 
-Se eligieron fotografías sin rostros humanos y personajes o marcas de proyectos libres. La aplicación puede recortarlos visualmente para adaptarlos a un avatar, pero los archivos almacenados son las previsualizaciones redimensionadas entregadas por Wikimedia Commons. El manifiesto verificable, con dimensiones, tamaño y SHA-256, está en `apps/api/demo-assets/social/manifest.json`.
+Para avatares y portafolios se eligieron fotografías sin rostros humanos y personajes o marcas de proyectos libres. La aplicación puede recortarlos visualmente para adaptarlos a un avatar. Las fotos institucionales se descargaron desde el sitio oficial de Duoc UC y se muestran completas en los avisos. El manifiesto verificable, con fuentes, dimensiones, tamaño y SHA-256, está en `apps/api/demo-assets/social/manifest.json`.
 
 ## Fuentes de los anuncios demostrativos
 
@@ -10,6 +10,28 @@ La cuenta `Noticias Duoc UC · demo` no es una cuenta oficial ni suplanta a
 Duoc UC. Sus publicaciones son resúmenes breves de páginas públicas oficiales;
 cada una conserva su enlace y las actividades vencidas se presentan como
 archivo.
+
+Los siete avisos tienen una imagen local: seis usan la fotografía de la noticia original y el aviso del calendario usa una imagen referencial real de la [sede San Joaquín](https://www.duoc.cl/sedes/san-joaquin/). Se prefirieron versiones completas para evitar los recortes de rostros de algunos banners. Estas imágenes no identifican a los usuarios ficticios de Konea.
+
+| Archivo                        | Aviso                                  |
+| ------------------------------ | -------------------------------------- |
+| `news-duoc-campus.jpg`         | Calendario académico; foto referencial |
+| `news-patient-safety.png`      | Jornada de seguridad del paciente      |
+| `news-marketing-challenge.jpg` | Marketing Challenge 2026               |
+| `news-toyota-pioneras.jpg`     | Programa Pioneras de Toyota Chile      |
+| `news-chilemonos.jpg`          | Pitch Indie de Chilemonos              |
+| `news-portfolio-night.jpg`     | Portfolio Night Santiago               |
+| `news-feria-intercarreras.jpg` | Feria Intercarreras                    |
+
+Duoc UC es el publicador de las fotografías; las páginas no acreditan un fotógrafo individual ni indican una licencia libre. Sus derechos corresponden a sus respectivos titulares y no se transfieren bajo la licencia MIT del código. Las fuentes y URLs exactas de descarga se conservan en el manifiesto.
+
+Para añadir o actualizar exclusivamente estas fotografías en una base local ya poblada, sin modificar textos, fechas, perfiles, comentarios ni reacciones:
+
+```powershell
+node --no-maglev node_modules/tsx/dist/cli.mjs apps/api/src/scripts/seed-social-demo.ts --announcement-images-only
+```
+
+El inicio habitual con `db:seed:social` también completa las imágenes en los avisos existentes. Ambos modos usan los identificadores reservados y verifican el autor y el tipo de cada publicación.
 
 | Fecha de la fuente | Contenido resumido                            | Fuente oficial                                                                                                                                                        |
 | ------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

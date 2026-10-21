@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { copyFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inArray, or } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import { env } from '../config/env.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
 import {
@@ -29,6 +29,12 @@ import { hashPassword } from '../security/password.js'
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const UPLOAD_DIRECTORY = fileURLToPath(
   new URL('../../../../.local/uploads/', import.meta.url),
+)
+
+type DemoTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+const announcements = SOCIAL_DEMO_POSTS.filter(
+  (post) => post.contentType === 'announcement',
 )
 
 function assertLocalDevelopmentDatabase() {
@@ -189,6 +195,31 @@ async function assertReservedIdentifiersAreSafe(
       )
     }
   }
+
+  const expectedPosts = new Map(
+    SOCIAL_DEMO_POSTS.map((post) => [post.id, post]),
+  )
+  const existingPosts = await db
+    .select({
+      id: posts.id,
+      authorId: posts.authorId,
+      contentType: posts.contentType,
+    })
+    .from(posts)
+    .where(inArray(posts.id, [...expectedPosts.keys()]))
+
+  for (const existing of existingPosts) {
+    const expected = expectedPosts.get(existing.id)
+    if (
+      !expected ||
+      expected.authorId !== existing.authorId ||
+      expected.contentType !== existing.contentType
+    ) {
+      throw new Error(
+        `Colisión de publicación demo: ${existing.id} no coincide con su autor y tipo reservados.`,
+      )
+    }
+  }
 }
 
 async function copyAssetsToUploadDirectory(
@@ -202,14 +233,87 @@ async function copyAssetsToUploadDirectory(
   )
 }
 
-export async function seedSocialDemo() {
+async function upsertDemoUploads(
+  transaction: DemoTransaction,
+  assets: Map<SocialDemoMediaKey, ResolvedSocialDemoAsset>,
+  seededAt: Date,
+) {
+  for (const asset of assets.values()) {
+    await transaction
+      .insert(uploadedFiles)
+      .values({
+        id: asset.id,
+        ownerId: asset.ownerId,
+        storedName: asset.storedName,
+        originalName: asset.sourceName,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        createdAt: seededAt,
+      })
+      .onConflictDoUpdate({
+        target: uploadedFiles.id,
+        set: {
+          ownerId: asset.ownerId,
+          storedName: asset.storedName,
+          originalName: asset.sourceName,
+          mimeType: asset.mimeType,
+          size: asset.size,
+        },
+      })
+  }
+}
+
+async function syncAnnouncementImages(
+  transaction: DemoTransaction,
+  assets: Map<SocialDemoMediaKey, ResolvedSocialDemoAsset>,
+) {
+  for (const post of announcements) {
+    if (!post.imageMediaKey) continue
+    const updated = await transaction
+      .update(posts)
+      .set({ imageUrl: uploadUrl(assets, post.imageMediaKey) })
+      .where(
+        and(
+          eq(posts.id, post.id),
+          eq(posts.authorId, post.authorId),
+          eq(posts.contentType, 'announcement'),
+        ),
+      )
+      .returning({ id: posts.id })
+    if (updated.length !== 1) {
+      throw new Error(
+        `No existe el aviso demo ${post.id}. Ejecuta primero db:seed:social sin --announcement-images-only.`,
+      )
+    }
+  }
+}
+
+export async function seedSocialDemo({ announcementImagesOnly = false } = {}) {
   assertLocalDevelopmentDatabase()
   assertValidSocialDemoData()
   const assets = await resolveSocialDemoAssets()
   await assertReservedIdentifiersAreSafe(assets)
-  await copyAssetsToUploadDirectory(assets)
-
   const seededAt = new Date()
+
+  if (announcementImagesOnly) {
+    const announcementMediaKeys = new Set(
+      announcements.map((post) => post.imageMediaKey),
+    )
+    const announcementAssets = new Map(
+      [...assets].filter(([key]) => announcementMediaKeys.has(key)),
+    )
+    await copyAssetsToUploadDirectory(announcementAssets)
+    await db.transaction(async (transaction) => {
+      await upsertDemoUploads(transaction, announcementAssets, seededAt)
+      await syncAnnouncementImages(transaction, announcementAssets)
+    })
+    console.log(
+      `Imágenes actualizadas en ${announcements.length} avisos Duoc UC.`,
+    )
+    return
+  }
+
+  await copyAssetsToUploadDirectory(assets)
   const inaccessiblePasswordHash = await hashPassword(
     randomBytes(48).toString('base64url'),
   )
@@ -248,29 +352,7 @@ export async function seedSocialDemo() {
         })
     }
 
-    for (const asset of assets.values()) {
-      await transaction
-        .insert(uploadedFiles)
-        .values({
-          id: asset.id,
-          ownerId: asset.ownerId,
-          storedName: asset.storedName,
-          originalName: asset.sourceName,
-          mimeType: asset.mimeType,
-          size: asset.size,
-          createdAt: seededAt,
-        })
-        .onConflictDoUpdate({
-          target: uploadedFiles.id,
-          set: {
-            ownerId: asset.ownerId,
-            storedName: asset.storedName,
-            originalName: asset.sourceName,
-            mimeType: asset.mimeType,
-            size: asset.size,
-          },
-        })
-    }
+    await upsertDemoUploads(transaction, assets, seededAt)
 
     for (const [index, profile] of SOCIAL_DEMO_PROFILES.entries()) {
       const createdAt = new Date(
@@ -340,6 +422,8 @@ export async function seedSocialDemo() {
       )
       .onConflictDoNothing()
 
+    await syncAnnouncementImages(transaction, assets)
+
     await transaction
       .insert(comments)
       .values(
@@ -387,7 +471,9 @@ export async function seedSocialDemo() {
 }
 
 try {
-  await seedSocialDemo()
+  await seedSocialDemo({
+    announcementImagesOnly: process.argv.includes('--announcement-images-only'),
+  })
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1

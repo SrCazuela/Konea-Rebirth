@@ -1154,7 +1154,7 @@ function PostCard({
           aria-label="Ampliar imagen de la publicación"
         >
           <img
-            className="portal-post__image"
+            className={`portal-post__image${post.contentType === 'announcement' ? ' portal-post__image--announcement' : ''}`}
             src={absoluteUploadUrl(post.imageUrl)}
             alt={`Imagen compartida por ${post.author.displayName}`}
             loading="lazy"

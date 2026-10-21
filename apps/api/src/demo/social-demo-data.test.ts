@@ -59,6 +59,14 @@ describe('social demo dataset', () => {
       ),
     ).toBe(true)
     expect(
+      announcements.every(
+        (post) =>
+          post.imageMediaKey &&
+          SOCIAL_DEMO_MEDIA[post.imageMediaKey].ownerId ===
+            SOCIAL_DEMO_USER_IDS.news,
+      ),
+    ).toBe(true)
+    expect(
       announcements.filter((post) =>
         post.content.includes('ACTIVIDAD FINALIZADA'),
       ),

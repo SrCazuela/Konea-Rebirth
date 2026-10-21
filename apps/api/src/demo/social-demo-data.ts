@@ -187,6 +187,27 @@ export const SOCIAL_DEMO_MEDIA = {
   achievementSeba: demoMedia(48, SOCIAL_DEMO_USER_IDS.seba, [
     'profile-certificate.png',
   ]),
+  newsCampus: demoMedia(49, SOCIAL_DEMO_USER_IDS.news, [
+    'news-duoc-campus.jpg',
+  ]),
+  newsPatientSafety: demoMedia(50, SOCIAL_DEMO_USER_IDS.news, [
+    'news-patient-safety.png',
+  ]),
+  newsMarketingChallenge: demoMedia(51, SOCIAL_DEMO_USER_IDS.news, [
+    'news-marketing-challenge.jpg',
+  ]),
+  newsToyotaPioneras: demoMedia(52, SOCIAL_DEMO_USER_IDS.news, [
+    'news-toyota-pioneras.jpg',
+  ]),
+  newsChilemonos: demoMedia(53, SOCIAL_DEMO_USER_IDS.news, [
+    'news-chilemonos.jpg',
+  ]),
+  newsPortfolioNight: demoMedia(54, SOCIAL_DEMO_USER_IDS.news, [
+    'news-portfolio-night.jpg',
+  ]),
+  newsFeriaIntercarreras: demoMedia(55, SOCIAL_DEMO_USER_IDS.news, [
+    'news-feria-intercarreras.jpg',
+  ]),
 } as const
 
 export type SocialDemoMediaKey = keyof typeof SOCIAL_DEMO_MEDIA
@@ -1086,6 +1107,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     likeCount: 7,
     publishedAt: '2026-09-22T12:00:00.000Z',
     sourceUrl: 'https://www.duoc.cl/calendario-academico/',
+    imageMediaKey: 'newsCampus',
   },
   {
     id: postId(17),
@@ -1099,6 +1121,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2026-09-16T16:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=especialista-de-duoc-uc-participa-en-jornada-nacional-sobre-seguridad-del-paciente',
+    imageMediaKey: 'newsPatientSafety',
   },
   {
     id: postId(18),
@@ -1112,6 +1135,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2026-09-09T15:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=estudiantes-de-duoc-uc-desarrollan-soluciones-para-desafio-de-marketing-challenge-2026',
+    imageMediaKey: 'newsMarketingChallenge',
   },
   {
     id: postId(19),
@@ -1125,6 +1149,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2026-09-09T14:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=toyota-chile-y-duoc-uc-impulsan-a-primera-generacion-de-mujeres-que-busca-abrirse-camino-en-la-industria-automotriz',
+    imageMediaKey: 'newsToyotaPioneras',
   },
   {
     id: postId(20),
@@ -1138,6 +1163,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2026-07-10T16:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=estudiantes-y-titulados-duoc-uc-ganan-el-pitch-indie-2026-de-chilemonos-conla-aprendiz-de-bruja',
+    imageMediaKey: 'newsChilemonos',
   },
   {
     id: postId(21),
@@ -1151,6 +1177,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2025-12-02T15:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=portfolio-night-santiago-2025-jovenes-talentos-de-duoc-uc-se-conectan-con-la-industria-creativa',
+    imageMediaKey: 'newsPortfolioNight',
   },
   {
     id: postId(22),
@@ -1164,6 +1191,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     publishedAt: '2024-09-16T15:00:00.000Z',
     sourceUrl:
       'https://www.duoc.cl/?noticia_post_type=feria-intercarreras-una-instancia-que-conecta-a-los-estudiantes-con-la-industria',
+    imageMediaKey: 'newsFeriaIntercarreras',
   },
 ]
 

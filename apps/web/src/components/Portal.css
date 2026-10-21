@@ -756,6 +756,10 @@
   object-fit: cover;
 }
 
+.portal-post__image--announcement {
+  object-fit: contain;
+}
+
 .portal-post__actions {
   padding-top: 11px;
   display: flex;
