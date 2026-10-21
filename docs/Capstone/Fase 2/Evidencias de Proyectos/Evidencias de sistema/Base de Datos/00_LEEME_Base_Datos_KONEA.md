@@ -12,13 +12,13 @@ La instantánea se generó desde una base nueva. Se aplicaron las 13 migraciones
 
 ## Archivos
 
-| Archivo | Contenido | Uso recomendado |
-|---|---|---|
+| Archivo                                      | Contenido                                                                                                  | Uso recomendado                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `01_KONEA_Esquema_Base_Datos_PostgreSQL.sql` | DDL legible: esquemas, 25 enums, tablas, secuencias, claves primarias y foráneas, restricciones e índices. | Revisar el `CREATE TABLE` y crear una base vacía sin datos. |
-| `02_KONEA_Base_Datos_Demo_Completa.sql` | Respaldo lógico completo en texto: estructura, journal de migraciones y datos ficticios. | Restauración simple mediante `psql`. |
-| `03_KONEA_Base_Datos_Demo_Completa.dump` | El mismo respaldo completo en formato personalizado y comprimido de `pg_dump`. | Restauración selectiva o completa mediante `pg_restore`. |
-| `Consultas_SQL_Seguras.sql` | Consultas de solo lectura para inspeccionar la evidencia. | Validar tablas, relaciones y métricas sin modificar datos. |
-| `SHA256SUMS.txt` | Huellas SHA-256 de los archivos entregados. | Comprobar que los respaldos no fueron alterados. |
+| `02_KONEA_Base_Datos_Demo_Completa.sql`      | Respaldo lógico completo en texto: estructura, journal de migraciones y datos ficticios.                   | Restauración simple mediante `psql`.                        |
+| `03_KONEA_Base_Datos_Demo_Completa.dump`     | El mismo respaldo completo en formato personalizado y comprimido de `pg_dump`.                             | Restauración selectiva o completa mediante `pg_restore`.    |
+| `Consultas_SQL_Seguras.sql`                  | Consultas de solo lectura para inspeccionar la evidencia.                                                  | Validar tablas, relaciones y métricas sin modificar datos.  |
+| `SHA256SUMS.txt`                             | Huellas SHA-256 de los archivos entregados.                                                                | Comprobar que los respaldos no fueron alterados.            |
 
 > `01` y `02` son alternativas. No deben ejecutarse consecutivamente sobre la misma base: `01` crea únicamente la estructura y `02` ya contiene esa misma estructura junto con los datos.
 
