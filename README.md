@@ -439,34 +439,34 @@ archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
   API accesible. El escritorio usa derivados transparentes del chibi, conserva
   los PNG fuente y la web mantiene el avatar provisional.
 
-## Migración futura a Supabase y Hostinger
+## Despliegue de demostración con Sites, Render y Neon
 
-La arquitectura evita acoplar el dominio a un proveedor:
+Se preparó un checkout independiente del frontend para ChatGPT Sites, una API
+Docker para Render y almacenamiento privado compatible con S3 para Neon.
+PostgreSQL y Drizzle se conservan. El entorno local sigue funcionando con su
+base y archivos locales; la copia remota no se sincroniza automáticamente.
 
-1. crear un PostgreSQL administrado en Supabase y guardar secretos fuera de
-   Git;
-2. apuntar `DATABASE_URL` a Supabase con TLS y ejecutar `npm run db:migrate`;
-3. copiar archivos de `.local/uploads/` a un almacenamiento persistente y
-   reemplazar el adaptador/URLs de carga;
-4. compilar la web y desplegarla como contenido estático;
-5. desplegar la API en un plan Hostinger (u otro proveedor) que soporte Node.js
-   persistente, HTTPS, variables de entorno y conexión saliente a PostgreSQL;
-6. configurar `CORS_ORIGIN`, cookies seguras, dominio y copias de respaldo;
-7. ejecutar pruebas de humo antes de importar datos de demostración.
+El proyecto de Sites conserva una versión guardada con acceso solo al propietario.
+El respaldo completo de la base y los archivos está verificado. El proyecto Neon
+gratuito y el bucket privado están creados; la publicación integral requiere
+verificar la restauración remota y la facturación de Render para evitar cargos
+automáticos. No se debe presentar esta preparación como un despliegue remoto terminado.
 
-El cliente Electron incorpora su propia interfaz local. Para distribuirlo debe
-compilarse con `FOCUSBUDDY_API_URL` apuntando a la API HTTPS publicada y se deben
-verificar autenticación, cookies y actualizaciones del instalador. El escritorio
-no se conecta directamente a Supabase/PostgreSQL.
+El procedimiento, orden de restauración, secretos y pruebas están en
+[Alojamiento con Sites](docs/hosting-sites.md). La imagen `Dockerfile.api` y
+`render.yaml` no incluyen datos privados ni ejecutan seeders de demostración.
+La base remota debe restaurarse antes del primer arranque de Render.
 
-Usar Supabase Auth, Realtime o Storage es opcional y requeriría adaptadores
-explícitos. Migrar PostgreSQL no obliga a reemplazar la autenticación actual.
+FocusBuddy conserva su configuración local. El instalador existente todavía
+no está adaptado al backend protegido de esta demo: no debe recibir el secreto
+del proxy ni conectarse directamente a PostgreSQL.
 
 ## Documentación
 
 - [Alcance funcional y guion Capstone](docs/mvp.md)
 - [Contratos de la API REST](docs/api.md)
 - [Arquitectura, datos y despliegue](docs/architecture.md)
+- [Alojamiento con Sites, Render y Neon](docs/hosting-sites.md)
 - [Backlog, aceptación y definición de terminado](docs/backlog.md)
 - [Diagramas técnicos](docs/diagrams.md)
 - [FocusBuddy web, API, escritorio y sprites](docs/focusbuddy.md)

@@ -27,9 +27,9 @@ import {
 import { hashPassword } from '../security/password.js'
 
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-const UPLOAD_DIRECTORY = fileURLToPath(
-  new URL('../../../../.local/uploads/', import.meta.url),
-)
+const UPLOAD_DIRECTORY =
+  env.UPLOAD_DIRECTORY ??
+  fileURLToPath(new URL('../../../../.local/uploads/', import.meta.url))
 
 type DemoTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -38,6 +38,11 @@ const announcements = SOCIAL_DEMO_POSTS.filter(
 )
 
 function assertLocalDevelopmentDatabase() {
+  if (env.UPLOAD_STORAGE !== 'filesystem') {
+    throw new Error(
+      'El contenido social demo local requiere UPLOAD_STORAGE=filesystem. La copia remota se prepara con las herramientas de hosting.',
+    )
+  }
   if (env.NODE_ENV !== 'development') {
     throw new Error(
       'El contenido social demo solo puede prepararse con NODE_ENV=development.',

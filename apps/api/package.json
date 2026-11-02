@@ -24,6 +24,7 @@
     "user:role": "node --no-maglev ../../node_modules/tsx/dist/cli.mjs src/scripts/set-user-role.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",

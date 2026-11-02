@@ -1,0 +1,16 @@
+.git
+.local
+.npm-cache
+.env
+.env.*
+**/.env
+**/.env.*
+**/.dev.vars*
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+apps/focusbuddy/release
+apps/focusbuddy/build/focusbuddy.config.json
+docs
+*.log
