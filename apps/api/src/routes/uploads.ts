@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { readFile, rm } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, extname } from 'node:path'
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import { and, eq, gte, isNull, or, sql } from 'drizzle-orm'
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit'
@@ -23,6 +20,9 @@ import {
   requireAuthentication,
 } from '../middleware/authentication.js'
 import { getPostForUser } from '../services/post-service.js'
+import { getUploadStorage } from '../services/upload-storage.js'
+
+export { UPLOAD_DIRECTORY } from '../services/upload-storage.js'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_USER_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -71,12 +71,6 @@ const acceptedFiles = {
 
 type AcceptedMimeType = keyof typeof acceptedFiles
 type FileSignature = (typeof acceptedFiles)[AcceptedMimeType]['signature']
-
-export const UPLOAD_DIRECTORY = fileURLToPath(
-  new URL('../../../../.local/uploads/', import.meta.url),
-)
-
-mkdirSync(UPLOAD_DIRECTORY, { recursive: true })
 
 function isAcceptedMimeType(value: string): value is AcceptedMimeType {
   return Object.hasOwn(acceptedFiles, value)
@@ -129,19 +123,9 @@ function uploadError(error: unknown) {
 }
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_request, _file, callback) => {
-      callback(null, UPLOAD_DIRECTORY)
-    },
-    filename: (_request, file, callback) => {
-      if (!isAcceptedMimeType(file.mimetype)) {
-        callback(new Error('Unsupported MIME type'), '')
-        return
-      }
-
-      callback(null, `${randomUUID()}${acceptedFiles[file.mimetype].extension}`)
-    },
-  }),
+  // Both backends receive at most one bounded 5 MB file. Persist only after
+  // checking its signature and the user's quota; ephemeral cloud disks are unused.
+  storage: multer.memoryStorage(),
   fileFilter: (_request, file, callback) => {
     if (!isAcceptedMimeType(file.mimetype)) {
       callback(
@@ -190,11 +174,10 @@ async function finishUpload(request: Request, response: Response) {
     )
   }
 
-  const header = (await readFile(file.path)).subarray(0, 16)
+  const header = file.buffer.subarray(0, 16)
   const expectedSignature = acceptedFiles[file.mimetype].signature
 
   if (!hasExpectedSignature(header, expectedSignature)) {
-    await rm(file.path, { force: true })
     throw new ApiError(
       415,
       'FILE_SIGNATURE_MISMATCH',
@@ -203,6 +186,9 @@ async function finishUpload(request: Request, response: Response) {
   }
 
   const originalName = basename(file.originalname).slice(0, 255)
+  const storedName = `${randomUUID()}${acceptedFiles[file.mimetype].extension}`
+  const storage = getUploadStorage()
+  let persisted = false
 
   try {
     await db.transaction(async (transaction) => {
@@ -227,26 +213,32 @@ async function finishUpload(request: Request, response: Response) {
         )
       }
 
+      await storage.put(storedName, file.buffer, file.mimetype)
+      persisted = true
       await transaction.insert(uploadedFiles).values({
         ownerId: currentUser.id,
-        storedName: file.filename,
+        storedName,
         originalName,
         mimeType: file.mimetype,
         size: file.size,
       })
     })
   } catch (error) {
-    await rm(file.path, { force: true })
+    if (persisted) {
+      // Cleanup is best effort. Retain the original database/provider error;
+      // an orphan blob is never readable without its owned metadata record.
+      await storage.remove(storedName).catch(() => undefined)
+    }
     throw error
   }
 
   response.status(201).json({
     file: {
-      name: file.filename,
+      name: storedName,
       originalName,
       mimeType: file.mimetype,
       size: file.size,
-      url: `/api/v1/uploads/files/${file.filename}`,
+      url: `/api/v1/uploads/files/${storedName}`,
     },
   })
 }
@@ -408,24 +400,12 @@ uploadsRouter.get('/files/:fileName', async (request, response) => {
     throw new ApiError(404, 'UPLOAD_NOT_FOUND', 'El archivo no existe.')
   }
 
-  try {
-    const file = await readFile(join(UPLOAD_DIRECTORY, fileName))
-    response.set({
-      'Cache-Control': 'private, no-store',
-      'Content-Type': mimeType,
-      'X-Content-Type-Options': 'nosniff',
-    })
-    response.send(file)
-  } catch (error) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      throw new ApiError(404, 'UPLOAD_NOT_FOUND', 'El archivo no existe.')
-    }
-
-    throw error
-  }
+  // Do not contact object storage or issue signed URLs before the ACL above.
+  const file = await getUploadStorage().get(fileName)
+  response.set({
+    'Cache-Control': 'private, no-store',
+    'Content-Type': mimeType,
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.send(file)
 })

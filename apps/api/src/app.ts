@@ -5,8 +5,10 @@ import { rateLimit } from 'express-rate-limit'
 import helmet from 'helmet'
 import { pinoHttp } from 'pino-http'
 import { env } from './config/env.js'
+import { requestLoggerOptions } from './config/request-logger.js'
 import { ApiError } from './errors/api-error.js'
 import { trustedWriteOrigin } from './middleware/request-security.js'
+import { hostingProxyGuard } from './middleware/hosting-proxy.js'
 import { authRouter } from './routes/auth.js'
 import { auxiliaryRouter } from './routes/auxiliary.js'
 import { chatsRouter } from './routes/chats.js'
@@ -29,6 +31,7 @@ export function createApp() {
     app.set('trust proxy', env.TRUST_PROXY_HOPS)
   }
   app.use(helmet())
+  app.use(hostingProxyGuard(env.SITES_BACKEND_TOKEN))
   app.use(
     cors({
       origin: allowedOrigins,
@@ -39,8 +42,8 @@ export function createApp() {
   app.use(cookieParser())
   app.use(
     pinoHttp({
+      ...requestLoggerOptions,
       enabled: env.NODE_ENV !== 'test',
-      redact: ['req.headers.authorization', 'req.headers.cookie'],
     }),
   )
   app.use(trustedWriteOrigin(allowedOrigins))

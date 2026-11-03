@@ -156,6 +156,52 @@ debes ejecutar una sola vez. `Ctrl+C` detiene API y web; PostgreSQL y Ollama
 permanecen activos para que el siguiente arranque sea más rápido. Windows puede
 preguntar si deseas terminar el trabajo por lotes; responde `S`.
 
+### Demostración temporal por Internet con Cloudflare
+
+`iniciar-demo.bat` crea una demo HTTPS temporal de la web usando Cloudflare Quick
+Tunnel. Requiere Windows x64, Node.js, Docker Desktop disponible e Internet. No
+necesita una cuenta de Cloudflare ni comprar un dominio.
+
+```powershell
+.\iniciar-demo.bat
+```
+
+Este modo no publica el servidor de desarrollo ni la base personal:
+
+- PostgreSQL independiente en `127.0.0.1:55435`, base `konea_public_demo`,
+  contenedor `konea-public-demo-postgres` y volumen propio.
+- Datos ficticios, cuentas `demo.estudiante` y `demo.admin`, contraseñas aleatorias
+  y archivos separados en `.local/public-demo/uploads`.
+- Web compilada y API bajo un mismo origen, con HTTPS público, contraseña de
+  acceso adicional, cookies seguras y comprobación estricta de origen.
+- El registro público está desactivado. Se utilizan las cuentas facilitadas para
+  la presentación; la cuenta local `admin/admin` no se crea en esta base.
+- DUCO usa el proveedor configurado en el `.env` local y limita la generación a
+  20 consultas por conexión cada 15 minutos. La API key nunca se publica; si se
+  usa OpenAI, las consultas consumen los créditos del propietario.
+
+El enlace y las contraseñas se guardan en `.local/public-demo/accesos.txt`, fuera
+de Git. Comparte ese acceso únicamente con tus invitados; no subas `.local`,
+sus credenciales ni sus logs como evidencias. Para usar DUCO sin consumo externo:
+
+```powershell
+.\iniciar-demo.bat --basic-ai
+```
+
+Para cerrar el enlace y el servidor, usa `detener-demo.bat` o presiona `Ctrl+C` en
+la consola de la demo. Se conservan la base y los archivos ficticios para el
+siguiente inicio. La laptop debe permanecer encendida, sin suspensión y conectada.
+Cada nuevo túnel recibe una dirección distinta y no tiene garantía de disponibilidad.
+La comprobación de arranque verifica que el enlace rechace visitas sin contraseña
+y cargue la web con el acceso correcto. No modifica `.env` ni el inicio local normal.
+
+El cliente de escritorio existente sigue utilizando su configuración habitual;
+este enlace temporal no modifica ni recompila automáticamente su instalador.
+
+Referencias: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
+y [descargas oficiales de cloudflared](https://developers.cloudflare.com/tunnel/downloads/).
+El iniciador descarga una versión fijada y verifica su SHA256 antes de ejecutarla.
+
 ### Inicio manual
 
 Abre PowerShell en la carpeta del proyecto:
@@ -439,34 +485,33 @@ archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
   API accesible. El escritorio usa derivados transparentes del chibi, conserva
   los PNG fuente y la web mantiene el avatar provisional.
 
-## Migración futura a Supabase y Hostinger
+## Despliegue de demostración con Sites, Render y Neon
 
-La arquitectura evita acoplar el dominio a un proveedor:
+Se preparó un checkout independiente del frontend para ChatGPT Sites, una API
+Docker para Render y almacenamiento privado compatible con S3 para Neon.
+PostgreSQL y Drizzle se conservan. El entorno local sigue funcionando con su
+base y archivos locales; la copia remota no se sincroniza automáticamente.
 
-1. crear un PostgreSQL administrado en Supabase y guardar secretos fuera de
-   Git;
-2. apuntar `DATABASE_URL` a Supabase con TLS y ejecutar `npm run db:migrate`;
-3. copiar archivos de `.local/uploads/` a un almacenamiento persistente y
-   reemplazar el adaptador/URLs de carga;
-4. compilar la web y desplegarla como contenido estático;
-5. desplegar la API en un plan Hostinger (u otro proveedor) que soporte Node.js
-   persistente, HTTPS, variables de entorno y conexión saliente a PostgreSQL;
-6. configurar `CORS_ORIGIN`, cookies seguras, dominio y copias de respaldo;
-7. ejecutar pruebas de humo antes de importar datos de demostración.
+El proyecto de Sites está creado privado. La copia completa de la base y los
+archivos ya se respaldó y se restauró en un entorno temporal de verificación.
+La migración remota y la demo integral aún requieren conectar Neon y Render.
+No se debe presentar esta preparación como un despliegue remoto terminado.
 
-El cliente Electron incorpora su propia interfaz local. Para distribuirlo debe
-compilarse con `FOCUSBUDDY_API_URL` apuntando a la API HTTPS publicada y se deben
-verificar autenticación, cookies y actualizaciones del instalador. El escritorio
-no se conecta directamente a Supabase/PostgreSQL.
+El procedimiento, orden de restauración, secretos y pruebas están en
+[Alojamiento con Sites](docs/hosting-sites.md). La imagen `Dockerfile.api` y
+`render.yaml` no incluyen datos privados ni ejecutan seeders de demostración.
+La base remota debe restaurarse antes del primer arranque de Render.
 
-Usar Supabase Auth, Realtime o Storage es opcional y requeriría adaptadores
-explícitos. Migrar PostgreSQL no obliga a reemplazar la autenticación actual.
+FocusBuddy conserva su configuración local. El instalador existente todavía
+no está adaptado al backend protegido de esta demo: no debe recibir el secreto
+del proxy ni conectarse directamente a PostgreSQL.
 
 ## Documentación
 
 - [Alcance funcional y guion Capstone](docs/mvp.md)
 - [Contratos de la API REST](docs/api.md)
 - [Arquitectura, datos y despliegue](docs/architecture.md)
+- [Alojamiento con Sites, Render y Neon](docs/hosting-sites.md)
 - [Backlog, aceptación y definición de terminado](docs/backlog.md)
 - [Diagramas técnicos](docs/diagrams.md)
 - [FocusBuddy web, API, escritorio y sprites](docs/focusbuddy.md)
