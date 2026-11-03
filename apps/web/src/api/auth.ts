@@ -65,3 +65,28 @@ export async function login(input: { identifier: string; password: string }) {
 export async function logout() {
   await apiRequest<void>('/auth/logout', { method: 'POST' })
 }
+
+export type AccountUpdate = {
+  email: string
+  username: string
+  displayName: string
+  currentPassword: string
+}
+
+export async function updateAccount(input: AccountUpdate) {
+  const response = await apiRequest<{ user: KoneaUser }>('/auth/account', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+  return response.user
+}
+
+export async function changePassword(input: {
+  currentPassword: string
+  newPassword: string
+}) {
+  return apiRequest<{ message: string }>('/auth/password', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}

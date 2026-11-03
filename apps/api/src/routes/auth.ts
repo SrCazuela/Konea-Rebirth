@@ -1,11 +1,15 @@
 import { eq, or } from 'drizzle-orm'
-import { Router } from 'express'
+import { Router, type Request } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
 import { db, isUniqueViolation } from '../db/client.js'
-import { profiles, users } from '../db/schema.js'
+import { profiles, users, userSessions } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
+import {
+  getAuthenticatedUser,
+  requireAuthentication,
+} from '../middleware/authentication.js'
 import { hashPassword, verifyPassword } from '../security/password.js'
 import {
   clearSessionCookie,
@@ -38,6 +42,78 @@ const loginSchema = z.strictObject({
   identifier: z.union([emailSchema, usernameSchema]),
   password: z.string().min(1).max(128),
 })
+
+const accountSchema = z.strictObject({
+  email: emailSchema,
+  username: usernameSchema,
+  displayName: z.string().trim().min(2).max(100),
+  currentPassword: z.string().min(1).max(128),
+})
+
+const passwordChangeSchema = z.strictObject({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(10).max(128),
+})
+
+const accountWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (_request, response) => getAuthenticatedUser(response).id,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_ATTEMPTS',
+      message: 'Demasiados intentos. Intenta nuevamente más tarde.',
+    },
+  },
+})
+
+type AuthTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+async function verifyAccountChange(
+  transaction: AuthTransaction,
+  userId: string,
+  request: Request,
+  password: string,
+) {
+  // Account changes and login serialize on the same user row. Recheck the
+  // session after obtaining the lock: another change may just have revoked it.
+  const [credentials] = await transaction
+    .select({ passwordHash: users.passwordHash, status: users.status })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for('update')
+  const token = readSessionToken(request)
+  const sessionUser = token && (await findUserBySession(token, transaction))
+  if (
+    !credentials ||
+    credentials.status !== 'active' ||
+    !sessionUser ||
+    sessionUser.id !== userId
+  ) {
+    throw new ApiError(
+      401,
+      'INVALID_SESSION',
+      'La sesión ya no es válida. Inicia sesión nuevamente.',
+    )
+  }
+  if (!(await verifyPassword(password, credentials.passwordHash))) {
+    throw new ApiError(
+      400,
+      'CURRENT_PASSWORD_INCORRECT',
+      'La contraseña actual no es correcta.',
+    )
+  }
+}
+
+async function rotateAccountSessions(
+  transaction: AuthTransaction,
+  userId: string,
+) {
+  await transaction.delete(userSessions).where(eq(userSessions.userId, userId))
+  return createSession(userId, transaction)
+}
 
 const authWriteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -123,78 +199,147 @@ authRouter.post('/register', authWriteLimiter, async (request, response) => {
 authRouter.post('/login', authWriteLimiter, async (request, response) => {
   const input = parseBody(loginSchema, request.body)
 
-  // Primer SELECT: solo lo necesario para verificar credenciales
-  const [credentials] = await db
-    .select({
-      id: users.id,
-      passwordHash: users.passwordHash,
-      status: users.status,
-    })
-    .from(users)
-    .innerJoin(profiles, eq(users.id, profiles.userId))
-    .where(
-      or(
-        eq(users.email, input.identifier),
-        eq(profiles.username, input.identifier),
-      ),
-    )
-    .limit(1)
+  const { user, session } = await db.transaction(async (transaction) => {
+    const [credentials] = await transaction
+      .select({
+        id: users.id,
+        passwordHash: users.passwordHash,
+        status: users.status,
+      })
+      .from(users)
+      .innerJoin(profiles, eq(users.id, profiles.userId))
+      .where(
+        or(
+          eq(users.email, input.identifier),
+          eq(profiles.username, input.identifier),
+        ),
+      )
+      .limit(1)
+      .for('update', { of: users })
 
-  if (!credentials) {
-    await hashPassword(input.password) // timing-safe: evita enumeración de usuarios
-    throw new ApiError(
-      401,
-      'INVALID_CREDENTIALS',
-      'Correo, usuario o contraseña incorrectos.',
-    )
-  }
+    if (!credentials) {
+      await hashPassword(input.password)
+      throw new ApiError(
+        401,
+        'INVALID_CREDENTIALS',
+        'Correo, usuario o contraseña incorrectos.',
+      )
+    }
+    if (
+      credentials.status !== 'active' ||
+      !(await verifyPassword(input.password, credentials.passwordHash))
+    ) {
+      throw new ApiError(
+        401,
+        'INVALID_CREDENTIALS',
+        'Correo, usuario o contraseña incorrectos.',
+      )
+    }
 
-  const passwordIsValid = await verifyPassword(
-    input.password,
-    credentials.passwordHash,
-  )
-
-  if (!passwordIsValid || credentials.status !== 'active') {
-    throw new ApiError(
-      401,
-      'INVALID_CREDENTIALS',
-      'Correo, usuario o contraseña incorrectos.',
-    )
-  }
-
-  // Segundo SELECT: datos del perfil sin incluir passwordHash
-  const [user] = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      role: users.role,
-      status: users.status,
-      username: profiles.username,
-      displayName: profiles.displayName,
-      bio: profiles.bio,
-      institution: profiles.institution,
-      career: profiles.career,
-      avatarUrl: profiles.avatarUrl,
-      coverUrl: profiles.coverUrl,
-      campus: profiles.campus,
-      website: profiles.website,
-      education: profiles.education,
-      projects: profiles.projects,
-      achievements: profiles.achievements,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .innerJoin(profiles, eq(users.id, profiles.userId))
-    .where(eq(users.id, credentials.id))
-    .limit(1)
-
-  if (!user) throw new Error('User profile not found after successful login')
-
-  const session = await createSession(user.id)
+    const session = await createSession(credentials.id, transaction)
+    const user = await findUserBySession(session.token, transaction)
+    // A username/email can change while this request waits for the row lock.
+    // Validate against the fresh profile before committing its session.
+    if (
+      !user ||
+      (input.identifier !== user.email && input.identifier !== user.username)
+    ) {
+      throw new ApiError(
+        401,
+        'INVALID_CREDENTIALS',
+        'Correo, usuario o contraseña incorrectos.',
+      )
+    }
+    return { user, session }
+  })
   setSessionCookie(response, session)
 
   response.json({ user })
 })
+
+authRouter.patch(
+  '/account',
+  requireAuthentication,
+  accountWriteLimiter,
+  async (request, response) => {
+    const currentUser = getAuthenticatedUser(response)
+    const input = parseBody(accountSchema, request.body)
+    let result
+    try {
+      result = await db.transaction(async (transaction) => {
+        await verifyAccountChange(
+          transaction,
+          currentUser.id,
+          request,
+          input.currentPassword,
+        )
+        const now = new Date()
+        await transaction
+          .update(users)
+          .set({ email: input.email, updatedAt: now })
+          .where(eq(users.id, currentUser.id))
+        await transaction
+          .update(profiles)
+          .set({
+            username: input.username,
+            displayName: input.displayName,
+            updatedAt: now,
+          })
+          .where(eq(profiles.userId, currentUser.id))
+        const session = await rotateAccountSessions(transaction, currentUser.id)
+        const user = await findUserBySession(session.token, transaction)
+        if (!user) throw new Error('Updated account not found')
+        return { user, session }
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ApiError(
+          409,
+          'ACCOUNT_ALREADY_EXISTS',
+          'El correo o nombre de usuario ya está en uso.',
+        )
+      }
+      throw error
+    }
+    setSessionCookie(response, result.session)
+    response.json({ user: result.user })
+  },
+)
+
+authRouter.post(
+  '/password',
+  requireAuthentication,
+  accountWriteLimiter,
+  async (request, response) => {
+    const currentUser = getAuthenticatedUser(response)
+    const input = parseBody(passwordChangeSchema, request.body)
+    const passwordHash = await hashPassword(input.newPassword)
+    const session = await db.transaction(async (transaction) => {
+      await verifyAccountChange(
+        transaction,
+        currentUser.id,
+        request,
+        input.currentPassword,
+      )
+      if (input.currentPassword === input.newPassword) {
+        throw new ApiError(
+          400,
+          'PASSWORD_UNCHANGED',
+          'La nueva contraseña debe ser distinta de la actual.',
+        )
+      }
+      await transaction
+        .update(users)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(users.id, currentUser.id))
+      return rotateAccountSessions(transaction, currentUser.id)
+    })
+    setSessionCookie(response, session)
+    response.json({
+      message: 'Contraseña actualizada. Se cerraron las demás sesiones.',
+    })
+  },
+)
 
 authRouter.get('/me', async (request, response) => {
   const token = readSessionToken(request)

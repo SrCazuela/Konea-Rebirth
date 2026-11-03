@@ -63,6 +63,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { ImageCropDialog } from './ImageCropDialog'
 import { SafeExternalLink } from './SafeExternalLink'
 import { SearchableSelect } from './SearchableSelect'
+import { AccountSettings } from './AccountSettings'
 import './Portal.css'
 
 const Network = lazy(() =>
@@ -95,6 +96,7 @@ type PortalView =
   | 'focus'
   | 'notifications'
   | 'profile'
+  | 'account'
   | 'moderation'
 
 type PortalProps = {
@@ -124,6 +126,7 @@ function routeFromHash(hash: string, canModerate: boolean): PortalRoute {
     '#academic': 'academic',
     '#focusbuddy': 'focus',
     '#profile': 'profile',
+    '#profile-settings': 'account',
     '#notifications': 'notifications',
   }
   const simpleView = simpleRoutes[hash]
@@ -199,6 +202,7 @@ function hashForView(view: PortalView) {
     focus: '#focusbuddy',
     notifications: '#notifications',
     profile: '#profile',
+    account: '#profile-settings',
     moderation: '#moderation',
   }
   return hashes[view]
@@ -4426,6 +4430,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     focus: { eyebrow: 'Concentración', title: 'Estudia con FocusBuddy' },
     notifications: { eyebrow: 'Actividad', title: 'Tus notificaciones' },
     profile: { eyebrow: 'Identidad', title: 'Tu perfil Konea' },
+    account: { eyebrow: 'Cuenta', title: 'Configuración de tu cuenta' },
     moderation: { eyebrow: 'Seguridad', title: 'Centro de moderación' },
   }
 
@@ -4554,10 +4559,12 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
 
         <div className="portal-sidebar__account">
           <button
-            className={`portal-account-button${view === 'profile' ? ' is-active' : ''}`}
+            className={`portal-account-button${view === 'profile' || view === 'account' ? ' is-active' : ''}`}
             type="button"
             onClick={openProfile}
-            aria-current={view === 'profile' ? 'page' : undefined}
+            aria-current={
+              view === 'profile' || view === 'account' ? 'page' : undefined
+            }
           >
             <Avatar name={user.displayName} url={user.avatarUrl} size="small" />
             <span>
@@ -4692,6 +4699,28 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             </div>
           }
         >
+          {(view === 'profile' || view === 'account') && (
+            <nav className="portal-account-tabs" aria-label="Perfil y cuenta">
+              <button
+                type="button"
+                className={view === 'profile' ? 'is-active' : ''}
+                aria-current={view === 'profile' ? 'page' : undefined}
+                onClick={openProfile}
+              >
+                <PortalIcon name="profile" />
+                Mi perfil
+              </button>
+              <button
+                type="button"
+                className={view === 'account' ? 'is-active' : ''}
+                aria-current={view === 'account' ? 'page' : undefined}
+                onClick={() => goTo('account')}
+              >
+                <PortalIcon name="lock" />
+                Configuración de cuenta
+              </button>
+            </nav>
+          )}
           {view === 'feed' && (
             <FeedView
               key={activePostId ?? 'feed'}
@@ -4756,6 +4785,13 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
               }
             />
           )}
+          {view === 'account' && (
+            <AccountSettings
+              user={user}
+              onUserChange={onUserChange}
+              onLogout={onLogout}
+            />
+          )}
           {view === 'moderation' && canModerate && <ModerationView />}
         </Suspense>
       </main>
@@ -4764,10 +4800,20 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
         {mobileNavigation.map((item) => (
           <button
             key={item.view}
-            className={view === item.view ? 'is-active' : ''}
+            className={
+              view === item.view ||
+              (view === 'account' && item.view === 'profile')
+                ? 'is-active'
+                : ''
+            }
             type="button"
             onClick={() => goTo(item.view)}
-            aria-current={view === item.view ? 'page' : undefined}
+            aria-current={
+              view === item.view ||
+              (view === 'account' && item.view === 'profile')
+                ? 'page'
+                : undefined
+            }
           >
             {navigationButtonContent(item, true)}
           </button>

@@ -12,11 +12,14 @@ function hashSessionToken(token: string) {
   return createHash('sha256').update(token).digest('hex')
 }
 
-export async function createSession(userId: string) {
+export async function createSession(
+  userId: string,
+  connection: Pick<typeof db, 'insert'> = db,
+) {
   const token = randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
 
-  await db.insert(userSessions).values({
+  await connection.insert(userSessions).values({
     userId,
     tokenHash: hashSessionToken(token),
     expiresAt,
@@ -58,8 +61,11 @@ export async function deleteSession(token: string) {
     .where(eq(userSessions.tokenHash, hashSessionToken(token)))
 }
 
-export async function findUserBySession(token: string) {
-  const [user] = await db
+export async function findUserBySession(
+  token: string,
+  connection: Pick<typeof db, 'select'> = db,
+) {
+  const [user] = await connection
     .select({
       id: users.id,
       email: users.email,

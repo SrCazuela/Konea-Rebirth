@@ -274,15 +274,28 @@ mayor que el número de votantes.
 
 ## Servicio y autenticación
 
-| Método | Ruta               | Sesión   | Entrada                                    | Respuesta                                   |
-| ------ | ------------------ | -------- | ------------------------------------------ | ------------------------------------------- |
-| `GET`  | `/`                | No       | —                                          | `{name, version}`                           |
-| `GET`  | `/health`          | No       | —                                          | `{status, service, timestamp}`              |
-| `GET`  | `/health/database` | Sí       | —                                          | `{status, database:{connected, latencyMs}}` |
-| `POST` | `/auth/register`   | No       | `{email, password, username, displayName}` | `201 {user}` + cookie                       |
-| `POST` | `/auth/login`      | No       | `{identifier, password}`                   | `{user}` + cookie                           |
-| `GET`  | `/auth/me`         | Sí       | —                                          | `{user}`                                    |
-| `POST` | `/auth/logout`     | Opcional | —                                          | `204`, revoca la cookie si existe           |
+| Método  | Ruta               | Sesión   | Entrada                                           | Respuesta                                   |
+| ------- | ------------------ | -------- | ------------------------------------------------- | ------------------------------------------- |
+| `GET`   | `/`                | No       | —                                                 | `{name, version}`                           |
+| `GET`   | `/health`          | No       | —                                                 | `{status, service, timestamp}`              |
+| `GET`   | `/health/database` | Sí       | —                                                 | `{status, database:{connected, latencyMs}}` |
+| `POST`  | `/auth/register`   | No       | `{email, password, username, displayName}`        | `201 {user}` + cookie                       |
+| `POST`  | `/auth/login`      | No       | `{identifier, password}`                          | `{user}` + cookie                           |
+| `GET`   | `/auth/me`         | Sí       | —                                                 | `{user}`                                    |
+| `POST`  | `/auth/logout`     | Opcional | —                                                 | `204`, revoca la cookie si existe           |
+| `PATCH` | `/auth/account`    | Sí       | `{email, username, displayName, currentPassword}` | `{user}` + cookie nueva                     |
+| `POST`  | `/auth/password`   | Sí       | `{currentPassword, newPassword}`                  | `{message}` + cookie nueva                  |
+
+Los cambios de datos de cuenta y contraseña requieren la contraseña actual.
+La nueva contraseña debe tener entre 10 y 128 caracteres y ser distinta de la
+actual. El cambio y la revocación de sesiones se realizan en una transacción;
+se emite una cookie nueva para mantener autenticado el navegador que confirmó
+la operación. Las sesiones anteriores dejan de ser válidas.
+
+`CURRENT_PASSWORD_INCORRECT` devuelve `400` y conserva la sesión. Un correo o
+usuario duplicado devuelve `409 ACCOUNT_ALREADY_EXISTS`, y una contraseña nueva
+idéntica devuelve `400 PASSWORD_UNCHANGED`. No se admiten cambios de ID, rol o
+estado de cuenta en estos formularios. No requieren nuevas migraciones.
 
 Registro: contraseña de 10 a 128 caracteres; usuario de 3 a 30, en minúsculas,
 con letras ASCII, números, punto o guion bajo. Registro y login comparten un

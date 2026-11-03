@@ -1089,6 +1089,45 @@
   line-height: 1.6;
 }
 
+.portal-account-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+
+.portal-account-tabs button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: white;
+  color: var(--soft-ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.portal-account-tabs button.is-active {
+  border-color: var(--primary);
+  background: var(--portal-purple-soft);
+  color: var(--primary);
+}
+
+.portal-account-tabs button:hover {
+  background: var(--portal-purple-soft);
+}
+
+.portal-account-tabs .portal-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .portal-profile-layout {
   width: min(100%, 960px);
   margin: 0 auto;
