@@ -1,0 +1,420 @@
+{
+  "schemaVersion": 1,
+  "importedAt": "2026-11-09",
+  "sourceDirectory": "D:/konea-rebirth/Avatar de Konea (pintado)",
+  "sourceType": "artist-supplied transparent PNG exports",
+  "copyPolicy": "Byte-for-byte copy; no resizing, background removal or generative editing. Original source files are unchanged.",
+  "canvas": {
+    "width": 2136,
+    "height": 3000
+  },
+  "sharedVisibleBounds": {
+    "left": 176,
+    "top": 915,
+    "right": 1954,
+    "bottom": 2980,
+    "width": 1778,
+    "height": 2065
+  },
+  "fileCount": 35,
+  "totalBytes": 36150336,
+  "files": [
+    {
+      "local": "break-1.png",
+      "original": "break 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1071991,
+      "sha256": "1ed84489c4cb1ecee518217659b97c4dc65f264b5bdced20655e561f69e3a730"
+    },
+    {
+      "local": "break-2.png",
+      "original": "break 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1073692,
+      "sha256": "e06e8cddb313669beb6557e3362092c4ac052eb611b50e4ada6e0874d22f026f"
+    },
+    {
+      "local": "break-3.png",
+      "original": "break 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1118473,
+      "sha256": "23c5fb71db08388dbba93da49cf14bb6450ba8f296c78c68830bbe6ddbe2fd56"
+    },
+    {
+      "local": "break-4.png",
+      "original": "break 4.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 916, 1775, 2980],
+      "bytes": 1121684,
+      "sha256": "4459449a8c0d4aca05c4819285afb966f2ee6359a9ff495ec9fe8b535773e701"
+    },
+    {
+      "local": "celebrate-1.png",
+      "original": "celebrate 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1056341,
+      "sha256": "7b1bbe7cd261c9ac02b361e3aea0216bdad390750697f489cf7a1f92dd1de97e"
+    },
+    {
+      "local": "celebrate-2.png",
+      "original": "celebrate 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [181, 915, 1946, 2980],
+      "bytes": 1108302,
+      "sha256": "00d423c0ce93e865a0992de0b86bc579aa801d3349b6701eda7dd46d7d08b0f0"
+    },
+    {
+      "local": "celebrate-3.png",
+      "original": "celebrate 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [176, 915, 1954, 2980],
+      "bytes": 1116139,
+      "sha256": "3d2a4da1e2ac8756b745b30ab269f3e1610378edc1f7e329ff4c845f7866b6b9"
+    },
+    {
+      "local": "clapping-1.png",
+      "original": "clapping 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1052162,
+      "sha256": "0d0d90e8ff217fe93a625952431f016412092a1e0f84be63be242010dd5e6d9c"
+    },
+    {
+      "local": "clapping-2.png",
+      "original": "clapping 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 915, 1795, 2980],
+      "bytes": 1045077,
+      "sha256": "f9ff9846ef81edcfe6731af8dd4adf692d2b1c18311c0ae912fbafefd247252a"
+    },
+    {
+      "local": "idle-1.png",
+      "original": "idle 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 928, 1816, 2980],
+      "bytes": 1033761,
+      "sha256": "ccfcedfec4d370e89fbdd1a7f98c769697541e401ebddb2dd50b5c8e787618c3"
+    },
+    {
+      "local": "idle-2.png",
+      "original": "idle 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 928, 1816, 2980],
+      "bytes": 1034610,
+      "sha256": "dcef98cbda609b955528385cf9546b79b2119ba6ede8b5007d2b9ed3d44899c0"
+    },
+    {
+      "local": "idle-3.png",
+      "original": "idle 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 928, 1816, 2980],
+      "bytes": 1021179,
+      "sha256": "c3711a363e3374bfe60ce9cb74d04ddc9df052fb1e612913bf64d02be7dde619"
+    },
+    {
+      "local": "studying-1.png",
+      "original": "stuying 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1103770,
+      "sha256": "2afdc7fc46441529b6d2f482c1b165ff5b67a50b2067823c07623f800185e654"
+    },
+    {
+      "local": "studying-2.png",
+      "original": "stuying 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1094777,
+      "sha256": "34d7223aa16c0ad756923020ce6ea8da03bfcb63100cef77fc3210271d7d966a"
+    },
+    {
+      "local": "studying-sleeping.png",
+      "original": "stuying sleeping 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [210, 1197, 1903, 2980],
+      "bytes": 1137148,
+      "sha256": "1e6cecf37aa8bf3b45ba2cf37185f01ad0960faf58d3c69dcc1ee8b8c1793f51"
+    },
+    {
+      "local": "studying-tired-1.png",
+      "original": "stuying tired 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1094804,
+      "sha256": "f6a9019965eab9900afff0ecb4f83e92466c4288ab716639b22d68be02896b9a"
+    },
+    {
+      "local": "studying-tired-blink.png",
+      "original": "stuying tired blink 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1073188,
+      "sha256": "39feb18ae3ae9a5fee36df7e464bf2fe8a28f6cd04f9039c29986759ad82b30f"
+    },
+    {
+      "local": "studying-tired-yawn.png",
+      "original": "stuying tired yawn 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1136422,
+      "sha256": "1d927983520ee42090e938b958ac738028d4f4b9320986118ff2b85af1880c25"
+    },
+    {
+      "local": "typing-1.png",
+      "original": "typing 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 939930,
+      "sha256": "eafc6781e996e464776d6f13afc1ba623a793b88f82f0e174ee7c4d788ca85dc"
+    },
+    {
+      "local": "typing-2.png",
+      "original": "typing 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 939197,
+      "sha256": "cae06166f182cb1a2992aa78a9e4e01520453993c45a391b8b4c01440b043de9"
+    },
+    {
+      "local": "typing-3.png",
+      "original": "typing 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 939118,
+      "sha256": "9335a7cf1e6992ee909be94ca822250f9479939007075a8fd375bde13c8531bc"
+    },
+    {
+      "local": "typing-blink.png",
+      "original": "typing blink 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 910741,
+      "sha256": "a0bcd0011f2495c8c142799bb165ab5bd522df7627b2c32471ae76d0d117d71c"
+    },
+    {
+      "local": "typing-concentrated-1.png",
+      "original": "typing concentrated 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 933045,
+      "sha256": "9fc6e6550ad708b6e8882b8623509fc86f63471fec0f59c0da516eb6240253e4"
+    },
+    {
+      "local": "typing-concentrated-2.png",
+      "original": "typing concentrated 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 931230,
+      "sha256": "9d64cbd54f14dcec6a67f11fdd966cf9c8d6564383344f6a9350b9cae9046e63"
+    },
+    {
+      "local": "typing-concentrated-3.png",
+      "original": "typing concentrated 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 931063,
+      "sha256": "2fe9871998b52dc8f44de81d290c354147f063d4aee145e97e92e834c7130bfa"
+    },
+    {
+      "local": "typing-sleeping.png",
+      "original": "typing sleeping 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [210, 1197, 1903, 2980],
+      "bytes": 949061,
+      "sha256": "1731f7345916dd27bbab73a5a15e4623e20c7e2f5a21a35a4de41ad8dce774a5"
+    },
+    {
+      "local": "typing-tired-1.png",
+      "original": "typing tired 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 934609,
+      "sha256": "fda517b53357e630d0976934fd0c90c08ce9b70b09a14ee1f70c6d70257c26ce"
+    },
+    {
+      "local": "typing-tired-2.png",
+      "original": "typing tired 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 932137,
+      "sha256": "fec0087ff9cf45ecd1de8bcd5c029b11103e7a818d7cfbdb820da490a9a0b7fa"
+    },
+    {
+      "local": "typing-tired-3.png",
+      "original": "typing tired 3.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 931170,
+      "sha256": "30d10ee73eb7e96bf47d41c721a080832658e2c4e4bfa4028900eb11d764f02b"
+    },
+    {
+      "local": "typing-tired-blink.png",
+      "original": "typing tired blink 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 914011,
+      "sha256": "2fd903626d3ed6fa7bc281ccce3fd376b3e5e72aa7e1263be2dd297a2920c79e"
+    },
+    {
+      "local": "typing-tired-yawn.png",
+      "original": "typing tired yawn 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 939, 1799, 2980],
+      "bytes": 972362,
+      "sha256": "626b901dbc35f3f66ea67da6533291c90c6d742b5295bcda7a2223da27d597c6"
+    },
+    {
+      "local": "writing-1.png",
+      "original": "writhing 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1128184,
+      "sha256": "6a5043afd7966eae899eb74c455eff4f173148b9600300093ddd14dccb28df32"
+    },
+    {
+      "local": "writing-2.png",
+      "original": "writhing 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1127717,
+      "sha256": "0cc2df5c08501eeca2eb81596f6d533701d06b0886ca56c87548b7c4fe3e0401"
+    },
+    {
+      "local": "writing-concentrated-1.png",
+      "original": "writhing concentrated 1.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1121786,
+      "sha256": "48e846068ea2ec11d5f1314860922fd3e9339c14d09a6b55f01ed9e28a070a7b"
+    },
+    {
+      "local": "writing-concentrated-2.png",
+      "original": "writhing concentrated 2.png",
+      "width": 2136,
+      "height": 3000,
+      "alphaBoundingBox": [295, 938, 1800, 2980],
+      "bytes": 1121455,
+      "sha256": "5bfd957329c38655a0b2ff497fd8d848dfcc2eb44680ac07bc3d5f4d073d76da"
+    }
+  ],
+  "animationGroups": {
+    "idle": {
+      "frames": ["idle-1.png", "idle-2.png", "idle-3.png"],
+      "eyeStates": ["open", "half", "closed"],
+      "blinkOrder": [
+        "idle-1.png",
+        "idle-2.png",
+        "idle-3.png",
+        "idle-2.png",
+        "idle-1.png"
+      ]
+    },
+    "break": {
+      "frames": ["break-1.png", "break-2.png", "break-3.png", "break-4.png"],
+      "eyeStates": [
+        "open",
+        "closed-sipping",
+        "closed-smiling",
+        "closed-smiling"
+      ]
+    },
+    "celebrate": {
+      "frames": ["celebrate-1.png", "celebrate-2.png", "celebrate-3.png"],
+      "eyeStates": ["closed-smiling", "closed-smiling", "closed-smiling"]
+    },
+    "clapping": {
+      "frames": ["clapping-1.png", "clapping-2.png"],
+      "eyeStates": ["closed-smiling", "closed-smiling"]
+    },
+    "studying": {
+      "frames": ["studying-1.png", "studying-2.png"],
+      "eyeStates": ["open", "half-lidded"],
+      "blink": "studying-tired-blink.png"
+    },
+    "studyingTired": {
+      "frames": ["studying-tired-1.png"],
+      "eyeStates": ["half-lidded"],
+      "blink": "studying-tired-blink.png",
+      "yawn": "studying-tired-yawn.png",
+      "sleeping": "studying-sleeping.png"
+    },
+    "typing": {
+      "frames": ["typing-1.png", "typing-2.png", "typing-3.png"],
+      "eyeStates": ["open", "open", "open"],
+      "blink": "typing-blink.png"
+    },
+    "typingConcentrated": {
+      "frames": [
+        "typing-concentrated-1.png",
+        "typing-concentrated-2.png",
+        "typing-concentrated-3.png"
+      ],
+      "eyeStates": ["focused-open", "focused-open", "focused-open"],
+      "blink": "typing-blink.png"
+    },
+    "typingTired": {
+      "frames": [
+        "typing-tired-1.png",
+        "typing-tired-2.png",
+        "typing-tired-3.png"
+      ],
+      "eyeStates": ["half-lidded", "half-lidded", "half-lidded"],
+      "blink": "typing-tired-blink.png",
+      "yawn": "typing-tired-yawn.png",
+      "sleeping": "typing-sleeping.png"
+    },
+    "writing": {
+      "frames": ["writing-1.png", "writing-2.png"],
+      "eyeStates": ["open", "open"],
+      "blink": null
+    },
+    "writingConcentrated": {
+      "frames": ["writing-concentrated-1.png", "writing-concentrated-2.png"],
+      "eyeStates": ["focused-open", "focused-open"],
+      "blink": null
+    }
+  },
+  "eyeTrackingSource": {
+    "directory": "D:/konea-rebirth/Avatar de Konea (recortado)",
+    "usedAtRuntime": false,
+    "description": "Same full canvases; some open-eye images move the iris pair into detached transparent islands near the upper right and leave the eye whites in the face. Separate layer files and registration metadata are not supplied."
+  }
+}

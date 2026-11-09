@@ -358,23 +358,24 @@
               <div
                 class="avatar-character buddy-image"
                 id="buddy-image"
-                data-character="kuco"
+                data-character="chibi"
                 data-frame="0"
                 data-mood="idle"
                 role="img"
-                aria-label="Kuco está disponible y esperando"
+                aria-label="FocusBuddy está disponible y esperando"
               >
                 <span class="avatar-kuco" aria-hidden="true"></span>
-                <img
-                  class="avatar-chibi"
-                  id="buddy-chibi"
-                  src="./assets/avatar-cutout/idle-1.png"
-                  alt=""
-                  draggable="false"
-                />
+                <span class="avatar-chibi">
+                  <img
+                    class="avatar-chibi__image"
+                    id="buddy-chibi"
+                    src="./assets/avatar-hq/idle-1.png"
+                    alt=""
+                    draggable="false"
+                /></span>
               </div>
               <div class="buddy-message" aria-live="polite">
-                <strong id="buddy-name">Kuco</strong>
+                <strong id="buddy-name">FocusBuddy</strong>
                 <span id="buddy-copy">Estoy listo cuando tú lo estés.</span>
               </div>
             </aside>
@@ -511,6 +512,68 @@
           </header>
 
           <div class="settings-grid">
+            <article class="settings-card avatar-preview-card">
+              <header>
+                <span class="settings-icon" aria-hidden="true">✧</span>
+                <div>
+                  <h3>Animaciones del chibi</h3>
+                  <p>
+                    Explora las ilustraciones nuevas y el parpadeo antes de
+                    elegir tu compañero.
+                  </p>
+                </div>
+              </header>
+              <label for="avatar-preview-scene">Vista previa</label>
+              <select id="avatar-preview-scene">
+                <option value="idle">En espera y parpadeando</option>
+                <option value="typing">Escribiendo en el teclado</option>
+                <option value="typingConcentrated">
+                  Concentración en el teclado
+                </option>
+                <option value="writing">Escribiendo en el cuaderno</option>
+                <option value="writingConcentrated">
+                  Concentración en el cuaderno
+                </option>
+                <option value="studying">Leyendo y estudiando</option>
+                <option value="typingTired">
+                  Teclado: cansancio y bostezo
+                </option>
+                <option value="studyingTired">
+                  Lectura: cansancio y bostezo
+                </option>
+                <option value="break">Descansando</option>
+                <option value="celebrate">Celebrando</option>
+                <option value="clapping">Aplaudiendo</option>
+                <option value="typingSleeping">
+                  Descanso largo en el teclado
+                </option>
+                <option value="studyingSleeping">
+                  Descanso largo con el libro
+                </option>
+              </select>
+              <div class="avatar-preview-stage">
+                <div
+                  class="avatar-character"
+                  id="avatar-preview"
+                  data-character="chibi"
+                  role="img"
+                  aria-label="Vista previa del chibi oficial"
+                >
+                  <span class="avatar-chibi"
+                    ><img
+                      class="avatar-chibi__image"
+                      id="avatar-preview-image"
+                      src="./assets/avatar-hq/idle-1.png"
+                      alt=""
+                      draggable="false"
+                  /></span>
+                </div>
+              </div>
+              <p class="settings-preview-note">
+                Para usarlo en la sesión y sobre tus ventanas, elige «Chibi
+                oficial» en Personaje.
+              </p>
+            </article>
             <article class="settings-card">
               <header>
                 <span class="settings-icon" aria-hidden="true">✦</span>
@@ -544,15 +607,18 @@
                 <span
                   ><strong>Personaje</strong
                   ><small
-                    >Kuco viene seleccionado de forma predeterminada.</small
+                    >El chibi oficial viene seleccionado de forma
+                    predeterminada.</small
                   ></span
                 >
                 <select
                   data-preference="companionCharacter"
                   aria-label="Personaje del compañero"
                 >
+                  <option value="chibi">
+                    Chibi oficial · nuevos sprites HD
+                  </option>
                   <option value="kuco">Kuco · búho animado</option>
-                  <option value="chibi">Chibi oficial</option>
                 </select>
               </label>
               <label class="select-row">
@@ -764,18 +830,19 @@
               <div
                 class="avatar-character account-character"
                 id="account-character"
-                data-character="kuco"
+                data-character="chibi"
                 data-frame="1"
                 data-mood="idle"
               >
                 <span class="avatar-kuco"></span>
-                <img
-                  class="avatar-chibi"
-                  id="account-chibi"
-                  src="./assets/avatar-cutout/idle-2.png"
-                  alt=""
-                  draggable="false"
-                />
+                <span class="avatar-chibi">
+                  <img
+                    class="avatar-chibi__image"
+                    id="account-chibi"
+                    src="./assets/avatar-hq/idle-1.png"
+                    alt=""
+                    draggable="false"
+                /></span>
               </div>
             </aside>
           </div>
@@ -794,6 +861,8 @@
       <p id="startup-label">Preparando FocusBuddy…</p>
     </div>
 
+    <script src="./avatar-library.js"></script>
+    <script src="./avatar-animation.js"></script>
     <script src="./desktop.js"></script>
   </body>
 </html>

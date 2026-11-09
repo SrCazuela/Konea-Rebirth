@@ -7,7 +7,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node scripts/run-development.cjs",
-    "build": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/companion-preload.cjs && node --check electron/companion.js && node --check electron/desktop.js && node --check electron/api-url.cjs && node --check electron/desktop-api.cjs && node --check electron/preferences.cjs && node --check electron/session-state.cjs && node --check electron/window-options.cjs && node --check scripts/after-pack.cjs && node --check scripts/fuse-policy.cjs && node --check scripts/prepare-release-config.cjs && node --check scripts/run-development.cjs && node --check scripts/run-electron-builder.cjs && node --check scripts/verify-release.cjs",
+    "build": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/companion-preload.cjs && node --check electron/avatar-animation.js && node --check electron/avatar-library.js && node --check electron/companion.js && node --check electron/desktop.js && node --check electron/api-url.cjs && node --check electron/desktop-api.cjs && node --check electron/preferences.cjs && node --check electron/session-state.cjs && node --check electron/window-options.cjs && node --check scripts/after-pack.cjs && node --check scripts/fuse-policy.cjs && node --check scripts/prepare-release-config.cjs && node --check scripts/run-development.cjs && node --check scripts/run-electron-builder.cjs && node --check scripts/verify-release.cjs",
     "test": "node --test electron/*.test.cjs",
     "dist": "node scripts/prepare-release-config.cjs && node scripts/run-electron-builder.cjs --win nsis && node scripts/verify-release.cjs",
     "dist:dir": "node scripts/prepare-release-config.cjs && node scripts/run-electron-builder.cjs --win dir && node scripts/verify-release.cjs",
@@ -28,7 +28,10 @@
     },
     "files": [
       "electron/api-url.cjs",
-      "electron/assets/avatar-cutout/*.png",
+      "electron/assets/avatar-hq/*.png",
+      "electron/assets/avatar-hq/source-manifest.json",
+      "electron/avatar-animation.js",
+      "electron/avatar-library.js",
       "electron/companion.css",
       "electron/companion.html",
       "electron/companion.js",

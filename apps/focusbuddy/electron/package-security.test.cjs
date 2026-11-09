@@ -1,17 +1,33 @@
 const assert = require('node:assert/strict')
-const { existsSync, readFileSync } = require('node:fs')
+const { createHash } = require('node:crypto')
+const {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} = require('node:fs')
+const { tmpdir } = require('node:os')
 const { describe, it } = require('node:test')
 const path = require('node:path')
+const { createPackage } = require('@electron/asar')
 const packageConfig = require('../package.json')
 const { FUSE_POLICY } = require('../scripts/fuse-policy.cjs')
 const { environmentForBuilder } = require('../scripts/run-electron-builder.cjs')
+const { verifyRuntimeArchive } = require('../scripts/verify-release.cjs')
 const { createWebPreferences } = require('./window-options.cjs')
 
 describe('FocusBuddy package security', () => {
   it('packages only the runtime files required by the desktop shell', () => {
     assert.deepEqual(packageConfig.build.files, [
       'electron/api-url.cjs',
-      'electron/assets/avatar-cutout/*.png',
+      'electron/assets/avatar-hq/*.png',
+      'electron/assets/avatar-hq/source-manifest.json',
+      'electron/avatar-animation.js',
+      'electron/avatar-library.js',
       'electron/companion.css',
       'electron/companion.html',
       'electron/companion.js',
@@ -110,7 +126,7 @@ describe('FocusBuddy package security', () => {
     assert.doesNotMatch(companionHtml, /<script[^>]*>[^<]+<\/script>/)
   })
 
-  it('packages Kuco and transparent chibi derivatives while preserving the sources', () => {
+  it('packages Kuco and all 35 intact artist exports referenced by the animation library', () => {
     const companionHtml = readFileSync(
       path.join(__dirname, 'companion.html'),
       'utf8',
@@ -124,23 +140,46 @@ describe('FocusBuddy package security', () => {
       'utf8',
     )
     const sourceDirectory = path.join(__dirname, 'assets', 'avatar-official')
-    const runtimeDirectory = path.join(__dirname, 'assets', 'avatar-cutout')
+    const runtimeDirectory = path.join(__dirname, 'assets', 'avatar-hq')
     const manifest = JSON.parse(
-      readFileSync(path.join(sourceDirectory, 'source-manifest.json'), 'utf8'),
+      readFileSync(path.join(runtimeDirectory, 'source-manifest.json'), 'utf8'),
+    )
+    const library = require('./avatar-library.js')
+    const referenced = new Set(
+      Object.keys(library.chibi)
+        .flatMap((scene) => library.sourcesForScene(scene))
+        .map((source) => path.basename(source)),
     )
 
-    assert.match(companionHtml, /assets\/avatar-cutout\/idle-1\.png/)
-    assert.match(companionScript, /assets\/avatar-cutout/)
-    assert.match(companionScript, /typing-concentrated-3\.png/)
-    assert.doesNotMatch(companionHtml + companionScript, /avatar-official/)
+    assert.match(companionHtml, /assets\/avatar-hq\/idle-1\.png/)
+    assert.match(companionScript, /window\.FocusBuddyAvatars/)
+    assert.match(companionScript, /window\.FocusBuddyAnimation\.createAnimator/)
+    assert.doesNotMatch(
+      companionHtml + companionScript,
+      /avatar-official|avatar-cutout/,
+    )
     assert.match(companionCss, /owl-shimeji-provisional\.png/)
-    assert.match(companionHtml, /data-character="kuco"/)
+    assert.match(companionHtml, /data-character="chibi"/)
     assert.ok(existsSync(path.join(__dirname, 'owl-shimeji-provisional.png')))
-    assert.equal(manifest.files.length, 12)
+    assert.equal(manifest.files.length, 35)
+    assert.equal(manifest.fileCount, 35)
+    assert.equal(referenced.size, 35)
+    assert.deepEqual(manifest.canvas, { width: 2136, height: 3000 })
     for (const asset of manifest.files) {
-      assert.ok(existsSync(path.join(sourceDirectory, asset.local)))
-      assert.ok(existsSync(path.join(runtimeDirectory, asset.local)))
+      const bytes = readFileSync(path.join(runtimeDirectory, asset.local))
+      assert.ok(
+        referenced.has(asset.local),
+        `Missing runtime scene for ${asset.local}`,
+      )
+      assert.equal(bytes.length, asset.bytes)
+      assert.equal(
+        createHash('sha256').update(bytes).digest('hex'),
+        asset.sha256,
+      )
+      assert.equal(bytes.readUInt32BE(16), manifest.canvas.width)
+      assert.equal(bytes.readUInt32BE(20), manifest.canvas.height)
     }
+    assert.ok(existsSync(path.join(sourceDirectory, 'source-manifest.json')))
     assert.match(companionCss, /prefers-reduced-motion: reduce/)
     assert.match(companionCss, /\.reduce-motion/)
   })
@@ -163,6 +202,72 @@ describe('FocusBuddy package security', () => {
     assert.doesNotMatch(
       companionPreload,
       /updateSessionState|updatePreferences|health\.get/,
+    )
+  })
+
+  it('verifies actual ASAR assets and rejects missing runtimes or changed sprites', async (context) => {
+    const temporaryDirectory = mkdtempSync(
+      path.join(tmpdir(), 'konea-release-check-'),
+    )
+    context.after(() => {
+      assert.equal(path.dirname(temporaryDirectory), path.resolve(tmpdir()))
+      assert.match(path.basename(temporaryDirectory), /^konea-release-check-/)
+      rmSync(temporaryDirectory, { recursive: true, force: true })
+    })
+    const stagingDirectory = path.join(temporaryDirectory, 'app')
+    const packageDirectory = path.resolve(__dirname, '..')
+    const avatarDirectory = 'electron/assets/avatar-hq'
+    const manifest = JSON.parse(
+      readFileSync(
+        path.join(packageDirectory, avatarDirectory, 'source-manifest.json'),
+        'utf8',
+      ),
+    )
+    const files = [
+      ...packageConfig.build.files.filter((file) => !file.includes('*')),
+      ...manifest.files.map((asset) => `${avatarDirectory}/${asset.local}`),
+    ]
+    const copyRuntimeFile = (file) => {
+      const destination = path.join(stagingDirectory, file)
+      mkdirSync(path.dirname(destination), { recursive: true })
+      copyFileSync(path.join(packageDirectory, file), destination)
+    }
+    files.forEach(copyRuntimeFile)
+
+    const completeArchive = path.join(temporaryDirectory, 'complete.asar')
+    await createPackage(stagingDirectory, completeArchive)
+    assert.doesNotThrow(() => verifyRuntimeArchive(completeArchive))
+
+    for (const missingFile of [
+      'electron/avatar-animation.js',
+      'electron/companion.js',
+    ]) {
+      const incompleteArchive = path.join(
+        temporaryDirectory,
+        `${path.basename(missingFile)}-missing.asar`,
+      )
+      unlinkSync(path.join(stagingDirectory, missingFile))
+      await createPackage(stagingDirectory, incompleteArchive)
+      assert.throws(
+        () => verifyRuntimeArchive(incompleteArchive),
+        (error) => error.message.includes(missingFile),
+      )
+      copyRuntimeFile(missingFile)
+    }
+
+    const changedSpritePath = path.join(
+      stagingDirectory,
+      avatarDirectory,
+      manifest.files[0].local,
+    )
+    const changedBytes = readFileSync(changedSpritePath)
+    changedBytes[changedBytes.length - 1] ^= 1
+    writeFileSync(changedSpritePath, changedBytes)
+    const modifiedArchive = path.join(temporaryDirectory, 'changed-sprite.asar')
+    await createPackage(stagingDirectory, modifiedArchive)
+    assert.throws(
+      () => verifyRuntimeArchive(modifiedArchive),
+      /El sprite empaquetado no conserva el original/,
     )
   })
 

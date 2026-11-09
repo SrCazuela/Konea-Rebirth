@@ -30,20 +30,21 @@
         <span
           class="avatar-portrait"
           id="companion-avatar"
-          data-character="kuco"
+          data-character="chibi"
           data-frame="0"
           data-mood="idle"
           role="img"
-          aria-label="Kuco está listo para estudiar"
+          aria-label="FocusBuddy está listo para estudiar"
         >
           <span class="avatar-kuco" aria-hidden="true"></span>
-          <img
-            class="avatar-chibi"
-            id="companion-chibi"
-            src="assets/avatar-cutout/idle-1.png"
-            alt=""
-            draggable="false"
-          />
+          <span class="avatar-chibi">
+            <img
+              class="avatar-chibi__image"
+              id="companion-chibi"
+              src="assets/avatar-hq/idle-1.png"
+              alt=""
+              draggable="false"
+          /></span>
         </span>
       </div>
 
@@ -63,6 +64,8 @@
         </button>
       </nav>
     </main>
+    <script src="avatar-library.js"></script>
+    <script src="avatar-animation.js"></script>
     <script src="companion.js"></script>
   </body>
 </html>

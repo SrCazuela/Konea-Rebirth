@@ -299,8 +299,8 @@ function buildTrayMenu() {
       {
         label: 'Personaje del compañero',
         submenu: [
-          ['kuco', 'Kuco (búho animado)'],
           ['chibi', 'Chibi oficial'],
+          ['kuco', 'Kuco (búho animado)'],
         ].map(([value, label]) => ({
           label,
           type: 'radio',
@@ -640,6 +640,14 @@ if (!hasLock) {
     .then(() => {
       app.setAppUserModelId('cl.konea.focusbuddy')
       preferences = readPreferences()
+      try {
+        persistPreferences()
+      } catch (error) {
+        console.error(
+          'No se pudieron guardar las preferencias de FocusBuddy.',
+          error,
+        )
+      }
       registerIpcHandlers()
       createMainWindow()
       createCompanionWindow()

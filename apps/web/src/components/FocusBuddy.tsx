@@ -839,7 +839,11 @@ export function FocusBuddy() {
           className="focus-buddy__companion"
           aria-label="Compañero de estudio"
         >
-          <FocusAvatar mood={avatarMood} />
+          <FocusAvatar
+            mood={avatarMood}
+            method={activeSession?.method}
+            focusedSeconds={elapsedSeconds}
+          />
         </aside>
       </div>
 

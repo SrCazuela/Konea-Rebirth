@@ -10,6 +10,7 @@ const desktopJavaScript = readFileSync(
   path.join(__dirname, 'desktop.js'),
   'utf8',
 )
+const avatarLibrary = require('./avatar-library.js')
 
 describe('FocusBuddy local desktop renderer', () => {
   it('parses as standalone JavaScript', () => {
@@ -58,20 +59,47 @@ describe('FocusBuddy local desktop renderer', () => {
     assert.match(desktopHtml, /id="cancel-button"/)
   })
 
-  it('uses Kuco by default and keeps the official chibi as a local option', () => {
-    assert.match(desktopHtml, /data-character="kuco"/)
+  it('uses the official chibi by default and keeps Kuco as a local option', () => {
+    assert.match(desktopHtml, /data-character="chibi"/)
     assert.match(desktopHtml, /data-preference="companionCharacter"/)
     assert.match(desktopHtml, /Kuco · búho animado/)
     assert.match(desktopCss, /owl-shimeji-provisional\.png/)
-    assert.match(desktopJavaScript, /companionCharacter: 'kuco'/)
-    assert.match(desktopHtml, /\.\/assets\/avatar-cutout\/idle-1\.png/)
-    assert.match(desktopJavaScript, /\.\/assets\/avatar-cutout\/typing-1\.png/)
-    assert.match(
-      desktopJavaScript,
-      /\.\/assets\/avatar-cutout\/studying-concentrated-1\.png/,
+    assert.match(desktopJavaScript, /companionCharacter: 'chibi'/)
+    assert.doesNotMatch(desktopHtml, /data-character="kuco"/)
+    assert.match(desktopHtml, /\.\/assets\/avatar-hq\/idle-1\.png/)
+    assert.ok(
+      avatarLibrary
+        .sourcesForScene('typing')
+        .includes('./assets/avatar-hq/typing-1.png'),
+    )
+    assert.ok(
+      avatarLibrary
+        .sourcesForScene('writingConcentrated')
+        .includes('./assets/avatar-hq/writing-concentrated-1.png'),
     )
     assert.doesNotMatch(desktopHtml + desktopJavaScript, /avatar-official/)
+    assert.doesNotMatch(desktopHtml + desktopJavaScript, /avatar-cutout/)
     assert.doesNotMatch(desktopHtml + desktopJavaScript, /https?:\/\//)
+  })
+
+  it('loads the shared animation engine and artist library before each renderer', () => {
+    for (const [htmlFile, rendererFile] of [
+      ['desktop.html', 'desktop.js'],
+      ['companion.html', 'companion.js'],
+    ]) {
+      const html = readFileSync(path.join(__dirname, htmlFile), 'utf8')
+      const scripts = [...html.matchAll(/<script\s+src="([^"]+)"/g)].map(
+        (match) => path.basename(match[1]),
+      )
+      for (const dependency of ['avatar-animation.js', 'avatar-library.js']) {
+        assert.ok(
+          scripts.includes(dependency),
+          `${htmlFile} omits ${dependency}`,
+        )
+        assert.ok(scripts.indexOf(dependency) < scripts.indexOf(rendererFile))
+      }
+      assert.ok(scripts.includes(rendererFile))
+    }
   })
 
   it('does not draw circular ornaments behind either character', () => {
@@ -80,17 +108,23 @@ describe('FocusBuddy local desktop renderer', () => {
   })
 
   it('keeps Kuco facing forward in the study card and blinks naturally', () => {
-    assert.match(desktopJavaScript, /const KUCO_CARD_BLINK/)
-    assert.match(desktopJavaScript, /function scheduleKucoCardBlink/)
-    assert.match(desktopJavaScript, /doubleBlinkChance: 0\.16/)
     assert.match(
       desktopJavaScript,
-      /mood: character === 'kuco' \? 'idle' : mood/,
+      /window\.FocusBuddyAnimation\.createAnimator/,
     )
     assert.match(
       desktopJavaScript,
-      /frameIndex: character === 'kuco' \? kucoCardBlinkFrame : frameIndex/,
+      /avatarAnimations\.study\.update\(\{\s*state: character === 'kuco' \? 'kuco:idle'/,
     )
+    assert.deepEqual(
+      avatarLibrary.kuco.idle.frames.map(({ frame }) => frame),
+      [0],
+    )
+    assert.deepEqual(
+      avatarLibrary.kuco.idle.blink.frames.map(({ frame }) => frame),
+      [1],
+    )
+    assert.ok(avatarLibrary.kuco.idle.blink.frames[0].durationMs < 200)
     assert.match(
       desktopCss,
       /\.buddy-card \.buddy-image\[data-character='kuco'\] \{\s*animation: none;/,

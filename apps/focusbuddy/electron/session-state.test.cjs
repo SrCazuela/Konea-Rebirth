@@ -23,6 +23,7 @@ describe('FocusBuddy desktop session snapshots', () => {
     })
 
     assert.equal(state.status, 'active')
+    assert.equal(state.avatarScene, 'typing')
     assert.equal(state.sessionId, 'session-123')
     assert.equal(state.title.length, 100)
     assert.equal(state.timerLabel, '24:59')
@@ -39,5 +40,65 @@ describe('FocusBuddy desktop session snapshots', () => {
     assert.equal(state.status, 'idle')
     assert.equal(state.timerLabel, '--:--')
     assert.equal(state.timerFinished, false)
+  })
+
+  it('preserves every supported scene without copying unrelated fields', () => {
+    const scenes = [
+      'idle',
+      'typing',
+      'typingConcentrated',
+      'writing',
+      'writingConcentrated',
+      'studying',
+      'typingTired',
+      'studyingTired',
+      'break',
+      'celebrate',
+      'clapping',
+      'typingSleeping',
+      'studyingSleeping',
+    ]
+    for (const avatarScene of scenes) {
+      const state = normalizeSessionState({
+        status: 'active',
+        avatarScene,
+        imageUrl: 'https://untrusted.example/avatar.png',
+        credentials: { token: 'never-copy-this' },
+      })
+      assert.equal(state.avatarScene, avatarScene)
+      assert.equal(Object.hasOwn(state, 'imageUrl'), false)
+      assert.equal(Object.hasOwn(state, 'credentials'), false)
+    }
+  })
+
+  it('uses a status-specific scene for missing or unsafe scene values', () => {
+    const expected = {
+      idle: 'idle',
+      active: 'typing',
+      paused: 'break',
+      completed: 'celebrate',
+      offline: 'idle',
+    }
+    const unsafeValues = [
+      undefined,
+      null,
+      '',
+      'unknown',
+      'Typing',
+      'https://untrusted.example/avatar.png',
+      'file:///C:/private.png',
+      '../../private.png',
+      '__proto__',
+      { scene: 'typing' },
+      ['typing'],
+    ]
+    for (const [status, scene] of Object.entries(expected)) {
+      for (const avatarScene of unsafeValues) {
+        assert.equal(
+          normalizeSessionState({ status, avatarScene }).avatarScene,
+          scene,
+        )
+      }
+    }
   })
 })

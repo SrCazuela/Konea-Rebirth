@@ -1,0 +1,46 @@
+.chibi-sprite {
+  position: relative;
+  display: block;
+  width: 100%;
+  transform-origin: center bottom;
+  animation: konea-chibi-float 3.2s ease-in-out infinite;
+}
+
+.chibi-sprite__viewport {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1778 / 2065;
+  overflow: hidden;
+}
+
+.chibi-sprite__image {
+  position: absolute;
+  width: 120.134983%;
+  height: 145.27845%;
+  max-width: none;
+  left: -9.898763%;
+  top: -44.309927%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.chibi-sprite[data-animated='false'] {
+  animation: none;
+}
+
+@keyframes konea-chibi-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chibi-sprite {
+    animation: none;
+  }
+}

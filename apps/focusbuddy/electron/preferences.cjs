@@ -1,10 +1,12 @@
 const COMPANION_SCALES = new Set(['small', 'medium', 'large'])
 const COMPANION_CHARACTERS = new Set(['kuco', 'chibi'])
+const COMPANION_CHARACTER_VERSION = 1
 
 const DEFAULT_PREFERENCES = Object.freeze({
   companionEnabled: true,
   companionAlwaysOnTop: true,
-  companionCharacter: 'kuco',
+  companionCharacter: 'chibi',
+  companionCharacterVersion: COMPANION_CHARACTER_VERSION,
   companionScale: 'medium',
   compactMode: false,
   closeToTray: true,
@@ -38,9 +40,14 @@ function normalizePreferences(value) {
       typeof candidate.companionAlwaysOnTop === 'boolean'
         ? candidate.companionAlwaysOnTop
         : DEFAULT_PREFERENCES.companionAlwaysOnTop,
-    companionCharacter: COMPANION_CHARACTERS.has(candidate.companionCharacter)
-      ? candidate.companionCharacter
-      : DEFAULT_PREFERENCES.companionCharacter,
+    // Legacy files stored Kuco even when the user had never selected it.
+    // Migrate once; versioned files preserve every subsequent explicit choice.
+    companionCharacter:
+      candidate.companionCharacterVersion === COMPANION_CHARACTER_VERSION &&
+      COMPANION_CHARACTERS.has(candidate.companionCharacter)
+        ? candidate.companionCharacter
+        : DEFAULT_PREFERENCES.companionCharacter,
+    companionCharacterVersion: COMPANION_CHARACTER_VERSION,
     companionScale: COMPANION_SCALES.has(candidate.companionScale)
       ? candidate.companionScale
       : DEFAULT_PREFERENCES.companionScale,
@@ -75,7 +82,8 @@ function mergePreferences(current, patch) {
   const allowedPatch = {}
 
   for (const key of Object.keys(DEFAULT_PREFERENCES)) {
-    if (Object.hasOwn(safePatch, key)) allowedPatch[key] = safePatch[key]
+    if (key !== 'companionCharacterVersion' && Object.hasOwn(safePatch, key))
+      allowedPatch[key] = safePatch[key]
   }
 
   return normalizePreferences({ ...safeCurrent, ...allowedPatch })

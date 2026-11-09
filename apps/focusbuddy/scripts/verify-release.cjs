@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict')
+const { createHash } = require('node:crypto')
 const { existsSync, readFileSync } = require('node:fs')
 const path = require('node:path')
-const { listPackage } = require('@electron/asar')
+const { extractFile, listPackage } = require('@electron/asar')
 const { normalizeApiBaseUrl } = require('../electron/api-url.cjs')
 const { FUSE_POLICY } = require('./fuse-policy.cjs')
 
@@ -15,20 +16,71 @@ const configPath = path.join(
   'resources',
   'focusbuddy.config.json',
 )
-const chibiFrameFiles = [
-  'idle-1.png',
-  'idle-2.png',
-  'idle-3.png',
-  'studying-1.png',
-  'studying-concentrated-1.png',
-  'typing-1.png',
-  'typing-2.png',
-  'typing-3.png',
-  'typing-blink.png',
-  'typing-concentrated-1.png',
-  'typing-concentrated-2.png',
-  'typing-concentrated-3.png',
-]
+const avatarDirectory = 'electron/assets/avatar-hq'
+const manifestFile = `${avatarDirectory}/source-manifest.json`
+
+function verifyRuntimeArchive(archivePath) {
+  const manifest = JSON.parse(
+    readFileSync(path.resolve(__dirname, '..', manifestFile), 'utf8'),
+  )
+  assert.equal(manifest.fileCount, 35)
+  assert.equal(manifest.files.length, manifest.fileCount)
+  assert.equal(
+    new Set(manifest.files.map((asset) => asset.local)).size,
+    manifest.fileCount,
+  )
+
+  const packagedFiles = new Set(
+    listPackage(archivePath).map((entry) =>
+      entry.replace(/^[/\\]+/, '').replaceAll('\\', '/'),
+    ),
+  )
+  const requiredFiles = [
+    'electron/desktop.html',
+    'electron/desktop.css',
+    'electron/desktop.js',
+    'electron/desktop-api.cjs',
+    'electron/owl-shimeji-provisional.png',
+    'electron/avatar-library.js',
+    'electron/avatar-animation.js',
+    'electron/companion.html',
+    'electron/companion.css',
+    'electron/companion.js',
+    'electron/companion-preload.cjs',
+    manifestFile,
+    ...manifest.files.map((asset) => `${avatarDirectory}/${asset.local}`),
+  ]
+  for (const requiredFile of requiredFiles) {
+    assert.ok(
+      packagedFiles.has(requiredFile),
+      `Falta la interfaz local en el paquete: ${requiredFile}`,
+    )
+  }
+
+  assert.deepEqual(
+    JSON.parse(
+      extractFile(archivePath, path.normalize(manifestFile)).toString('utf8'),
+    ),
+    manifest,
+    'El manifiesto de sprites del ASAR no coincide con los originales.',
+  )
+  for (const asset of manifest.files) {
+    const bytes = extractFile(
+      archivePath,
+      path.join(avatarDirectory, asset.local),
+    )
+    assert.equal(
+      bytes.length,
+      asset.bytes,
+      `El tamaño del sprite empaquetado cambió: ${asset.local}`,
+    )
+    assert.equal(
+      createHash('sha256').update(bytes).digest('hex'),
+      asset.sha256,
+      `El sprite empaquetado no conserva el original: ${asset.local}`,
+    )
+  }
+}
 
 async function verifyRelease() {
   const { FuseV1Options, getCurrentFuseWire } = await import('@electron/fuses')
@@ -46,25 +98,7 @@ async function verifyRelease() {
   assert.equal(typeof config.apiBaseUrl, 'string')
   assert.equal(normalizeApiBaseUrl(config.apiBaseUrl), config.apiBaseUrl)
 
-  const packagedFiles = new Set(
-    listPackage(asarPath).map((entry) =>
-      entry.replace(/^\\/, '').replaceAll('\\', '/'),
-    ),
-  )
-  const requiredFiles = [
-    'electron/desktop.html',
-    'electron/desktop.css',
-    'electron/desktop.js',
-    'electron/desktop-api.cjs',
-    'electron/owl-shimeji-provisional.png',
-    ...chibiFrameFiles.map((file) => `electron/assets/avatar-cutout/${file}`),
-  ]
-  for (const requiredFile of requiredFiles) {
-    assert.ok(
-      packagedFiles.has(requiredFile),
-      `Falta la interfaz local en el paquete: ${requiredFile}`,
-    )
-  }
+  verifyRuntimeArchive(asarPath)
 
   const fuses = await getCurrentFuseWire(executablePath)
   for (const [name, expectedEnabled] of Object.entries(FUSE_POLICY)) {
@@ -82,7 +116,11 @@ async function verifyRelease() {
   console.log(`API incorporada: ${config.apiBaseUrl}`)
 }
 
-verifyRelease().catch((error) => {
-  console.error(error instanceof Error ? error.message : error)
-  process.exitCode = 1
-})
+if (require.main === module) {
+  verifyRelease().catch((error) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { verifyRuntimeArchive }

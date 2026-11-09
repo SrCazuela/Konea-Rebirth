@@ -109,7 +109,7 @@ button {
 .avatar-portrait {
   position: relative;
   display: grid;
-  width: min(92%, 210px);
+  width: min(92%, 210px, calc((100vh - 100px) * 1.24955));
   aspect-ratio: 1402 / 1122;
   place-items: center;
   overflow: hidden;
@@ -120,7 +120,9 @@ button {
 }
 
 .avatar-portrait[data-character='chibi'] {
-  aspect-ratio: 1;
+  width: min(92%, 210px, calc((100vh - 100px) * 0.861017));
+  aspect-ratio: 1778 / 2065;
+  animation: buddy-float 3.2s ease-in-out infinite;
 }
 
 .avatar-kuco {
@@ -137,10 +139,22 @@ button {
 }
 
 .avatar-chibi {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.avatar-chibi__image {
+  position: absolute;
+  width: 120.134983%;
+  height: 145.27845%;
+  max-width: none;
+  left: -9.898763%;
+  top: -44.309927%;
   pointer-events: none;
   user-select: none;
 }
@@ -175,18 +189,21 @@ button {
   background-position-y: 100%;
 }
 
-.companion[data-status='active'] .avatar-portrait {
+.companion[data-status='active'] .avatar-portrait[data-character='kuco'] {
   animation: companion-study 1.7s ease-in-out infinite;
 }
 
-.companion[data-status='completed'] .avatar-portrait {
+.companion[data-status='completed'] .avatar-portrait[data-character='kuco'] {
   animation: companion-celebrate 900ms ease-in-out 3;
 }
 
 .companion[data-status='offline'] .avatar-portrait {
-  animation: none;
   filter: grayscale(0.72) saturate(0.65);
   opacity: 0.86;
+}
+
+.companion[data-status='offline'] .avatar-portrait[data-character='kuco'] {
+  animation: none;
 }
 
 .companion-actions {
@@ -231,6 +248,16 @@ button {
 .companion-actions button:focus-visible {
   outline: 3px solid rgb(142 88 223 / 48%);
   outline-offset: 1px;
+}
+
+@keyframes buddy-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
 }
 
 @keyframes companion-breathe {

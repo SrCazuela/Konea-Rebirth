@@ -589,7 +589,8 @@ select:focus-visible,
 .custom-times input,
 .session-fields select,
 .login-card input,
-.select-row select {
+.select-row select,
+#avatar-preview-scene {
   width: 100%;
   min-height: 42px;
   padding: 9px 11px;
@@ -822,6 +823,10 @@ select:focus-visible,
   transform-origin: center bottom;
 }
 
+.avatar-character[data-character='chibi'] {
+  animation: buddy-float 3.2s ease-in-out infinite;
+}
+
 .avatar-kuco {
   display: block;
   width: 100%;
@@ -835,12 +840,62 @@ select:focus-visible,
 }
 
 .avatar-chibi {
+  position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
+  aspect-ratio: 1778 / 2065;
+  overflow: hidden;
   pointer-events: none;
   user-select: none;
+}
+
+.avatar-chibi__image {
+  position: absolute;
+  width: 120.134983%;
+  height: 145.27845%;
+  max-width: none;
+  left: -9.898763%;
+  top: -44.309927%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.avatar-preview-card {
+  grid-column: 1 / -1;
+}
+.avatar-preview-card > label {
+  display: block;
+  margin: 14px 0 8px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+#avatar-preview-scene {
+  max-width: 360px;
+}
+
+#avatar-preview-scene:focus-visible {
+  outline: 3px solid rgb(116 64 163 / 25%);
+  outline-offset: 2px;
+}
+.avatar-preview-stage {
+  display: grid;
+  place-items: center;
+  min-height: 285px;
+  margin-top: 18px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fbf8ff, #eee4f8);
+}
+.avatar-preview-stage .avatar-character {
+  width: min(62%, 225px);
+  margin: 12px;
+}
+.settings-preview-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
 }
 
 .avatar-character[data-character='kuco'] .avatar-chibi,
@@ -878,15 +933,6 @@ select:focus-visible,
   z-index: 2;
   width: min(92%, 310px);
   filter: drop-shadow(0 16px 13px rgb(64 36 78 / 14%));
-  animation: buddy-float 3.2s ease-in-out infinite;
-}
-
-.buddy-card[data-mood='focus'] .buddy-image {
-  animation-duration: 2s;
-}
-
-.buddy-card[data-mood='completed'] .buddy-image {
-  animation: buddy-celebrate 700ms ease-out;
 }
 
 .buddy-card .buddy-image[data-character='kuco'] {
@@ -1573,18 +1619,6 @@ select:focus-visible,
   }
   50% {
     transform: translateY(3px);
-  }
-}
-
-@keyframes buddy-celebrate {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  45% {
-    transform: translateY(-13px) scale(1.03);
-  }
-  100% {
-    transform: translateY(0) scale(1);
   }
 }
 

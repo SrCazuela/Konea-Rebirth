@@ -6,8 +6,33 @@ const SESSION_STATUSES = new Set([
   'offline',
 ])
 
+const AVATAR_SCENES = new Set([
+  'idle',
+  'typing',
+  'typingConcentrated',
+  'writing',
+  'writingConcentrated',
+  'studying',
+  'typingTired',
+  'studyingTired',
+  'break',
+  'celebrate',
+  'clapping',
+  'typingSleeping',
+  'studyingSleeping',
+])
+
+const DEFAULT_AVATAR_SCENES = Object.freeze({
+  idle: 'idle',
+  active: 'typing',
+  paused: 'break',
+  completed: 'celebrate',
+  offline: 'idle',
+})
+
 const DEFAULT_SESSION_STATE = Object.freeze({
   status: 'idle',
+  avatarScene: 'idle',
   sessionId: null,
   title: 'Listo para estudiar',
   course: null,
@@ -31,6 +56,11 @@ function normalizeSessionState(value) {
 
   return {
     status,
+    // Presentation identifiers only: paths and URLs must never cross the IPC
+    // boundary to choose a companion image.
+    avatarScene: AVATAR_SCENES.has(value.avatarScene)
+      ? value.avatarScene
+      : DEFAULT_AVATAR_SCENES[status],
     sessionId: cleanText(value.sessionId, 64),
     title:
       cleanText(value.title, 100) ??

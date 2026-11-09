@@ -8,7 +8,7 @@ import {
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import type { AuthMode } from './AuthDialog'
-import owlSprite from '../assets/focusbuddy/owl-shimeji-provisional.png'
+import { ChibiSprite } from './ChibiSprite'
 import './LandingPage.css'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -105,26 +105,15 @@ function Icon({
   )
 }
 
-function Kuco({ className = '' }: { className?: string }) {
-  return (
-    <span
-      className={`landing-kuco ${className}`}
-      style={{ backgroundImage: `url(${owlSprite})` }}
-      role="img"
-      aria-label="Kuco, tu compañero de concentración"
-    />
-  )
-}
-
 const previewTabs = [
   { id: 'community', label: 'Comunidad', icon: 'people' },
   { id: 'organize', label: 'Mi día', icon: 'book' },
-  { id: 'focus', label: 'Kuco', icon: 'clock' },
+  { id: 'focus', label: 'FocusBuddy', icon: 'clock' },
 ] as const
 
 type PreviewTab = (typeof previewTabs)[number]['id']
 
-function CampusPreview() {
+function CampusPreview({ motionEnabled }: { motionEnabled: boolean }) {
   const [tab, setTab] = useState<PreviewTab>('community')
   const previewRef = useRef<HTMLDivElement>(null)
 
@@ -303,10 +292,14 @@ function CampusPreview() {
                   <strong>25:00</strong>
                   <span>Pomodoro · Un bloque, un avance.</span>
                   <span className="landing-focus-preview__pill">
-                    <Icon name="play" />A tu ritmo, con Kuco
+                    <Icon name="play" />A tu ritmo, con FocusBuddy
                   </span>
                 </div>
-                <Kuco />
+                <ChibiSprite
+                  className="landing-chibi"
+                  label="Tu compañero de concentración"
+                  animated={motionEnabled}
+                />
               </div>
             )}
           </div>
@@ -527,7 +520,7 @@ export default function LandingPage({
               Tu comunidad. Tus tiempos. Tus decisiones.
             </p>
           </div>
-          <CampusPreview />
+          <CampusPreview motionEnabled={motionEnabled} />
           <div className="landing-hero__bottom">
             <span>EL CAMPUS NO TERMINA EN LA SALA.</span>
             <a href="#tu-espacio" aria-label="Explorar las funciones de Konea">
@@ -656,7 +649,7 @@ export default function LandingPage({
                 Más de tu propio ritmo.
               </h3>
               <p>
-                Sesiones de estudio, pausas y progreso personal. Kuco te
+                Sesiones de estudio, pausas y progreso personal. FocusBuddy te
                 acompaña, un bloque a la vez.
               </p>
               <div className="landing-focus-art">
@@ -670,7 +663,11 @@ export default function LandingPage({
                   </span>
                   <small>Enfócate · Respira · Continúa</small>
                 </div>
-                <Kuco />
+                <ChibiSprite
+                  className="landing-chibi"
+                  label="Tu compañero de concentración"
+                  animated={motionEnabled}
+                />
               </div>
             </article>
             <article

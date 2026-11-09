@@ -70,23 +70,70 @@ se define en `apps/api/src/db/schema.ts`, con la migración correspondiente en
 
 ## Sprites web y escritorio
 
-La web y el escritorio usan por defecto la hoja transparente 4 × 4 de **Kuco**,
-documentada en `apps/web/src/assets/focusbuddy/README.md` y consumida por
-`FocusAvatar.tsx`. Sus filas representan reposo, concentración, pausa y
-celebración, con cuatro fotogramas por estado. Electron conserva doce PNG fuente
-entregados por el equipo en
-`apps/focusbuddy/electron/assets/avatar-official/`: tres poses de reposo, tres
-de escritura, tres de escritura concentrada, un parpadeo y dos poses de
-estudio. Esa carpeta incluye un manifiesto con nombre original e identificador
-de Drive.
+La web y el escritorio muestran el **chibi oficial** de forma predeterminada.
+El escritorio conserva **Kuco** como alternativa en Ajustes y en la bandeja.
+Su hoja transparente 4 × 4 representa reposo, concentración, pausa y celebración;
+en la tarjeta de estudio Kuco conserva la pose frontal estática y el parpadeo.
 
-Los PNG fuente miden 2136 × 2136 y conservan el fondo opaco `#B7B7B7`. El
-runtime de Electron consume copias derivadas con transparencia desde
-`apps/focusbuddy/electron/assets/avatar-cutout/`; la extracción del fondo no
-sobrescribe los originales ni su trazabilidad. El chibi sigue siendo una
-alternativa seleccionable y todavía reutiliza poses porque no tiene fotogramas
-dedicados para pausa y celebración. El temporizador y las reglas de sesión no
-dependen de estos recursos. Kuco conserva este contrato:
+Electron usa 35 PNG transparentes de alta resolución entregados por la artista
+en noviembre de 2026. Están en
+`apps/focusbuddy/electron/assets/avatar-hq/` y son copias byte por byte de los
+archivos normales de `D:\konea-rebirth\Avatar de Konea (pintado)`, con nombres
+ASCII para el runtime. Cada PNG mantiene su lienzo de 2136 × 3000; el
+`source-manifest.json` conserva nombre original, SHA-256, dimensiones y grupos
+de animación. No se redibujaron, redujeron ni regeneraron las ilustraciones.
+Las carpetas anteriores `avatar-official/` y `avatar-cutout/` se preservan como
+antecedentes, pero no son la fuente del chibi actual.
+
+La tarjeta de estudio, la vista de cuenta, la vista previa y el compañero
+flotante presentan las imágenes con un viewport CSS común de 1778 × 2065,
+correspondiente al rectángulo `[176, 915, 1954, 2980]` del lienzo. Comparten
+escala y punto de apoyo sin cambiar los píxeles guardados en los archivos.
+La precarga se limita a la escena que necesita cada vista; no se decodifican
+los 35 archivos al iniciar Electron.
+
+`electron/avatar-library.js` define 13 escenas:
+
+| Escena                       | Recursos usados                           |
+| ---------------------------- | ----------------------------------------- |
+| Espera                       | ojos abiertos, medios y cerrados          |
+| Teclado                      | tres posiciones y cierre de ojos dedicado |
+| Teclado concentrado          | tres posiciones de concentración          |
+| Cuaderno                     | dos posiciones de escritura               |
+| Cuaderno concentrado         | dos posiciones de escritura concentrada   |
+| Lectura                      | dos posiciones con el libro               |
+| Teclado cansado              | tres posiciones, cierre de ojos y bostezo |
+| Lectura cansada              | lectura cansada, cierre de ojos y bostezo |
+| Descanso                     | cuatro poses con la taza                  |
+| Celebración                  | tres poses de celebración                 |
+| Aplauso                      | dos poses de aplauso                      |
+| Descanso largo en el teclado | pose dormida con el portátil              |
+| Descanso largo con el libro  | pose dormida con el libro                 |
+
+El selector **Ajustes → Animaciones del chibi** permite ver las 13 escenas sin
+cambiar la preferencia de personaje, incluso cuando se elige Kuco como
+alternativa en **Personaje**. Las escenas de sesión dependen del estado, método y tiempo
+enfocado; la vista previa permite también revisar los descansos largos sin
+convertirlos en una transición automática del temporizador.
+
+`electron/avatar-animation.js` es el motor compartido de la ventana principal
+y la ventana flotante. Separa el movimiento de la pose de los parpadeos:
+espera de 3,2 a 6,4 segundos, cierre breve, reapertura y un segundo parpadeo
+ocasional. El chibi en espera recorre ojos medios, cerrados y medios antes
+de volver a los abiertos. Kuco mira al frente y parpadea en la tarjeta de
+estudio. Los refrescos del reloj no reinician una animación cuyo estado no
+cambió. Ocultar una vista cancela sus tiempos; destruirla los libera.
+
+El chibi flota con el mismo ciclo suave en la tarjeta, la cuenta, la vista previa
+y la ventana flotante: 3,2 segundos, con un desplazamiento vertical de 0 a 3
+píxeles y vuelta al origen. Cambiar el estado de sesión o refrescar su reloj
+no reemplaza ese ciclo. Movimiento reducido también detiene la flotación.
+
+No todas las poses tienen un cierre propio: escritura en cuaderno, lectura
+normal y concentración conservan sus fotogramas disponibles sin cambiar a
+reposo o a otra pose para simular ojos cerrados. Las ilustraciones de
+celebración, aplauso y sueño ya tienen los ojos cerrados. El temporizador y
+las reglas de sesión no dependen de estos recursos. Kuco conserva este contrato:
 
 | Estado      | Cuándo se usa                        |
 | ----------- | ------------------------------------ |
@@ -96,8 +143,32 @@ dependen de estos recursos. Kuco conserva este contrato:
 | `completed` | celebración tras completar un bloque |
 
 Ambos clientes respetan movimiento reducido. El escritorio guarda la elección
-`Kuco`/`Chibi oficial` como preferencia local y migra las configuraciones
-anteriores a Kuco. La interfaz evita aros o marcos alrededor del personaje.
+`Kuco`/`Chibi oficial` como preferencia local. Los archivos antiguos guardaban
+Kuco sin distinguir el valor predeterminado de una selección manual: se migran
+una vez al chibi oficial y se marcan con `companionCharacterVersion: 1`.
+Las selecciones posteriores de ambos personajes se conservan, junto con los
+demás ajustes existentes. El motor de escritorio fija el primer fotograma cuando la
+preferencia local o el sistema solicita movimiento reducido. La interfaz evita
+aros o marcos alrededor del personaje.
+
+### Siguiente fase: ojos que siguen el mouse
+
+Todavía no hay seguimiento del puntero. Los PNG de
+`D:\konea-rebirth\Avatar de Konea (recortado)` contienen el cuerpo con el ojo
+vacío y los dos iris separados dentro del mismo lienzo; no son todavía archivos
+independientes por capa. El plan de integración es:
+
+1. Extraer cuerpo e iris sin redibujarlos y registrar sus coordenadas originales.
+   Mantener los PNG fuente y un manifiesto de procedencia como en los sprites normales.
+2. Definir anclajes y máscaras por pose para ubicar y recortar cada iris dentro
+   de la abertura del ojo; comprobar la alineación al cambiar de escena.
+3. Convertir la posición del mouse a coordenadas locales del rostro, limitar el
+   desplazamiento dentro de cada máscara y suavizar la transición de la mirada.
+   El compañero de escritorio necesitará recibir únicamente la posición necesaria
+   mediante una operación acotada del proceso principal, sin exponer una API genérica.
+4. Dar prioridad al cierre de párpados sobre el movimiento del iris. Al ocultar
+   la ventana o activar movimiento reducido, detener el seguimiento y recuperar
+   la mirada neutra. Probar zoom de pantalla y varios monitores antes de habilitarlo.
 
 ## Cliente Electron
 
@@ -240,9 +311,8 @@ no sustituye un servicio push. El instalador local tampoco está firmado.
 
 La siguiente fase recomendada es:
 
-1. reemplazar los derivados por exportaciones transparentes entregadas por el
-   equipo y agregar estados de pausa/celebración para que el chibi alcance la
-   misma cobertura visual de Kuco;
+1. preparar las capas y anclajes para seguimiento del mouse según el plan
+   anterior y solicitar cierres de ojos de las poses que aún no los tienen;
 2. agregar ciclos de descanso configurables y, después del consentimiento,
    notificaciones push que funcionen con la ventana cerrada;
 3. validar con estudiantes qué dashboards aportan valor (por método, tarea,

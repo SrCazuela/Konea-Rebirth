@@ -12,16 +12,68 @@ La aplicación incorpora:
 - ventana principal local y modo compacto sobre la misma sesión;
 - panel de progreso y creación, pausa, reanudación y término de sesiones;
 - configuración accesible tanto desde la ventana como desde la bandeja;
-- compañero flotante con Kuco animado por defecto y el chibi oficial como alternativa;
+- compañero flotante con el chibi oficial por defecto y Kuco como alternativa;
 - bandeja del sistema y cierre opcional a la bandeja;
 - preferencias locales de personaje, tamaño, posición, animación y siempre visible;
 - inicio opcional con Windows en la versión instalada;
 - aviso nativo opt-in al llegar a cero, sin completar automáticamente la sesión.
 
-Kuco continúa seleccionado de forma predeterminada. Cuando se elige el chibi,
-el runtime usa los derivados transparentes de
-`electron/assets/avatar-cutout/`; los PNG fuente y su manifiesto de procedencia
-permanecen preservados en `electron/assets/avatar-official/`.
+El chibi oficial está seleccionado de forma predeterminada. El runtime usa
+las 35 exportaciones transparentes nuevas de la artista en
+`electron/assets/avatar-hq/`. Son copias idénticas de los PNG normales de
+2136 × 3000: no se redimensionaron ni redibujaron. Su manifiesto conserva los
+nombres originales, los nombres usados por el programa y sus SHA-256. Los
+recursos anteriores de `avatar-official/` y `avatar-cutout/` se conservan como
+antecedentes.
+
+## Sprites y animaciones
+
+En **Ajustes → Animaciones del chibi**, el selector permite revisar 13 escenas:
+espera, teclado, teclado concentrado, cuaderno, cuaderno concentrado, lectura,
+teclado cansado, lectura cansada, descanso, celebración, aplauso y las dos
+poses de descanso largo. La vista previa funciona también si se elige Kuco
+como alternativa en **Personaje**.
+
+Las preferencias antiguas no distinguían el Kuco predeterminado de una elección
+manual. La actualización migra ese formato una vez al chibi oficial y guarda
+`companionCharacterVersion: 1`; las selecciones posteriores de Kuco o del chibi
+se conservan al reiniciar. Los demás ajustes no cambian.
+
+`electron/avatar-library.js` relaciona los estados y las escenas con sus PNG.
+El lienzo completo de cada archivo se presenta mediante el mismo viewport CSS
+`[176, 915, 1954, 2980]`, de 1778 × 2065 píxeles. Esto mantiene el punto de apoyo
+y evita que una pose cambie de tamaño o salte al cambiar de fotograma. Solo
+se precargan las imágenes de la escena en uso; no se decodifican los 35 PNG
+al arrancar.
+
+La ventana principal y el compañero flotante usan el mismo motor de tiempos
+en `electron/avatar-animation.js`. Los parpadeos tienen una espera variable
+de 3,2 a 6,4 segundos, una breve secuencia de cierre y apertura y, en ocasiones,
+un segundo parpadeo. Actualizar el reloj de estudio no reinicia esa espera.
+Kuco permanece mirando al frente en la tarjeta de estudio. La preferencia de
+movimiento reducido, tanto del sistema como de FocusBuddy, detiene las
+animaciones y muestra el primer fotograma; ocultar o cerrar una vista cancela
+sus temporizadores.
+
+El chibi comparte una flotación suave de 3,2 segundos entre la tarjeta de estudio,
+la cuenta, la vista previa y el compañero flotante: baja 3 píxeles y vuelve a su
+posición inicial. Los cambios de estado y los sondeos del reloj no reinician esta
+flotación. El movimiento reducido también la desactiva. Kuco conserva su tarjeta
+frontal estática y su parpadeo.
+
+El chibi en espera tiene ojos abiertos, medios y cerrados. El teclado normal
+y los dos estados de cansancio también tienen un cierre dedicado. Escritura
+en cuaderno, lectura normal y concentración no tienen todos los fotogramas
+de cierre de su propia pose: conservan la animación disponible sin saltar a
+otra pose para simular un parpadeo. Celebración, aplauso y descanso largo ya
+incluyen ojos cerrados en sus dibujos.
+
+El seguimiento del mouse queda para una siguiente fase. Los PNG de
+`D:\konea-rebirth\Avatar de Konea (recortado)` todavía no se usan en el runtime:
+incluyen los iris como piezas separadas dentro del mismo lienzo. El trabajo
+pendiente es extraer esas capas sin cambiar el dibujo, registrar sus anclajes
+en cada pose y limitar su movimiento con máscaras dentro del ojo. El parpadeo
+debe tener prioridad sobre la mirada, y movimiento reducido debe dejarla fija.
 
 El compañero solo recibe un snapshot de presentación sanitizado. No almacena ni
 replica las reglas del temporizador: la API de Konea conserva la autoridad y las

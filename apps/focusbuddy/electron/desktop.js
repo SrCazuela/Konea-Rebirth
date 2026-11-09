@@ -41,7 +41,8 @@ const STATUS_LABELS = {
 const DEFAULT_PREFERENCES = {
   companionEnabled: true,
   companionAlwaysOnTop: true,
-  companionCharacter: 'kuco',
+  companionCharacter: 'chibi',
+  companionCharacterVersion: 1,
   companionScale: 'medium',
   compactMode: false,
   closeToTray: true,
@@ -52,43 +53,10 @@ const DEFAULT_PREFERENCES = {
 }
 
 const KUCO_SPRITE_SHEET = './owl-shimeji-provisional.png'
-const KUCO_CARD_BLINK = Object.freeze({
-  minDelayMs: 3_200,
-  maxDelayMs: 6_400,
-  closedMs: 115,
-  betweenBlinksMs: 135,
-  doubleBlinkChance: 0.16,
-})
-
-let kucoCardBlinkTimer = null
-let kucoCardBlinkFrame = 0
-
-const CHIBI_AVATAR_ASSETS = {
-  idle: [
-    './assets/avatar-cutout/idle-1.png',
-    './assets/avatar-cutout/idle-2.png',
-    './assets/avatar-cutout/idle-3.png',
-  ],
-  focus: [
-    './assets/avatar-cutout/typing-1.png',
-    './assets/avatar-cutout/typing-2.png',
-    './assets/avatar-cutout/typing-3.png',
-    './assets/avatar-cutout/typing-2.png',
-    './assets/avatar-cutout/typing-blink.png',
-  ],
-  deepFocus: [
-    './assets/avatar-cutout/typing-concentrated-1.png',
-    './assets/avatar-cutout/typing-concentrated-2.png',
-    './assets/avatar-cutout/typing-concentrated-3.png',
-    './assets/avatar-cutout/studying-concentrated-1.png',
-  ],
-  paused: [
-    './assets/avatar-cutout/studying-1.png',
-    './assets/avatar-cutout/idle-2.png',
-  ],
-  completed: ['./assets/avatar-cutout/idle-1.png'],
-  offline: ['./assets/avatar-cutout/idle-3.png'],
-}
+const avatarLibrary = window.FocusBuddyAvatars
+const avatarMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+let avatarAnimations = null
+const preloadDesktopScene = avatarLibrary.createScenePreloader(Image)
 
 const PAGE_TITLES = {
   study: 'Tu espacio de concentración',
@@ -215,6 +183,9 @@ const elements = {
   accountSync: byId('account-sync'),
   accountCharacter: byId('account-character'),
   accountChibi: byId('account-chibi'),
+  avatarPreview: byId('avatar-preview'),
+  avatarPreviewImage: byId('avatar-preview-image'),
+  avatarPreviewScene: byId('avatar-preview-scene'),
 }
 
 function text(element, value) {
@@ -471,6 +442,7 @@ function desktopSnapshot(kind) {
       course: null,
       timerLabel: '--:--',
       timerFinished: false,
+      avatarScene: 'idle',
     }
   }
 
@@ -483,6 +455,7 @@ function desktopSnapshot(kind) {
       course: null,
       timerLabel: '--:--',
       timerFinished: false,
+      avatarScene: kind === 'completed' ? currentAvatarScene() : 'idle',
     }
   }
 
@@ -494,6 +467,7 @@ function desktopSnapshot(kind) {
     course: session.course?.name || null,
     timerLabel: formatTimer(timer.value),
     timerFinished: timer.finished,
+    avatarScene: currentAvatarScene(),
   }
 }
 
@@ -598,7 +572,7 @@ function selectTab(tabName, options = {}) {
   if (next === 'progress') renderProgress()
   if (next === 'settings') renderPreferences()
   if (next === 'account') renderAccount()
-  syncKucoCardBlink()
+  syncAvatarAnimations()
 }
 
 function renderAccount() {
@@ -824,82 +798,54 @@ function avatarMood() {
 }
 
 function selectedCharacter() {
-  return state.preferences.companionCharacter === 'chibi' ? 'chibi' : 'kuco'
+  return state.preferences.companionCharacter === 'kuco' ? 'kuco' : 'chibi'
 }
 
-function chibiSequence(mood, session) {
-  if (
-    mood === 'focus' &&
-    ['deep_work', 'pomodoro_extended'].includes(session?.method)
-  ) {
-    return CHIBI_AVATAR_ASSETS.deepFocus
+function currentAvatarScene() {
+  const mood = avatarMood()
+  if (mood === 'completed' && Date.now() > state.justCompletedUntil - 3_000)
+    return 'clapping'
+  const session = currentSession()
+  return avatarLibrary.sceneForSession({
+    mood,
+    method: session?.method,
+    focusedSeconds: elapsedSeconds(session),
+  })
+}
+
+function drawAnimatedAvatar(container, image, snapshot) {
+  const [character, mood] = snapshot.state.split(':')
+  applyCharacterFrame(container, image, {
+    character,
+    mood,
+    frameIndex: character === 'kuco' ? snapshot.frame : 0,
+    chibiSource: character === 'chibi' ? snapshot.frame : null,
+  })
+  if (container) container.dataset.blinking = String(snapshot.blinking)
+}
+
+function ensureAvatarAnimations() {
+  if (avatarAnimations) return
+  const create = (container, image) =>
+    window.FocusBuddyAnimation.createAnimator({
+      animations: avatarLibrary.animations,
+      initialState: 'chibi:idle',
+      onFrame: (snapshot) => drawAnimatedAvatar(container, image, snapshot),
+    })
+  avatarAnimations = {
+    study: create(elements.buddyImage, elements.buddyChibi),
+    account: create(elements.accountCharacter, elements.accountChibi),
+    preview: create(elements.avatarPreview, elements.avatarPreviewImage),
   }
-  return CHIBI_AVATAR_ASSETS[mood] || CHIBI_AVATAR_ASSETS.idle
 }
 
-function canBlinkKucoCard() {
-  return (
-    state.currentTab === 'study' &&
-    selectedCharacter() === 'kuco' &&
-    !state.preferences.reducedMotion &&
-    document.visibilityState !== 'hidden'
-  )
-}
-
-function clearKucoCardBlinkTimer() {
-  if (kucoCardBlinkTimer !== null) {
-    window.clearTimeout(kucoCardBlinkTimer)
-    kucoCardBlinkTimer = null
-  }
-}
-
-function nextKucoBlinkDelay() {
-  const range = KUCO_CARD_BLINK.maxDelayMs - KUCO_CARD_BLINK.minDelayMs
-  return KUCO_CARD_BLINK.minDelayMs + Math.round(Math.random() * range)
-}
-
-function scheduleKucoCardBlink(delay = nextKucoBlinkDelay()) {
-  clearKucoCardBlinkTimer()
-  if (!canBlinkKucoCard()) return
-
-  kucoCardBlinkTimer = window.setTimeout(() => {
-    kucoCardBlinkTimer = null
-    const blinkCount = Math.random() < KUCO_CARD_BLINK.doubleBlinkChance ? 2 : 1
-    runKucoCardBlink(blinkCount)
-  }, delay)
-}
-
-function runKucoCardBlink(remainingBlinks) {
-  if (!canBlinkKucoCard()) {
-    kucoCardBlinkFrame = 0
-    renderAvatar()
-    return
-  }
-
-  kucoCardBlinkFrame = 1
+function syncAvatarAnimations() {
   renderAvatar()
-  kucoCardBlinkTimer = window.setTimeout(() => {
-    kucoCardBlinkTimer = null
-    kucoCardBlinkFrame = 0
-    renderAvatar()
-
-    if (!canBlinkKucoCard()) return
-    if (remainingBlinks > 1) {
-      kucoCardBlinkTimer = window.setTimeout(() => {
-        kucoCardBlinkTimer = null
-        runKucoCardBlink(remainingBlinks - 1)
-      }, KUCO_CARD_BLINK.betweenBlinksMs)
-      return
-    }
-    scheduleKucoCardBlink()
-  }, KUCO_CARD_BLINK.closedMs)
 }
 
-function syncKucoCardBlink() {
-  clearKucoCardBlinkTimer()
-  kucoCardBlinkFrame = 0
-  renderAvatar()
-  scheduleKucoCardBlink()
+function disposeAvatarAnimations() {
+  for (const animation of Object.values(avatarAnimations ?? {}))
+    animation.dispose()
 }
 
 function applyCharacterFrame(
@@ -923,15 +869,22 @@ function applyCharacterFrame(
 }
 
 function renderAvatar() {
+  ensureAvatarAnimations()
   const mood = avatarMood()
-  const session = currentSession()
-  const reduced = state.preferences.reducedMotion
+  const reduced = state.preferences.reducedMotion || avatarMotionQuery.matches
   const character = selectedCharacter()
-  const sequence = chibiSequence(mood, session)
-  const frameIndex = reduced
-    ? 0
-    : Math.floor(Date.now() / 900) % sequence.length
-  const source = sequence[frameIndex % sequence.length]
+  const scene = currentAvatarScene()
+  const visible = document.visibilityState !== 'hidden'
+  const previewScene = elements.avatarPreviewScene.value
+  let preloadScene = null
+  if (visible) {
+    if (state.currentTab === 'settings') preloadScene = previewScene
+    else if (character === 'chibi' && state.currentTab === 'study')
+      preloadScene = scene
+    else if (character === 'chibi' && state.currentTab === 'account')
+      preloadScene = 'idle'
+  }
+  preloadDesktopScene(preloadScene)
   elements.buddyCard.dataset.mood = mood
 
   const presentation = {
@@ -949,21 +902,24 @@ function renderAvatar() {
   }[mood]
   const characterName = character === 'kuco' ? 'Kuco' : 'FocusBuddy'
 
-  applyCharacterFrame(elements.buddyImage, elements.buddyChibi, {
-    character,
-    mood: character === 'kuco' ? 'idle' : mood,
-    frameIndex: character === 'kuco' ? kucoCardBlinkFrame : frameIndex,
-    chibiSource: source,
-    label: `${characterName} ${presentation[1]}`,
+  avatarAnimations.study.update({
+    state: character === 'kuco' ? 'kuco:idle' : `chibi:${scene}`,
+    visible: visible && state.currentTab === 'study',
+    reducedMotion: reduced,
   })
-
-  const idleSequence = CHIBI_AVATAR_ASSETS.idle
-  const accountFrame = reduced ? 0 : Math.floor(Date.now() / 1_450) % 4
-  applyCharacterFrame(elements.accountCharacter, elements.accountChibi, {
-    character,
-    mood: 'idle',
-    frameIndex: accountFrame,
-    chibiSource: idleSequence[accountFrame % idleSequence.length],
+  elements.buddyImage.setAttribute(
+    'aria-label',
+    `${characterName} ${presentation[1]}`,
+  )
+  avatarAnimations.account.update({
+    state: `${character}:idle`,
+    visible: visible && state.currentTab === 'account',
+    reducedMotion: reduced,
+  })
+  avatarAnimations.preview.update({
+    state: `chibi:${previewScene}`,
+    visible: visible && state.currentTab === 'settings',
+    reducedMotion: reduced,
   })
 
   text(elements.buddyName, characterName)
@@ -1671,7 +1627,7 @@ async function updatePreference(control) {
   } finally {
     state.preferenceBusy = false
     renderPreferences()
-    syncKucoCardBlink()
+    syncAvatarAnimations()
   }
 }
 
@@ -1681,7 +1637,7 @@ function installPreferenceSubscription() {
     const unsubscribe = bridge.onPreferences((preferences) => {
       state.preferences = normalizePreferences(preferences)
       renderPreferences()
-      syncKucoCardBlink()
+      syncAvatarAnimations()
     })
     if (typeof unsubscribe === 'function')
       state.unsubscribePreferences = unsubscribe
@@ -1691,6 +1647,8 @@ function installPreferenceSubscription() {
 }
 
 function installEvents() {
+  elements.avatarPreviewScene.addEventListener('change', syncAvatarAnimations)
+  avatarMotionQuery.addEventListener('change', syncAvatarAnimations)
   for (const tab of document.querySelectorAll('[data-tab]')) {
     tab.addEventListener('click', () => selectTab(tab.dataset.tab))
     tab.addEventListener('keydown', (event) => {
@@ -1770,24 +1728,18 @@ function installEvents() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && state.user)
       void refreshEverything({ silent: true })
-    syncKucoCardBlink()
+    syncAvatarAnimations()
   })
   window.addEventListener('pagehide', () => {
-    clearKucoCardBlinkTimer()
+    disposeAvatarAnimations()
     sendDesktopSnapshot('idle', true)
     if (state.unsubscribePreferences) state.unsubscribePreferences()
   })
 }
 
 function preloadAvatarAssets() {
-  const uniqueSources = new Set([
-    KUCO_SPRITE_SHEET,
-    ...Object.values(CHIBI_AVATAR_ASSETS).flat(),
-  ])
-  for (const source of uniqueSources) {
-    const image = new Image()
-    image.src = source
-  }
+  const image = new Image()
+  image.src = KUCO_SPRITE_SHEET
 }
 
 function hideStartupOverlay() {
@@ -1803,7 +1755,7 @@ async function initialize() {
   installPreferenceSubscription()
   await Promise.allSettled([loadPreferences(), loadConnectionInfo()])
   renderPreferences()
-  syncKucoCardBlink()
+  syncAvatarAnimations()
 
   if (!bridge || !api) {
     markOffline('FocusBuddy no encontró el bridge seguro de la aplicación.')

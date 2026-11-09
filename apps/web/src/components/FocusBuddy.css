@@ -500,28 +500,6 @@
     linear-gradient(155deg, #f8f3fd 0%, #eadcf8 100%);
 }
 
-.focus-buddy__companion::before,
-.focus-buddy__companion::after {
-  position: absolute;
-  content: '';
-  border: 1px solid rgb(125 79 180 / 10%);
-  border-radius: 50%;
-}
-
-.focus-buddy__companion::before {
-  width: 280px;
-  height: 280px;
-  right: -125px;
-  top: -95px;
-}
-
-.focus-buddy__companion::after {
-  width: 220px;
-  height: 220px;
-  left: -130px;
-  bottom: -100px;
-}
-
 .focus-avatar {
   position: relative;
   z-index: 1;
@@ -538,44 +516,7 @@
 .focus-avatar__character {
   width: 100%;
   transform-origin: center bottom;
-}
-
-.focus-avatar__sprite {
-  width: 100%;
-  display: block;
-  aspect-ratio: 1402 / 1122;
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  background-size: 400% 400%;
   filter: drop-shadow(0 13px 10px rgb(61 40 91 / 14%));
-  animation: focus-avatar-sprite-frames 1.8s steps(3) infinite;
-}
-
-.focus-avatar--focus .focus-avatar__sprite {
-  background-position-y: 33.333%;
-  animation-duration: 1.25s;
-}
-
-.focus-avatar--paused .focus-avatar__sprite {
-  background-position-y: 66.667%;
-  animation-duration: 2.4s;
-}
-
-.focus-avatar--completed .focus-avatar__sprite {
-  background-position-y: 100%;
-  animation-duration: 900ms;
-}
-
-.focus-avatar--focus .focus-avatar__character {
-  animation: focus-avatar-working 2.2s ease-in-out infinite;
-}
-
-.focus-avatar--paused .focus-avatar__character {
-  animation: focus-avatar-breathe 3.4s ease-in-out infinite;
-}
-
-.focus-avatar--completed .focus-avatar__character {
-  animation: focus-avatar-celebrate 650ms ease-out;
 }
 
 .focus-avatar__spark {
@@ -952,47 +893,6 @@
 @keyframes focus-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes focus-avatar-sprite-frames {
-  from {
-    background-position-x: 0;
-  }
-  to {
-    background-position-x: 100%;
-  }
-}
-
-@keyframes focus-avatar-working {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-0.6deg);
-  }
-  50% {
-    transform: translateY(2px) rotate(0.6deg);
-  }
-}
-
-@keyframes focus-avatar-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.018);
-  }
-}
-
-@keyframes focus-avatar-celebrate {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  45% {
-    transform: translateY(-13px) scale(1.03);
-  }
-  100% {
-    transform: translateY(0) scale(1);
   }
 }
 

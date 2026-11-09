@@ -838,19 +838,15 @@
   width: 12px;
   height: 12px;
 }
-.landing-focus-preview .landing-kuco {
+.landing-focus-preview .landing-chibi {
   width: 140px;
   flex-shrink: 0;
 }
-.landing-kuco {
+.landing-chibi {
   width: 170px;
   display: block;
-  aspect-ratio: 1402 / 1122;
-  background-size: 400% 400%;
-  background-position: 0 0;
-  background-repeat: no-repeat;
+  flex-shrink: 0;
   filter: drop-shadow(0 10px 10px #28143a20);
-  animation: landing-kuco-blink 6s steps(1) infinite;
 }
 
 .landing-hero__bottom {
@@ -1511,25 +1507,6 @@
     transform: none;
   }
 }
-@keyframes landing-kuco-blink {
-  0%,
-  91%,
-  97%,
-  100% {
-    background-position-x: 0;
-  }
-  92%,
-  96% {
-    background-position-x: 33.3333%;
-  }
-  93%,
-  95% {
-    background-position-x: 66.6667%;
-  }
-  94% {
-    background-position-x: 100%;
-  }
-}
 
 @media (min-width: 1600px) {
   .landing-hero {
@@ -1713,7 +1690,7 @@
     width: 28px;
     height: 28px;
   }
-  .landing-focus-art .landing-kuco {
+  .landing-focus-art .landing-chibi {
     width: 125px;
   }
   .landing-focus-art strong {
@@ -1953,7 +1930,7 @@
     width: 58px;
     height: 58px;
   }
-  .landing-focus-art .landing-kuco {
+  .landing-focus-art .landing-chibi {
     width: 160px;
   }
   .landing-focus-art strong {
@@ -2070,10 +2047,10 @@
   .landing-community-art {
     gap: 25px;
   }
-  .landing-focus-art .landing-kuco {
+  .landing-focus-art .landing-chibi {
     width: 125px;
   }
-  .landing-focus-preview .landing-kuco {
+  .landing-focus-preview .landing-chibi {
     width: 105px;
   }
   .landing-focus-preview strong {

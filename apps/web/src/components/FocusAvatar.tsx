@@ -1,4 +1,5 @@
-import owlShimejiSpriteSheet from '../assets/focusbuddy/owl-shimeji-provisional.png'
+import { ChibiSprite } from './ChibiSprite'
+import { avatarLibrary } from './focus-avatar-runtime'
 
 export type AvatarMood = 'idle' | 'focus' | 'paused' | 'completed'
 
@@ -10,17 +11,26 @@ const MOOD_MESSAGES: Record<AvatarMood, string> = {
 }
 
 const MOOD_LABELS: Record<AvatarMood, string> = {
-  idle: 'Kuco está disponible y esperando',
-  focus: 'Kuco estudia durante la sesión activa',
-  paused: 'Kuco descansa durante la pausa',
-  completed: 'Kuco celebra la sesión completada',
+  idle: 'FocusBuddy está disponible y esperando',
+  focus: 'FocusBuddy estudia durante la sesión activa',
+  paused: 'FocusBuddy descansa durante la pausa',
+  completed: 'FocusBuddy celebra la sesión completada',
 }
 
 /**
- * Hoja de Kuco 4x4: una fila por estado y cuatro fotogramas por animación.
- * La presentación permanece separada del temporizador y la persistencia.
+ * The web and desktop clients share the artist's poses and blink timing.
+ * This presentation never changes the authoritative study session.
  */
-export function FocusAvatar({ mood }: { mood: AvatarMood }) {
+export function FocusAvatar({
+  mood,
+  method,
+  focusedSeconds = 0,
+}: {
+  mood: AvatarMood
+  method?: string
+  focusedSeconds?: number
+}) {
+  const scene = avatarLibrary.sceneForSession({ mood, method, focusedSeconds })
   return (
     <div className={`focus-avatar focus-avatar--${mood}`}>
       <div className="focus-avatar__scene">
@@ -36,17 +46,14 @@ export function FocusAvatar({ mood }: { mood: AvatarMood }) {
         >
           ✦
         </span>
-        <div className="focus-avatar__character">
-          <span
-            className="focus-avatar__sprite"
-            style={{ backgroundImage: `url(${owlShimejiSpriteSheet})` }}
-            role="img"
-            aria-label={MOOD_LABELS[mood]}
-          />
-        </div>
+        <ChibiSprite
+          scene={scene}
+          className="focus-avatar__character"
+          label={MOOD_LABELS[mood]}
+        />
       </div>
       <div className="focus-avatar__speech" aria-live="polite">
-        <strong>Kuco</strong>
+        <strong>FocusBuddy</strong>
         <span>{MOOD_MESSAGES[mood]}</span>
       </div>
     </div>
