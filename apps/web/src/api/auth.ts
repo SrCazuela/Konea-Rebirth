@@ -4,6 +4,10 @@ import type {
   ProfileProject,
 } from './network'
 import { ApiClientError, apiRequest } from './base'
+import {
+  waitForServerReady,
+  type ServerReadinessOptions,
+} from './server-readiness'
 
 export type KoneaUser = {
   id: string
@@ -41,23 +45,43 @@ export async function getCurrentUser() {
   }
 }
 
-export async function register(input: {
-  email: string
-  password: string
-  username: string
-  displayName: string
-}) {
+export type AuthRequestOptions = ServerReadinessOptions & {
+  onReady?: () => void
+}
+
+async function prepareAuthentication(options: AuthRequestOptions) {
+  await waitForServerReady(options)
+  options.signal?.throwIfAborted()
+  options.onReady?.()
+}
+
+export async function register(
+  input: {
+    email: string
+    password: string
+    username: string
+    displayName: string
+  },
+  options: AuthRequestOptions = {},
+) {
+  await prepareAuthentication(options)
   const response = await apiRequest<{ user: KoneaUser }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(input),
+    signal: options.signal,
   })
   return response.user
 }
 
-export async function login(input: { identifier: string; password: string }) {
+export async function login(
+  input: { identifier: string; password: string },
+  options: AuthRequestOptions = {},
+) {
+  await prepareAuthentication(options)
   const response = await apiRequest<{ user: KoneaUser }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(input),
+    signal: options.signal,
   })
   return response.user
 }

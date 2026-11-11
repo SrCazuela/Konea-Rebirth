@@ -159,3 +159,115 @@ test('images and HEAD replies retain status and file headers', async () => {
   assert.equal(response.headers.get('content-range'), 'bytes 0-10/50')
   assert.equal(await response.text(), '')
 })
+
+test('infrastructure HTML errors become a safe starting response without replaying writes', async () => {
+  for (const status of [429, 502, 503, 504]) {
+    let fetchCount = 0
+    let cancelled = false
+    const upstreamBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `<html>Just a moment: ${environment.SITES_BACKEND_TOKEN}</html>`,
+          ),
+        )
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const response = await proxyBackend(
+      new Request(`${site}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { origin: site, 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      environment,
+      async (_url, init) => {
+        fetchCount += 1
+        assert.equal(init.method, 'POST')
+        return new Response(upstreamBody, {
+          status,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'set-cookie': 'platform_session=private; Secure; HttpOnly',
+          },
+        })
+      },
+    )
+    assert.equal(fetchCount, 1)
+    assert.equal(cancelled, true)
+    assert.equal(response.status, 503)
+    assert.match(response.headers.get('content-type'), /^application\/json/)
+    assert.equal(response.headers.get('retry-after'), '5')
+    assert.equal(response.headers.get('cache-control'), 'private, no-store')
+    assert.equal(response.headers.get('set-cookie'), null)
+    const body = await response.json()
+    assert.equal(body.error.code, 'BACKEND_STARTING')
+    assert.match(body.error.message, /hasta un minuto/)
+    assert.ok(!JSON.stringify(body).includes(environment.SITES_BACKEND_TOKEN))
+    assert.ok(!JSON.stringify(body).includes('<html>'))
+  }
+})
+
+test('JSON API limits and other structured errors keep their own codes and retry headers', async () => {
+  for (const [status, contentType] of [
+    [429, 'application/json; charset=utf-8'],
+    [429, 'Application/Problem+JSON; charset=UTF-8'],
+    [503, 'application/vnd.konea.error+json'],
+  ]) {
+    const body = JSON.stringify({
+      error: { code: 'APPLICATION_LIMIT', message: 'Application response' },
+    })
+    const response = await proxyBackend(
+      new Request(`${site}/api/v1/auth/me`),
+      environment,
+      async () =>
+        new Response(body, {
+          status,
+          headers: { 'content-type': contentType, 'retry-after': '42' },
+        }),
+    )
+    assert.equal(response.status, status)
+    assert.equal(response.headers.get('content-type'), contentType)
+    assert.equal(response.headers.get('retry-after'), '42')
+    assert.equal(await response.text(), body)
+  }
+})
+
+test('successful binary downloads pass through unchanged', async () => {
+  const bytes = new Uint8Array([0, 255, 137, 80, 78, 71, 13, 10])
+  const response = await proxyBackend(
+    new Request(`${site}/api/v1/uploads/files/image.png`),
+    environment,
+    async () =>
+      new Response(bytes, {
+        headers: { 'content-type': 'image/png', etag: 'image-version' },
+      }),
+  )
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'image/png')
+  assert.equal(response.headers.get('etag'), 'image-version')
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes)
+})
+
+test('HEAD infrastructure failures release the upstream and return no body', async () => {
+  let cancelled = false
+  const response = await proxyBackend(
+    new Request(`${site}/api/v1/health`, { method: 'HEAD' }),
+    environment,
+    async () =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled = true
+          },
+        }),
+        { status: 503, headers: { 'content-type': 'text/plain' } },
+      ),
+  )
+  assert.equal(cancelled, true)
+  assert.equal(response.status, 503)
+  assert.equal(response.headers.get('retry-after'), '5')
+  assert.equal(await response.text(), '')
+})
