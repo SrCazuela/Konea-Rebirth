@@ -44,6 +44,7 @@ describe('FocusBuddy package security', () => {
       'electron/preferences.cjs',
       'electron/release-channel.cjs',
       'electron/session-state.cjs',
+      'electron/ui-protocol.cjs',
       'electron/window-options.cjs',
       'package.json',
     ])
@@ -113,8 +114,11 @@ describe('FocusBuddy package security', () => {
     assert.match(desktopHtml, /connect-src 'none'/)
     assert.doesNotMatch(desktopHtml, /unsafe-inline/)
     assert.doesNotMatch(desktopHtml, /<script[^>]*>[^<]+<\/script>/)
-    assert.match(mainSource, /loadFile\([^)]*desktop\.html/)
-    assert.doesNotMatch(mainSource, /\.loadURL\(/)
+    assert.match(mainSource, /loadURL\(uiPageUrl\('desktop'\)\)/)
+    assert.match(mainSource, /loadURL\(uiPageUrl\('companion'\)\)/)
+    assert.doesNotMatch(mainSource, /\.loadFile\(/)
+    assert.equal((mainSource.match(/\.loadURL\(/g) || []).length, 2)
+    assert.match(mainSource, /isTrustedUiPageUrl\(/)
   })
 
   it('keeps the local companion under a strict content security policy', () => {

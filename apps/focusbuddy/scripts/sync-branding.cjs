@@ -72,6 +72,16 @@ function verifyPng(bytes, size = 512) {
   )
 }
 
+function isReadyBrandingFrame(bitmap, sourceDecoded) {
+  return (
+    sourceDecoded === true &&
+    bitmap.length >= 4 &&
+    bitmap.length % 4 === 0 &&
+    bitmap[3] === 0 &&
+    bitmap.some((value, index) => index % 4 === 3 && value > 0)
+  )
+}
+
 function removeOwnedRenderDirectory(directory) {
   if (!existsSync(directory)) return
   // Verify the real absolute target before recursively removing our own profile.
@@ -209,15 +219,13 @@ async function renderIcon() {
     },
   })
   try {
+    let sourceDecoded = false
     let painted = null
     let finishPaint
-    const ready = new Promise((resolve) => {
-      finishPaint = resolve
-    })
     window.webContents.on('paint', (_event, _dirty, image) => {
-      if (image.isEmpty()) return
+      if (painted || !sourceDecoded || image.isEmpty()) return
       const bitmap = image.toBitmap()
-      if (bitmap.some((value, index) => index % 4 === 3 && value > 0)) {
+      if (isReadyBrandingFrame(bitmap, sourceDecoded)) {
         painted = image
         finishPaint()
       }
@@ -226,6 +234,12 @@ async function renderIcon() {
     await window.webContents.executeJavaScript(
       'Promise.all(Array.from(document.images, image => image.decode()))',
     )
+    // Chromium can paint an opaque initial surface before loading the SVG.
+    // Only wait for a new, decoded frame requested by this invalidation.
+    const ready = new Promise((resolve) => {
+      finishPaint = resolve
+    })
+    sourceDecoded = true
     window.webContents.invalidate()
     let timeout
     try {
@@ -265,6 +279,8 @@ async function renderIcon() {
   }
   app.exit(0)
 }
+
+module.exports = { isReadyBrandingFrame }
 
 if (process.versions.electron && process.argv.includes('--render-branding')) {
   renderIcon().catch((error) => {

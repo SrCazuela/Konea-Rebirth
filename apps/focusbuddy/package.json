@@ -1,13 +1,13 @@
 {
   "name": "@konea/focusbuddy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Cliente de escritorio FocusBuddy para las sesiones de estudio de Konea.",
   "author": "Konea Capstone",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node scripts/run-development.cjs",
-    "build": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/companion-preload.cjs && node --check electron/avatar-animation.js && node --check electron/avatar-library.js && node --check electron/companion.js && node --check electron/desktop.js && node --check electron/api-url.cjs && node --check electron/desktop-api.cjs && node --check electron/preferences.cjs && node --check electron/session-state.cjs && node --check electron/window-options.cjs && node --check scripts/after-pack.cjs && node --check scripts/fuse-policy.cjs && node --check scripts/prepare-release-config.cjs && node --check scripts/run-development.cjs && node --check scripts/run-electron-builder.cjs && node --check scripts/verify-release.cjs && node --check scripts/sync-branding.cjs && node --check electron/release-channel.cjs && node --check scripts/build-release.cjs",
+    "build": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/companion-preload.cjs && node --check electron/avatar-animation.js && node --check electron/avatar-library.js && node --check electron/companion.js && node --check electron/desktop.js && node --check electron/api-url.cjs && node --check electron/desktop-api.cjs && node --check electron/preferences.cjs && node --check electron/session-state.cjs && node --check electron/window-options.cjs && node --check scripts/after-pack.cjs && node --check scripts/fuse-policy.cjs && node --check scripts/prepare-release-config.cjs && node --check scripts/run-development.cjs && node --check scripts/run-electron-builder.cjs && node --check scripts/verify-release.cjs && node --check scripts/sync-branding.cjs && node --check electron/release-channel.cjs && node --check scripts/build-release.cjs && node --check electron/ui-protocol.cjs",
     "test": "node --test electron/*.test.cjs",
     "dist": "node scripts/build-release.cjs --channel=local",
     "dist:dir": "node scripts/build-release.cjs --channel=local --target=dir",
@@ -68,6 +68,7 @@
       "electron/preferences.cjs",
       "electron/release-channel.cjs",
       "electron/session-state.cjs",
+      "electron/ui-protocol.cjs",
       "electron/window-options.cjs",
       "package.json"
     ],

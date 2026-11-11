@@ -406,6 +406,8 @@ async function callApi(name, ...args) {
   }
   if (result.ok === true) return result.data
 
+  // Crear Error aquí conserva status/code/fields en el mundo del renderer.
+  // Un Error lanzado desde preload los perdería al atravesar contextBridge.
   const payload =
     result.error && typeof result.error === 'object' ? result.error : {}
   const error = new Error(

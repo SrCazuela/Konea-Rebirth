@@ -7,6 +7,10 @@ import {
 } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import {
+  focusBuddyDownloadUrl,
+  getFocusBuddyDesktopChannel,
+} from '../config/focusbuddy-download'
 import type { AuthMode } from './AuthDialog'
 import { ChibiSprite } from './ChibiSprite'
 import { KoneaLogo } from './KoneaLogo'
@@ -369,6 +373,11 @@ export default function LandingPage({
 }) {
   const pageRef = useRef<HTMLDivElement>(null)
   const [motionEnabled, setMotionEnabled] = useState(true)
+  const publicFocusBuddyDownloadUrl =
+    typeof window !== 'undefined' &&
+    getFocusBuddyDesktopChannel(window.location.hostname) === 'production'
+      ? focusBuddyDownloadUrl
+      : null
 
   useLayoutEffect(() => {
     const root = pageRef.current
@@ -653,6 +662,21 @@ export default function LandingPage({
                 Sesiones de estudio, pausas y progreso personal. FocusBuddy te
                 acompaña, un bloque a la vez.
               </p>
+              {publicFocusBuddyDownloadUrl && (
+                <a
+                  className="landing-focus-download"
+                  href={publicFocusBuddyDownloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Descargar FocusBuddy oficial para Windows x64"
+                >
+                  <Icon name="arrow" />
+                  <span>
+                    Descargar FocusBuddy
+                    <small>Versión oficial · Windows x64</small>
+                  </span>
+                </a>
+              )}
               <div className="landing-focus-art">
                 <div aria-hidden="true">
                   <span>UN BLOQUE PARA AVANZAR</span>

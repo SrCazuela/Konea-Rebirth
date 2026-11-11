@@ -5,7 +5,9 @@ const {
   Menu,
   nativeImage,
   Notification,
+  protocol,
   screen,
+  session,
   Tray,
 } = require('electron')
 const {
@@ -30,6 +32,14 @@ const {
   normalizeSessionState,
 } = require('./session-state.cjs')
 const { createWebPreferences } = require('./window-options.cjs')
+const {
+  UI_SCHEME_REGISTRATION,
+  uiPageUrl,
+  isTrustedUiPageUrl,
+  registerUiProtocolForSession,
+} = require('./ui-protocol.cjs')
+
+protocol.registerSchemesAsPrivileged([UI_SCHEME_REGISTRATION])
 
 const NORMAL_MINIMUM_SIZE = [980, 680]
 const COMPACT_SIZE = { width: 460, height: 720 }
@@ -139,7 +149,11 @@ function isWindowSender(event, window) {
     event?.sender?.id &&
     window &&
     !window.isDestroyed() &&
-    window.webContents.id === event.sender.id,
+    window.webContents.id === event.sender.id &&
+    isTrustedUiPageUrl(
+      event.senderFrame?.url ?? window.webContents.getURL(),
+      window === mainWindow ? 'desktop' : 'companion',
+    ),
   )
 }
 
@@ -499,7 +513,7 @@ function createMainWindow() {
   })
 
   void mainWindow
-    .loadFile(path.join(__dirname, 'desktop.html'))
+    .loadURL(uiPageUrl('desktop'))
     .catch((error) =>
       console.error('No se pudo abrir la interfaz local de FocusBuddy.', error),
     )
@@ -558,7 +572,7 @@ function createCompanionWindow() {
     companionWindow = null
   })
 
-  void companionWindow.loadFile(path.join(__dirname, 'companion.html'))
+  void companionWindow.loadURL(uiPageUrl('companion'))
 }
 
 function createTray() {
@@ -646,7 +660,7 @@ if (!hasLock) {
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       app.setAppUserModelId(releaseContext.appId)
       if (app.isPackaged) {
         app.setAsDefaultProtocolClient(releaseContext.protocol)
@@ -661,6 +675,9 @@ if (!hasLock) {
         )
       }
       registerIpcHandlers()
+      await registerUiProtocolForSession(
+        session.fromPartition(releaseContext.partition),
+      )
       createMainWindow()
       createCompanionWindow()
       createTray()

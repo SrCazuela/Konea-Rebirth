@@ -1151,6 +1151,41 @@
 .landing-feature--focus .landing-feature__top > span:last-child {
   color: #b59bc6;
 }
+.landing-focus-download {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 10px 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d9f39655;
+  border-radius: 10px;
+  color: #e8f7bf;
+  background: #d9f3960d;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    transform 200ms ease,
+    background-color 200ms ease;
+}
+.landing-focus-download:hover {
+  transform: translateY(-2px);
+  background: #d9f3961a;
+}
+.landing-focus-download .landing-icon {
+  width: 18px;
+  transform: rotate(90deg);
+}
+.landing-focus-download small {
+  display: block;
+  margin-top: 3px;
+  color: #c0accd;
+  font-size: 9px;
+  font-weight: 400;
+}
 .landing-focus-art {
   min-height: 175px;
   display: flex;

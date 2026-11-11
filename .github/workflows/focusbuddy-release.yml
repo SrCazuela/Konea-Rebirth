@@ -91,12 +91,15 @@ jobs:
 
           $stableInstaller = Join-Path $releaseDirectory 'Konea-FocusBuddy-Windows-x64.exe'
           $checksumFile = "$stableInstaller.sha256"
+          $checksumList = Join-Path $releaseDirectory 'SHA256SUMS.txt'
           Copy-Item -LiteralPath $sourceInstaller -Destination $stableInstaller -Force
           $checksum = (Get-FileHash -LiteralPath $stableInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath $checksumFile -Value "$checksum  Konea-FocusBuddy-Windows-x64.exe" -Encoding ascii
+          Set-Content -LiteralPath $checksumList -Value "$checksum  Konea-FocusBuddy-Windows-x64.exe" -Encoding ascii
 
           "installer=$stableInstaller" >> $env:GITHUB_OUTPUT
           "checksum=$checksumFile" >> $env:GITHUB_OUTPUT
+          "checksum_list=$checksumList" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub Release
         env:
@@ -106,9 +109,10 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $installer = '${{ steps.assets.outputs.installer }}'
           $checksum = '${{ steps.assets.outputs.checksum }}'
+          $checksumList = '${{ steps.assets.outputs.checksum_list }}'
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer $checksum --clobber --repo $env:GITHUB_REPOSITORY
+            gh release upload $tag $installer $checksum $checksumList --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $tag $installer $checksum --generate-notes --title "Konea FocusBuddy $tag" --repo $env:GITHUB_REPOSITORY
+            gh release create $tag $installer $checksum $checksumList --generate-notes --title "Konea FocusBuddy $tag" --repo $env:GITHUB_REPOSITORY
           }

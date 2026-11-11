@@ -39,6 +39,7 @@ function verifyRuntimeArchive(archivePath) {
   const requiredFiles = [
     'electron/api-url.cjs',
     'electron/release-channel.cjs',
+    'electron/ui-protocol.cjs',
     'electron/desktop.html',
     'electron/desktop.css',
     'electron/desktop.js',

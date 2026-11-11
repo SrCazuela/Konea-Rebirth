@@ -3,9 +3,9 @@
 FocusBuddy es el espacio de concentración de Konea. Existe como una pestaña web
 y como una aplicación Electron descargable con interfaz local propia. No abre
 ni incrusta la SPA: carga `electron/desktop.html` desde el paquete. Ambos
-clientes usan la misma cuenta y API, y PostgreSQL continúa siendo la fuente de
-verdad detrás de esa API. El ejecutable no incorpora un servidor ni accede
-directamente a la base de datos.
+clientes comparten cuenta y datos cuando pertenecen al mismo entorno. PostgreSQL
+continúa siendo la fuente de verdad detrás de su API. El ejecutable no incorpora
+un servidor ni accede directamente a la base de datos.
 
 ## Alcance actual
 
@@ -63,6 +63,26 @@ un heartbeat cada 30 segundos. La API concede como máximo 90 segundos desde el
 último latido y materializa una pausa segura en la siguiente consulta o
 transición. Cerrar la ventana o perder conexión no puede inflar el tiempo de
 forma indefinida.
+
+Mientras están autenticados y visibles, ambos clientes consultan el resumen,
+las materias y los pendientes cada 10 segundos, además de refrescar al volver
+a la vista. El escritorio conserva consultas cada 30 segundos cuando está
+oculto y el compañero sigue habilitado, para actualizar su estado. Una acción
+en un cliente se refleja en el otro mediante la API; no
+se envían credenciales entre aplicaciones. Ante un conflicto `409`, se recupera
+el estado actual en lugar de mantener un cronómetro antiguo o indicar una
+desconexión falsa. Las consultas no se superponen ni reemplazan una mutación
+local con una respuesta anterior.
+
+Esta conexión requiere la **misma cuenta y el mismo backend**. La web local
+con API local y un instalador dirigido a otra API no comparten datos. Las
+preferencias del dispositivo tampoco se copian a otro equipo.
+
+Hay dos canales separados: **local** para trabajar con Konea en este equipo y
+**oficial** para usar las cuentas y datos de la plataforma publicada. Sus
+identidades de aplicación, perfiles y protocolos son distintos; pueden
+instalarse sin que uno cambie el servidor o la sesión del otro. Publicar cambios
+de código no copia datos entre sus bases.
 
 Los contratos HTTP completos se encuentran en [api.md](./api.md) y el esquema
 se define en `apps/api/src/db/schema.ts`, con la migración correspondiente en
@@ -176,6 +196,14 @@ El cliente en `apps/focusbuddy` carga `electron/desktop.html` mediante
 `loadFile`. Su interfaz morada contiene las pestañas Estudio, Progreso, Ajustes
 y Cuenta, incluido un login propio. Permite elegir método, materia y pendiente,
 controlar la sesión, revisar métricas y administrar preferencias de escritorio.
+Cuenta permite cambiar nombre visible, usuario, correo y contraseña mediante
+`/auth/account` y `/auth/password`: exige la contraseña actual, limpia los
+campos sensibles tras guardar y revoca las otras sesiones. El cliente que
+confirma mantiene su sesión renovada. La página web recupera los datos actuales
+mediante `/auth/me` y solicita identificarse de nuevo si su sesión fue revocada.
+La tarea seleccionada puede marcarse como completada mediante una acción
+explícita y confirmada, que usa `PATCH /academic/tasks/:taskId`. Finalizar el
+bloque de estudio no cambia automáticamente el estado del pendiente.
 El reloj se presenta localmente, pero la API/PostgreSQL siguen siendo la única
 autoridad del tiempo y las transiciones.
 
@@ -208,11 +236,14 @@ sesiones sí se sincronizan mediante la API.
 
 La superficie privilegiada del preload expone únicamente preferencias,
 snapshots sanitizados y una lista cerrada de operaciones de API: salud,
-login/me/logout, dashboard académico, resumen de estudio, inicio y transición
-de sesiones. No existe un `fetch` genérico. El proceso principal valida cada
+login/me/logout, actualización de cuenta y contraseña, dashboard académico,
+estado de pendientes, resumen de estudio, inicio y transición de sesiones. No existe un `fetch` genérico. El proceso principal valida cada
 operación y payload, rechaza redirecciones y realiza la solicitud con
 `credentials: include` desde una sesión persistente de Electron. La cookie
-`HttpOnly` no se expone a `desktop.html`.
+`HttpOnly` no se expone a `desktop.html`. Las peticiones del bridge tienen
+un límite de 20 segundos, que también cubre una respuesta cuyo cuerpo no
+termina de llegar. No se repiten automáticamente las escrituras que podrían
+haberse aplicado en el servidor.
 
 Todos los mensajes IPC validan que el emisor sea una ventana creada por la
 aplicación. El renderer no tiene Node.js, usa aislamiento de contexto y sandbox,
@@ -220,25 +251,40 @@ bloquea webviews, ventanas nuevas, navegación y permisos. Su CSP también
 rechaza conexiones directas: toda sincronización pasa por la allowlist del
 proceso principal.
 
+El preload transmite resultados y errores como objetos serializables. El
+renderer reconstruye sus errores en su propio contexto, conservando estado,
+código y campos de validación; así distingue sesión expirada (401), conflictos
+de sincronización (409) y problemas de conexión también en Electron real.
+
 En el paquete de distribución también se desactivan DevTools, ejecución como
 Node, `NODE_OPTIONS`, inspector y privilegios adicionales de `file://`; se
 activan cifrado de cookies, integridad de ASAR y carga exclusiva desde ASAR. El
 throttling en segundo plano se desactiva para que el heartbeat continúe al
 minimizar la ventana.
 
-### Configuración de API
+Desde 0.1.2, la interfaz se sirve mediante el origen interno
+`konea-focusbuddy-ui://app`, registrado en la sesión de cada canal. Solo admite
+GET/HEAD a sus páginas, scripts, estilos y sprites permitidos. No sirve rutas
+arbitrarias, archivos de configuración ni scripts del proceso principal. Esto
+permite cargar el paquete sin habilitar privilegios adicionales de `file://`.
 
-- Desarrollo: `http://localhost:3000/api/v1` por defecto. Se permiten
-  `FOCUSBUDDY_API_URL` y `--api-url=...`.
-- `iniciar-focusbuddy.bat`: pasa la API local al cliente, guarda el perfil en
-  `.local/focusbuddy-desktop/` y no inicia Vite ni la web.
-- Distribución: `FOCUSBUDDY_API_URL` se valida durante el build y se incorpora
-  como dato público. El ejecutable empaquetado ignora overrides de runtime;
-  cambiar de servidor exige volver a empaquetar.
+### Canales y configuración de API
 
-La URL base no admite credenciales, query string ni fragmento y debe terminar
-en `/api/v1` para la publicación. Un endpoint remoto requiere HTTPS; HTTP se
-reserva a `localhost`, `127.0.0.1` o `[::1]`.
+| Canal   | API                                                       | Protocolo                       | Salida del instalador                 |
+| ------- | --------------------------------------------------------- | ------------------------------- | ------------------------------------- |
+| Local   | `http://localhost:3000/api/v1` por defecto; solo loopback | `konea-focusbuddy-local://open` | `apps/focusbuddy/release/local/`      |
+| Oficial | API remota HTTPS incorporada durante el build             | `konea-focusbuddy://open`       | `apps/focusbuddy/release/production/` |
+
+`iniciar-focusbuddy.bat` prepara el entorno local y abre su cliente sin Vite ni
+la web. Las opciones de desarrollo no permiten convertir ese canal en un
+cliente de la plataforma remota.
+
+Para el canal oficial se exige `FOCUSBUDDY_API_URL` durante el empaquetado. La
+URL es un dato público, debe usar HTTPS, terminar en `/api/v1` y no contener
+credenciales, query string ni fragmento. Se rechaza una API loopback y la
+ausencia de configuración detiene el build: nunca recurre a localhost. El
+ejecutable empaquetado ignora overrides de runtime; cambiar de servidor exige
+volver a empaquetar. No se incluyen claves ni secretos del proxy en el cliente.
 
 ### Comandos
 
@@ -249,29 +295,42 @@ reserva a `localhost`, `127.0.0.1` o `[::1]`.
 # Solo Electron, cuando la API ya está activa
 npm run focusbuddy
 
-# Instalador demostrable contra la API local (todavía sin hosting)
+# Instalador para trabajar contra la API local
 Remove-Item Env:FOCUSBUDDY_API_URL -ErrorAction SilentlyContinue
-npm run dist:focusbuddy
+npm run dist:local --workspace @konea/focusbuddy
 
-# Instalador enlazado a una API publicada
+# Instalador oficial; sustituir el origen por la API HTTPS comprobada
 $env:FOCUSBUDDY_API_URL = 'https://api.konea.example/api/v1'
-npm run dist:focusbuddy
+npm run dist:production --workspace @konea/focusbuddy
 ```
 
 El comando de distribución genera la configuración, empaqueta y verifica el
-endpoint y los fuses del ejecutable. El resultado se escribe en
-`apps/focusbuddy/release/`, carpeta ignorada por Git. La URL es pública; nunca se
-deben incorporar API keys, cookies, contraseñas ni enlaces ICS de AVA.
+endpoint, el canal y los fuses del ejecutable. Cada canal escribe en su propia
+subcarpeta de `apps/focusbuddy/release/`, ignorada por Git. La URL es pública;
+nunca se deben incorporar API keys, cookies, contraseñas ni enlaces ICS de AVA.
 
-Mientras no exista hosting, omitir `FOCUSBUDDY_API_URL` genera un instalador
-local fijado a `http://localhost:3000/api/v1`; la excepción HTTP solo aplica al
-loopback del mismo equipo. Para demostrarlo se deben mantener PostgreSQL y la
-API activos. `iniciar-focusbuddy.bat` es el recorrido más directo: prepara esos
-servicios y abre Electron sin Vite. Un instalador para otros equipos requiere
-una API publicada mediante HTTPS; publicar la web no es un requisito técnico
-del cliente de escritorio.
+Para demostrar el canal local se deben mantener PostgreSQL y la API activos.
+`iniciar-focusbuddy.bat` prepara esos servicios y abre Electron sin Vite. El
+canal oficial necesita una API publicada accesible desde el equipo del
+estudiante y un inicio de sesión propio; tener una sesión abierta en el
+navegador no inicia sesión en Electron.
 
 ### Publicación y descarga
+
+La tarjeta web distingue el entorno por el hostname del navegador. En
+`localhost`, `127.0.0.1` y `[::1]`, incluso con una compilación de producción
+previsualizada localmente, **Abrir FocusBuddy local** usa
+`konea-focusbuddy-local://open`. En un sitio alojado, **Abrir FocusBuddy** usa
+`konea-focusbuddy://open` y la descarga corresponde exclusivamente al canal
+oficial. La web local no ofrece ese instalador para evitar mezclar cuentas y
+servidores.
+
+La versión instalada registra su protocolo y abre o enfoca su ventana propia.
+El navegador o Windows pueden pedir confirmación; el enlace no permite
+comprobar que el programa se abrió. Requiere instalar la versión actual: un
+ejecutable anterior no adquiere el protocolo por actualizar la página. El
+enlace no transmite contraseñas, cookies, endpoints ni otra configuración, y
+no inicia sesión automáticamente.
 
 El workflow `.github/workflows/focusbuddy-release.yml` publica una versión de
 Windows x64 cuando se envía un tag `focusbuddy-v*`; el tag debe coincidir
@@ -282,11 +341,14 @@ credenciales, query o fragmento. El release
 incluye:
 
 - `Konea-FocusBuddy-Windows-x64.exe`;
-- `Konea-FocusBuddy-Windows-x64.exe.sha256`.
+- `SHA256SUMS.txt`, que permite verificar el instalador publicado.
 
-La tarjeta de descarga del portal solo presenta el enlace cuando
-`VITE_FOCUSBUDDY_DOWNLOAD_URL` contiene una URL HTTPS válida. Para enlazar
-siempre la publicación más reciente puede configurarse, por ejemplo, con:
+La tarjeta del portal alojado solo presenta la descarga cuando
+`VITE_FOCUSBUDDY_DOWNLOAD_URL` apunta al artefacto oficial
+`Konea-FocusBuddy-Windows-x64.exe` en un release HTTPS del repositorio
+`SrCazuela/Konea-Rebirth` en GitHub. Admite una versión concreta o el alias
+`latest/download`. Después de publicar y comprobar el artefacto puede
+configurarse, por ejemplo, con:
 
 ```dotenv
 VITE_FOCUSBUDDY_DOWNLOAD_URL=https://github.com/SrCazuela/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe
@@ -295,11 +357,55 @@ VITE_FOCUSBUDDY_DOWNLOAD_URL=https://github.com/SrCazuela/Konea-Rebirth/releases
 La tarjeta se oculta dentro del propio cliente Electron porque allí la
 aplicación ya está instalada.
 
-Si la variable está vacía, no usa HTTPS o contiene credenciales, query string o
-fragmento, la interfaz indica honestamente que la versión pública todavía no fue
-publicada. La URL es configuración pública, no una clave, y queda incorporada al
-compilar la web. El instalador permanece sin firma digital hasta que el equipo
-configure un certificado de firma de código.
+Si la variable está vacía o no cumple esa validación, la interfaz indica
+**Versión oficial aún no publicada**, sin crear un enlace de ejemplo. Se
+rechazan otros repositorios o hosts, puertos no estándar, artefactos locales,
+credenciales, query string y fragmento. La URL es configuración pública, no una
+clave, y queda incorporada al compilar la web. Cambiarla requiere reconstruir
+y publicar el frontend. El instalador permanece sin firma digital hasta que
+el equipo configure un certificado de firma de código.
+
+## Estado de validación y publicación
+
+La separación de canales y el protocolo interno de 0.1.2 tienen 107 pruebas de
+escritorio aprobadas, incluidas regresiones para captura del icono, aislamiento
+de cuentas, configuración verificada y acceso restringido a recursos. La web
+tiene 52 pruebas aprobadas. La portada pública y el portal pueden presentar la
+descarga oficial verificada; el entorno local solo abre su propio cliente.
+El destino oficial actual es
+`https://konea-campus-connect.danaealvarez0917.chatgpt.site/api/v1`.
+
+Antes de separar los canales, en la revisión local del 11 de noviembre de 2026
+se generó y verificó
+`apps/focusbuddy/release/Konea-FocusBuddy-0.1.1-x64.exe`, con Electron 44.11.1 y
+la API incorporada `http://localhost:3000/api/v1`. Este artefacto sirve para el
+entorno local y no se debe publicar como cliente oficial. Las nuevas
+compilaciones usan las subcarpetas y protocolos de la tabla anterior. Ni el
+build ni la configuración de un enlace confirman por sí solos su publicación,
+instalación o conectividad remota.
+
+La revisión registró **380 pruebas automatizadas aprobadas**: 197 de API,
+18 del conector AVA, 87 de escritorio, 32 del cliente web, 32 de sincronización
+y 14 de alojamiento. `npm audit --omit=dev` no informó avisos; permanecen
+10 avisos moderados en dependencias de desarrollo, sin forzar cambios de
+versión mayor.
+
+También se aprobó un recorrido E2E local de **13 etapas** con Edge y Electron
+44.11.1 reales, sin mocks ni errores de página. Verificó acceso en ambas
+interfaces; inicio y pausa desde la web reflejados en el escritorio;
+reanudación, finalización y completado explícito de una tarea desde el
+escritorio reflejados en la web; cambios de cuenta y contraseña con revocación
+de sesión y nuevo acceso; y el diseño móvil de 390 píxeles y el compañero.
+El PNG del avatar móvil se decodificó a 2136 × 3000. La evidencia quedó en
+`.local/fixes-20261110/e2e-real/report.json`, con limpieza de la base aislada y
+los procesos verificada. Este recorrido no cubre cierre abrupto y recuperación,
+caída de la API, instalación limpia ni ejecución contra la demo remota.
+
+Para conectar el escritorio a Sites puede configurarse su
+URL pública seguida de `/api/v1`: el proxy añade su secreto únicamente en el
+servidor. Deben comprobarse los controles de acceso del sitio y los recorridos
+remotos antes de dar esa versión por validada. Nunca se incorpora el secreto
+del proxy al programa. Véase [hosting-sites.md](./hosting-sites.md).
 
 ## Limitaciones y siguiente fase
 
@@ -320,5 +426,5 @@ La siguiente fase recomendada es:
 4. materializar sesiones abandonadas con un trabajo programado del servidor;
 5. publicar la API con HTTPS, regenerar el cliente contra ese endpoint, firmar
    el instalador y definir actualizaciones verificadas;
-6. ejecutar pruebas E2E del recorrido login → sesión → pausa → cierre
-   abrupto → recuperación → finalización.
+6. ampliar el E2E local aprobado con cierre abrupto y recuperación, caída de
+   la API, instalación limpia y el recorrido contra el entorno remoto.
