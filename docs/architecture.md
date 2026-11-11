@@ -7,7 +7,8 @@ mantiene en [backlog.md](./backlog.md).
 ## Vista general
 
 Konea ofrece dos interfaces separadas —la SPA web y FocusBuddy para Electron—
-con una API como única frontera de negocio:
+con la API de cada entorno como única frontera de negocio. El siguiente esquema
+corresponde al entorno local; el alojamiento oficial usa Sites, Render y Neon:
 
 ```text
 ┌──────────────────────┐     ┌──────────────────────────┐
@@ -45,8 +46,14 @@ moderación y demás reglas de negocio.
 - notifican globalmente la expiración de sesión;
 - no contienen secretos ni deciden permisos definitivos.
 
+El cliente web limita las lecturas a 20 segundos y las escrituras a 30;
+`POST /kuco/messages` admite 150 segundos para cubrir la generación y su
+fallback. Estos límites también cubren la lectura del cuerpo de la respuesta.
+Los errores se muestran para recuperar el estado; una escritura no se repite
+automáticamente cuando se desconoce si el servidor ya la aplicó.
+
 La interfaz se organiza alrededor de portal, conexiones, notificaciones, chat,
-DUCO, espacio académico y FocusBuddy. Estado de carga, vacío y error se resuelve
+KUCO, espacio académico y FocusBuddy. Estado de carga, vacío y error se resuelve
 en el cliente, pero toda acción se vuelve a validar en el servidor.
 
 ### Cliente de escritorio FocusBuddy
@@ -56,32 +63,40 @@ carga `electron/desktop.html` desde el paquete: no abre la ruta `#focusbuddy`, n
 incrusta la SPA y no necesita que Vite esté activo. Presenta login, sesiones,
 progreso, ajustes y cuenta con la identidad visual morada de Konea.
 
+El botón web **Abrir FocusBuddy** usa `konea-focusbuddy://open` en la web
+alojada y `konea-focusbuddy-local://open` en localhost, según el canal instalado.
+Solo abre o enfoca el programa; no envía credenciales, no configura la API ni
+inicia sesión automáticamente. El instalador oficial 0.1.2 se descarga desde
+GitHub Releases y los canales conservan cuentas y perfiles separados.
+
 El renderer local no tiene acceso general a red ni a Node.js. Su preload solo
-expone operaciones allowlist de salud, login/sesión, dashboard académico y
-sesiones de estudio. El proceso principal valida operación y payload y usa
+expone operaciones allowlist de salud, login/sesión, actualización de cuenta y
+contraseña, dashboard académico, estado de pendientes y sesiones de estudio.
+El proceso principal valida operación y payload y usa
 `session.fetch` con `credentials: include`; así la cookie `HttpOnly` permanece en
 una partición persistente de Electron y nunca se entrega al renderer. No existe
 conexión directa a PostgreSQL ni una ruta arbitraria de proxy.
 
-En desarrollo la API predeterminada es `http://localhost:3000/api/v1` y puede
-elegirse con `FOCUSBUDDY_API_URL` o `--api-url`. Durante
-`npm run dist:focusbuddy`, el endpoint se valida y queda incorporado como recurso
-público del instalador. Una aplicación empaquetada ignora variables y argumentos
-de runtime: cambiar el servidor exige regenerar el instalador. Las URL remotas
-requieren HTTPS y HTTP se reserva para loopback.
+El canal local usa `http://localhost:3000/api/v1` por defecto y admite
+`FOCUSBUDDY_API_URL` o `--api-url` solo para loopback.
+`npm run dist:focusbuddy:local` empaqueta ese canal;
+`npm run dist:focusbuddy:production` exige una API remota HTTPS explícita.
+El endpoint y el canal quedan incorporados y verificados en el instalador,
+que ignora overrides de runtime; el oficial nunca recurre a localhost.
 
 Las ventanas usan `contextIsolation`, `sandbox`, `nodeIntegration: false`, una
-partición persistente propia y bloqueo de segunda instancia. Se rechazan
+partición persistente y bloqueo de segunda instancia propios de cada canal. Se rechazan
 permisos, webviews, ventanas nuevas y navegación externa. La CSP de
 `desktop.html` impide que el renderer haga conexiones directas. El instalador es
 un cliente de la API Konea: la interfaz funciona sin la web, pero las operaciones
 persistentes no funcionan sin una API y PostgreSQL accesibles.
 
-El paquete incluye derivados transparentes de los sprites oficiales obtenidos
-desde el Drive del equipo. Los PNG fuente opacos y su manifiesto de procedencia
-permanecen preservados en el repositorio. Esos derivados se usan solo en
-Electron por ahora; la SPA conserva el recurso provisional hasta portar el
-personaje y completar los estados visuales faltantes.
+La web y Electron comparten el chibi oficial como personaje predeterminado,
+con los PNG transparentes de alta resolución entregados por la artista y un
+manifiesto de procedencia. El runtime conserva 35 imágenes y 13 escenas, con
+animación y parpadeo según los fotogramas disponibles. Kuco sigue disponible
+como alternativa en el escritorio. El seguimiento de ojos por el puntero
+permanece pendiente; no es una función de los sprites normales actuales.
 
 ### API
 
@@ -116,9 +131,11 @@ Las operaciones que deben ser atómicas —registro, creación de grupos,
 mensajes/lectura, tareas con evento, encuestas, votos, canje QR y transiciones de
 estudio— usan transacciones.
 
-### Archivos locales
+### Archivos y almacenamiento
 
-El adaptador actual escribe en `.local/uploads/`:
+La API usa `.local/uploads/` con `UPLOAD_STORAGE=filesystem`, o un bucket
+privado compatible con S3 con `UPLOAD_STORAGE=s3`. Ambos adaptadores conservan
+el mismo contrato de autorización:
 
 - nombres generados con UUID, no con el nombre proporcionado por el usuario;
 - límite de 5 MB;
@@ -132,9 +149,10 @@ El adaptador actual escribe en `.local/uploads/`:
   archivo;
 - imágenes de perfil, posts y avatares de grupo rechazan archivos PDF.
 
-La base guarda la URL, nombre y tamaño cuando corresponda. Este límite permite
-reemplazar el almacenamiento local por Supabase Storage o S3 sin rediseñar el
-dominio social.
+La base guarda la referencia, nombre y tamaño cuando corresponda. El cliente
+lee por la ruta autenticada de Konea, sin recibir credenciales del bucket. El
+adaptador de objetos permite persistir imágenes y adjuntos cuando el disco del
+servidor es temporal, sin cambiar el dominio social.
 
 ## Modelo de datos
 
@@ -158,7 +176,7 @@ users ──1:1── profiles
   ├──1:N── qr_codes
   ├──1:N── notifications
   ├──1:N── assistant_messages
-  ├──1:N── duco_drafts
+  ├──1:N── kuco_drafts
   ├──1:N── academic_courses ──1:N── academic_tasks
   ├──1:N── academic_calendar_events
   ├──1:0..1── academic_calendar_syncs
@@ -234,7 +252,8 @@ El cliente consulta periódicamente nuevos mensajes; la autorización siempre
 verifica que la membresía no esté archivada.
 
 En grupos, un integrante que fue añadido o reincorporado solo puede consultar,
-buscar, contar y descargar mensajes/adjuntos creados desde su `joinedAt`; el
+buscar, contar y descargar mensajes/adjuntos creados desde su `joinedAt`; la
+misma restricción protege el detalle y los votos de encuestas anteriores. El
 propietario original conserva el historial. Los mensajes `system` no se pueden
 editar ni eliminar, incluso por un administrador del grupo.
 
@@ -253,9 +272,11 @@ contenido; la persona asignada puede actualizar su estado.
 Crear un código invalida cualquier código activo anterior del usuario. El nuevo
 valor tiene seis caracteres y expira en cinco minutos. El canje transaccional lo
 reclama una sola persona y crea/restaura el chat directo. Repetir el canje por la
-misma persona es idempotente; otra persona recibe conflicto. La generación toma
-un bloqueo asesor por propietario para impedir dos códigos vigentes creados en
-carreras concurrentes.
+misma persona es idempotente solo mientras la conexión y el chat continúen
+vigentes; no vuelve a crear una relación revocada. Eliminar una conexión
+invalida los códigos consumidos entre ambas personas. La eliminación y la
+redención se serializan por pareja, y la generación toma un bloqueo asesor por
+propietario para impedir códigos vigentes creados en carreras concurrentes.
 
 ### Moderación y reportes
 
@@ -274,7 +295,10 @@ estudiante reemplaza lógicamente el conjunto activo de eventos y materias con
 origen `ava`; esas materias son de solo lectura. El conector experimental MV3
 exporta el DOM visible a un archivo local: Konea valida y persiste una vista
 previa, compara duplicados y exige otra confirmación antes de crear materias
-`ava_extension` y pendientes con vencimiento explícito. Las publicaciones del
+`ava_extension` y pendientes con vencimiento explícito. Si una materia importada
+activa cambia de código, sección o semestre, la vista previa muestra las
+diferencias y solo las selecciones confirmadas actualizan la fila existente.
+Las materias manuales quedan protegidas y los campos omitidos no borran datos. Las publicaciones del
 flujo reciente se muestran de forma efímera en el popup y no se persisten como
 tareas. Repetir una captura es idempotente y una captura posterior nunca
 desactiva elementos ausentes. Las materias manuales y las importadas por
@@ -298,6 +322,22 @@ El flujo de una sesión de estudio es:
 6. solo las sesiones `completed` aportan minutos a las métricas y rachas; las
    canceladas quedan en historial sin sumarse.
 
+La web y el escritorio renuevan el resumen, las materias y los pendientes cada
+10 segundos mientras la vista está visible y hay sesión autenticada, sin
+solicitudes superpuestas. También recuperan el estado al volver a la vista.
+El escritorio consulta cada 30 segundos mientras está oculto si el compañero
+está habilitado.
+Los conflictos `409` de sesión disparan una lectura del estado autoritativo,
+en lugar de interpretar una acción hecha en otro cliente como desconexión.
+La sincronización requiere la misma cuenta y el mismo backend: no copia datos
+entre la base local y la base alojada.
+
+Cambiar usuario o correo mediante `/auth/account`, o contraseña mediante
+`/auth/password`, exige la contraseña actual y rota las sesiones. `/profile`
+acepta el usuario actual por compatibilidad, pero rechaza cambiarlo con
+`409 ACCOUNT_SETTINGS_REQUIRED`. El cliente que confirma conserva su nueva
+sesión; los otros deben volver a identificarse.
+
 La base garantiza como máximo una sesión `active`/`paused` por usuario. El
 servidor concede una gracia máxima de 90 segundos desde `lastHeartbeatAt`. Si el
 cliente desaparece, el tiempo efectivo queda limitado a esa ventana y la sesión
@@ -305,9 +345,9 @@ se pausa al recibir la siguiente consulta o transición. Una tarea programada qu
 materialice la pausa aun cuando nadie vuelva a consultar sería una mejora de
 operación futura, no una condición para mantener correctas las estadísticas.
 
-### DUCO
+### KUCO
 
-DUCO usa un adaptador de servidor seleccionado por `DUCO_AI_PROVIDER`:
+KUCO usa un adaptador de servidor seleccionado por `KUCO_AI_PROVIDER`:
 
 - `local` aplica reglas determinísticas y también funciona como fallback;
 - `ollama` consulta el modelo local definido en `OLLAMA_MODEL`;
@@ -319,11 +359,11 @@ Ollama el procesamiento generativo permanece en el equipo; con OpenAI se envía
 al endpoint configurado el contexto necesario para responder. Si Ollama u
 OpenAI falla, el servicio vuelve al modo `local`.
 
-`POST /duco/messages` aplica límites de 30 consultas por usuario y 120 por
+`POST /kuco/messages` aplica límites de 30 consultas por usuario y 120 por
 origen cada 15 minutos. Una instancia admite cuatro generaciones simultáneas y
 solo una por usuario. El iniciador también degrada a `local` si falla la
 comprobación de Ollama/OpenAI, sin cambiar el archivo `.env`.
-Ollama usa `DUCO_AI_TIMEOUT_MS` (120 segundos por defecto) y OpenAI un límite
+Ollama usa `KUCO_AI_TIMEOUT_MS` (120 segundos por defecto) y OpenAI un límite
 independiente más breve, `OPENAI_TIMEOUT_MS` (45 segundos por defecto).
 
 El flujo separa lenguaje de acciones de negocio:
@@ -335,9 +375,9 @@ El flujo separa lenguaje de acciones de negocio:
 3. el backend valida la intención, descarta acciones no respaldadas por lo que
    dijo el estudiante y aplica reglas determinísticas de seguridad;
 4. pregunta y respuesta se guardan juntas en una transacción; una acción
-   `create_task` crea o actualiza un `duco_draft`, no una tarea;
+   `create_task` crea o actualiza un `kuco_draft`, no una tarea;
 5. la web recupera el borrador, permite editarlo y exige una confirmación
-   explícita antes de llamar a `POST /duco/tasks`;
+   explícita antes de llamar a `POST /kuco/tasks`;
 6. la confirmación crea `academic_tasks` y cambia el borrador a `confirmed` en
    la misma transacción; descartarlo cambia su estado a `cancelled`.
 
@@ -348,14 +388,14 @@ fechas vencidas. La relación desde el borrador hacia su mensaje de origen usa
 `ON DELETE SET NULL`: borrar el historial de conversación no elimina el
 borrador ni permite saltarse la revisión humana.
 
-Las solicitudes institucionales mantienen la misma frontera: DUCO puede
+Las solicitudes institucionales mantienen la misma frontera: KUCO puede
 preparar un formulario, pero el envío solo ocurre cuando el usuario lo revisa y
 confirma mediante la ruta correspondiente. El modelo nunca obtiene acceso
 directo a PostgreSQL ni ejecuta botones por cuenta propia.
 
 Las menciones explícitas de autolesión o daño a terceros pasan primero por una
 regla determinística, incluso cuando el proveedor seleccionado es OpenAI u
-Ollama. DUCO pregunta si existe peligro inmediato y muestra la línea chilena de
+Ollama. KUCO pregunta si existe peligro inmediato y muestra la línea chilena de
 prevención del suicidio `*4141` (gratuita desde celulares, 24/7), SAMU `131` y
 Carabineros `133`. Estos datos provienen del
 [Ministerio de Salud](https://www.minsal.cl/linea-de-atencion-4141-no-estas-solo-no-estas-sola/)
@@ -380,7 +420,7 @@ Controles actuales:
 - cookies `HttpOnly`, `SameSite=Lax`, ruta `/` y `Secure` en producción;
 - expiración configurable y revocación de sesión actual;
 - límites por origen en registro/login y canje QR;
-- límites de carga, sincronización AVA y consultas de DUCO; cuota de archivos por
+- límites de carga, sincronización AVA y consultas de KUCO; cuota de archivos por
   usuario;
 - Helmet, CORS explícito, JSON máximo de 1 MB y logs redactados;
 - validación de `Origin` para escrituras de navegador y un límite global
@@ -455,7 +495,7 @@ sprites; no despliega Express ni PostgreSQL.
   cuando la API esté directamente detrás de un reverse proxy confiable.
 - datos y archivos permanecen en `D:` con la instalación actual.
 - `iniciar.bat -FocusBuddy` (o `iniciar-focusbuddy.bat`) prepara Docker,
-  migraciones, cuenta demo y proveedor DUCO, levanta o reutiliza la API y abre
+  migraciones, cuenta demo y proveedor KUCO, levanta o reutiliza la API y abre
   Electron cuando su healthcheck responde. Este modo no inicia Vite ni la web.
 - El launcher define `FOCUSBUDDY_DATA_DIR=.local/focusbuddy-desktop`; caché,
   cookies y datos de sesión de Electron permanecen en el disco del proyecto y no
@@ -472,7 +512,11 @@ Electron  ─────────────────────HTTPS�
                                                   └─────▶ almacenamiento de objetos
 ```
 
-Secuencia de migración:
+El esquema anterior es conceptual: en el alojamiento actual ambos clientes
+acceden a la API a través del proxy de Sites; Express se ejecuta en Render y
+PostgreSQL y los archivos privados en Neon. FocusBuddy oficial 0.1.2 aprobó
+login, persistencia, logout y sincronización con ese entorno. La siguiente
+secuencia orienta nuevas instalaciones y cambios, sin recrear la base existente:
 
 1. crear la base administrada y configurar `DATABASE_URL` con SSL;
 2. ejecutar migraciones versionadas desde un job controlado;
@@ -481,10 +525,10 @@ Secuencia de migración:
 5. desplegar API con `NODE_ENV=production`, secretos, HTTPS y health checks;
 6. desplegar la web con `VITE_API_URL` correcto;
 7. compilar el instalador con `FOCUSBUDDY_API_URL` HTTPS y comprobar login,
-   cookie persistente, sincronización y actualizaciones;
-8. configurar `CORS_ORIGIN`, `TRUST_PROXY_HOPS`, dominio de cookie, backups y
+   cookie persistente, sincronización y aislamiento de canales;
+8. configurar `CORS_ORIGIN`, `TRUST_PROXY_HOPS`, cookies de sesión, backups y
    observabilidad;
-9. ejecutar pruebas de humo con una base no productiva antes de importar datos.
+9. probar las migraciones en una copia aislada antes de aplicarlas en producción.
 
 Hostinger solo es válido si el plan permite el runtime Node requerido, un
 proceso persistente, variables de entorno y salida TLS hacia PostgreSQL. Si solo

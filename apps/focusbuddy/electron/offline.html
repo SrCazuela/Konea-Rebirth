@@ -4,10 +4,15 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FocusBuddy sin conexión</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./assets/branding/konea-mark.svg"
+    />
     <style>
       :root {
         color-scheme: light;
@@ -33,16 +38,13 @@
         border-radius: 28px;
         box-shadow: 0 24px 70px rgba(72, 35, 125, 0.13);
       }
-      .avatar {
-        width: 112px;
-        height: 112px;
+      .offline-brand {
+        display: block;
+        width: min(200px, 100%);
+        height: auto;
+        aspect-ratio: 450 / 166;
         margin: 0 auto 24px;
-        display: grid;
-        place-items: center;
-        border-radius: 36px;
-        color: #fff;
-        font-size: 52px;
-        background: linear-gradient(145deg, #9258e8, #6130bd);
+        object-fit: contain;
         animation: float 2.6s ease-in-out infinite;
       }
       h1 {
@@ -73,7 +75,7 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .avatar {
+        .offline-brand {
           animation: none;
         }
       }
@@ -81,7 +83,13 @@
   </head>
   <body>
     <main>
-      <div class="avatar" aria-hidden="true">✦</div>
+      <img
+        class="offline-brand"
+        src="./assets/branding/konea-logo.svg"
+        alt="Konea"
+        width="450"
+        height="166"
+      />
       <h1>FocusBuddy no encuentra Konea</h1>
       <p>
         Inicia el entorno con <strong>iniciar.bat</strong> y vuelve a

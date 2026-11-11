@@ -158,6 +158,20 @@ function discardedPayload(now: Date): AvaDomImportPayload {
   }
 }
 
+const metadataFields = ['code', 'section', 'term'] as const
+
+function courseMetadataChanges(
+  course: AvaDomImportPayload['courses'][number],
+  stored: { code: string | null; section: string | null; term: string | null },
+) {
+  return metadataFields.flatMap((field) => {
+    const next = course[field]
+    return next !== null && next !== stored[field]
+      ? [{ field, from: stored[field], to: next }]
+      : []
+  })
+}
+
 async function minimizeExpiredDrafts(userId: string, now: Date) {
   await db
     .update(avaDomImports)
@@ -189,6 +203,9 @@ async function buildPreview(userId: string, payload: AvaDomImportPayload) {
             normalizedName: academicCourses.normalizedName,
             active: academicCourses.active,
             source: academicCourses.source,
+            code: academicCourses.code,
+            section: academicCourses.section,
+            term: academicCourses.term,
           })
           .from(academicCourses)
           .where(
@@ -224,18 +241,27 @@ async function buildPreview(userId: string, payload: AvaDomImportPayload) {
         !storedCourse.active &&
         storedCourse.source === EXTERNAL_SOURCE,
       )
+      const changes =
+        storedCourse?.source === EXTERNAL_SOURCE
+          ? courseMetadataChanges(course, storedCourse)
+          : []
+      const updatable = Boolean(storedCourse?.active && changes.length > 0)
       return {
         ...course,
         // `existing` means that there is nothing the importer can do. Keeping
         // it false for a reactivatable course also makes older clients select
         // it instead of silently skipping it.
-        existing: Boolean(storedCourse) && !reactivatable,
+        existing: Boolean(storedCourse) && !reactivatable && !updatable,
         reactivatable,
+        updatable,
+        changes,
         state: !storedCourse
           ? ('new' as const)
           : reactivatable
             ? ('reactivatable' as const)
-            : ('existing' as const),
+            : updatable
+              ? ('updatable' as const)
+              : ('existing' as const),
       }
     }),
     activities: payload.activities.map((activity) => ({
@@ -533,6 +559,37 @@ avaImportsRouter.post(
         reactivatedCourses += reactivated.length
       }
 
+      let updatedCourses = 0
+      for (const course of selectedCourses) {
+        const storedCourse = storedCoursesByName.get(
+          normalizeCourseName(course.name),
+        )
+        if (
+          !storedCourse?.active ||
+          storedCourse.source !== EXTERNAL_SOURCE ||
+          courseMetadataChanges(course, storedCourse).length === 0
+        )
+          continue
+        const updated = await transaction
+          .update(academicCourses)
+          .set({
+            code: course.code ?? storedCourse.code,
+            section: course.section ?? storedCourse.section,
+            term: course.term ?? storedCourse.term,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(academicCourses.id, storedCourse.id),
+              eq(academicCourses.userId, currentUser.id),
+              eq(academicCourses.active, true),
+              eq(academicCourses.source, EXTERNAL_SOURCE),
+            ),
+          )
+          .returning({ id: academicCourses.id })
+        updatedCourses += updated.length
+      }
+
       const coursesToInsert = selectedCourses.filter(
         (course) => !storedCoursesByName.has(normalizeCourseName(course.name)),
       )
@@ -629,8 +686,12 @@ avaImportsRouter.post(
         reactivatedCourses,
         importedTasks: insertedTasks.length,
         existingCourses:
-          selectedCourses.length - insertedCourses.length - reactivatedCourses,
+          selectedCourses.length -
+          insertedCourses.length -
+          reactivatedCourses -
+          updatedCourses,
         existingTasks: selectedActivities.length - insertedTasks.length,
+        ...(updatedCourses > 0 ? { updatedCourses } : {}),
       }
       await transaction
         .update(avaDomImports)

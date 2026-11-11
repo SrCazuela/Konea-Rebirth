@@ -536,8 +536,8 @@ try {
     Write-Host "Contenido de demostracion omitido en NODE_ENV=$NodeEnvironment."
   }
 
-  Write-Step -Number 7 -Total 8 -Message 'Preparando el proveedor de IA de DUCO'
-  $Provider = Get-DotEnvValue -Name 'DUCO_AI_PROVIDER'
+  Write-Step -Number 7 -Total 8 -Message 'Preparando el proveedor de IA de KUCO'
+  $Provider = Get-DotEnvValue -Name 'KUCO_AI_PROVIDER'
   if ($null -eq $Provider) {
     if ($NodeEnvironment -eq 'development' -or [string]::IsNullOrWhiteSpace($NodeEnvironment)) {
       $Provider = 'ollama'
@@ -548,7 +548,7 @@ try {
   }
 
   if ([string]::IsNullOrWhiteSpace($Provider)) {
-    throw 'DUCO_AI_PROVIDER esta definido, pero no tiene valor.'
+    throw 'KUCO_AI_PROVIDER esta definido, pero no tiene valor.'
   }
   $Provider = $Provider.ToLowerInvariant()
 
@@ -575,16 +575,16 @@ try {
       }
       catch {
         Write-Warning ("Ollama no esta disponible: {0}" -f $_.Exception.Message)
-        Write-Host 'Konea continuara con las reglas locales de DUCO.' -ForegroundColor Yellow
+        Write-Host 'Konea continuara con las reglas locales de KUCO.' -ForegroundColor Yellow
         $Provider = 'local'
-        $env:DUCO_AI_PROVIDER = 'local'
+        $env:KUCO_AI_PROVIDER = 'local'
       }
     }
     'openai' {
       try {
         $OpenAiKey = Get-DotEnvValue -Name 'OPENAI_API_KEY'
         if ([string]::IsNullOrWhiteSpace($OpenAiKey)) {
-          throw 'DUCO_AI_PROVIDER=openai requiere OPENAI_API_KEY en .env.'
+          throw 'KUCO_AI_PROVIDER=openai requiere OPENAI_API_KEY en .env.'
         }
 
         $OpenAiModel = Get-DotEnvValue -Name 'OPENAI_MODEL'
@@ -605,16 +605,16 @@ try {
       }
       catch {
         Write-Warning ("OpenAI no esta disponible: {0}" -f $_.Exception.Message)
-        Write-Host 'Konea continuara con las reglas locales de DUCO.' -ForegroundColor Yellow
+        Write-Host 'Konea continuara con las reglas locales de KUCO.' -ForegroundColor Yellow
         $Provider = 'local'
-        $env:DUCO_AI_PROVIDER = 'local'
+        $env:KUCO_AI_PROVIDER = 'local'
       }
     }
     'local' {
-      Write-Host 'DUCO usara su modo local deterministico; no requiere un servicio externo.' -ForegroundColor Green
+      Write-Host 'KUCO usara su modo local deterministico; no requiere un servicio externo.' -ForegroundColor Green
     }
     default {
-      throw "DUCO_AI_PROVIDER='$Provider' no es valido. Usa local, ollama u openai."
+      throw "KUCO_AI_PROVIDER='$Provider' no es valido. Usa local, ollama u openai."
     }
   }
 

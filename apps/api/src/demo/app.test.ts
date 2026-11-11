@@ -59,10 +59,10 @@ beforeAll(async () => {
   api.post('/api/v1/test', (_request, response) =>
     response.json({ status: 'ok' }),
   )
-  api.post('/api/v1/duco/messages', (_request, response) =>
+  api.post('/api/v1/kuco/messages', (_request, response) =>
     response.json({ status: 'ok' }),
   )
-  api.get('/api/v1/duco/messages', (_request, response) =>
+  api.get('/api/v1/kuco/messages', (_request, response) =>
     response.json({ messages: [] }),
   )
   api.use((_request, response) =>
@@ -198,7 +198,7 @@ describe('password-protected compiled demo server', () => {
     for (let index = 0; index < 20; index += 1) {
       const response = await request(app)
         .post(
-          index % 2 === 0 ? '/api/v1/duco/messages' : '/api/v1/DUCO/MESSAGES/',
+          index % 2 === 0 ? '/api/v1/kuco/messages' : '/api/v1/KUCO/MESSAGES/',
         )
         .set('Host', host)
         .set('X-Forwarded-Proto', 'https')
@@ -208,15 +208,15 @@ describe('password-protected compiled demo server', () => {
       expect(response.status).toBe(200)
     }
     const limited = await request(app)
-      .post('/api/v1/duco/messages')
+      .post('/api/v1/kuco/messages')
       .set('Host', host)
       .set('X-Forwarded-Proto', 'https')
       .set('X-Forwarded-For', '198.51.100.91')
       .set('Origin', configuration.publicOrigin)
       .auth(configuration.gateUser, configuration.gatePassword)
     expect(limited.status).toBe(429)
-    expect(limited.body.error.code).toBe('DEMO_DUCO_LIMIT_REACHED')
-    const messages = await authorized('/api/v1/duco/messages').set(
+    expect(limited.body.error.code).toBe('DEMO_KUCO_LIMIT_REACHED')
+    const messages = await authorized('/api/v1/kuco/messages').set(
       'X-Forwarded-For',
       '198.51.100.91',
     )

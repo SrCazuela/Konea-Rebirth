@@ -8,38 +8,49 @@ producción institucional.
 
 - **Hecho**: flujo vertical implementado, persistido, documentado y cubierto al
   menos por pruebas de contrato, dominio o integración.
+- **En progreso**: implementación iniciada que todavía requiere validación o
+  cierre de su criterio de aceptación.
 - **Planificado**: alcance acordado para una iteración posterior.
 - **Bloqueado**: requiere autorización o infraestructura externa que el equipo
   no controla.
 
 ## Backlog priorizado
 
-| ID    | Prioridad | Historia de usuario                                                                 | Criterio de aceptación principal                                                                             | Estado      |
-| ----- | --------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
-| PB-01 | Must      | Como estudiante quiero crear una cuenta e iniciar/cerrar sesión.                    | Contraseña derivada, cookie revocable `HttpOnly` y rutas privadas con `401`.                                 | Hecho       |
-| PB-02 | Must      | Como estudiante quiero mantener un perfil y portafolio verificable.                 | Todos los campos guardan; institución, campus y carrera usan catálogo; imágenes permiten crop.               | Hecho       |
-| PB-03 | Must      | Como estudiante quiero conectar sin un directorio que facilite hostigamiento.       | QR/código conecta explícitamente; dos intenciones privadas recíprocas crean la conexión.                     | Hecho       |
-| PB-04 | Must      | Como conexión quiero conversar en directo o grupo.                                  | Permisos por membresía, grupo con invitado, mensajes/archivos y reintentos sin duplicados.                   | Hecho       |
-| PB-05 | Must      | Como usuario quiero conocer envío, entrega, lectura y actividad pendiente.          | Reloj/uno/dos checks y visto; abrir contenido actualiza badges y notificaciones.                             | Hecho       |
-| PB-06 | Must      | Como moderador quiero revisar contenido y reportes sin destruir evidencia.          | Cola por rol, transiciones válidas, motivo de rechazo y sin borrado físico por moderador.                    | Hecho       |
-| PB-07 | Must      | Como estudiante quiero organizar materias y próximos pendientes.                    | CRUD propio, estados/prioridad/fecha, materias archivables y tareas enlazables.                              | Hecho       |
-| PB-08 | Should    | Como estudiante quiero importar mi calendario AVA sin entregar mi contraseña.       | Feed ICS explícito, URL no persistida, sincronización atómica y eventos cancelados inactivos.                | Hecho       |
-| PB-09 | Must      | Como estudiante quiero que DUCO me ayude a organizar, sin realizar entregas por mí. | IA configurable; acción estructurada; borrador editable y confirmación humana obligatoria.                   | Hecho       |
-| PB-10 | Must      | Como estudiante quiero seguir mis solicitudes institucionales.                      | Estados, respuestas y cronología append-only visibles para usuario y personal autorizado.                    | Hecho       |
-| PB-11 | Must      | Como estudiante quiero medir sesiones con distintos métodos.                        | Pomodoro, extendido, profundo, Flowtime y custom; pausar/reanudar/completar/cancelar.                        | Hecho       |
-| PB-12 | Must      | Como estudiante quiero entender cómo distribuyo mi estudio.                         | Hoy/semana/total, rachas, siete días, materias e historial basados en sesiones completadas.                  | Hecho       |
-| PB-13 | Must      | Como estudiante quiero usar FocusBuddy como programa descargable.                   | Interfaz Electron local con login; comparte API/cuenta, recupera sesión y no requiere Vite.                  | Hecho       |
-| PB-14 | Must      | Como equipo quiero un entorno reproducible y un repositorio público seguro.         | Docker, migraciones, launcher, CI, checks y secretos/artefactos locales ignorados.                           | Hecho       |
-| PB-15 | Should    | Como usuario quiero un compañero que reaccione a la sesión en ambos clientes.       | Kuco funciona en web/escritorio; chibi opcional con alfa derivada, pendiente de exportación oficial/estados. | En progreso |
-| PB-16 | Should    | Como equipo quiero demostrar Konea desde Internet.                                  | Web/API HTTPS, PostgreSQL/objetos persistentes, backups, CORS/cookies y smoke test.                          | Planificado |
-| PB-17 | Should    | Como equipo quiero prevenir regresiones del recorrido completo.                     | E2E automatizado: login, tarea, sesión, pausa, cierre abrupto, recuperación y finalización.                  | Planificado |
-| PB-18 | Could     | Como institución quiero sincronización autorizada con sistemas académicos.          | OAuth/API oficial, alcance mínimo y aprobación TI; no scraping de credenciales.                              | Bloqueado   |
-| PB-19 | Could     | Como usuario quiero eventos instantáneos sin polling.                               | WebSocket/SSE conserva permisos, cursores e idempotencia actuales.                                           | Planificado |
-| PB-20 | Must*     | Como institución quiero operar de forma responsable los casos de bienestar.         | Política humana de atención, consentimiento, retención, horarios y escalamiento aprobados.                   | Bloqueado   |
+| ID    | Prioridad | Historia de usuario                                                                 | Criterio de aceptación principal                                                                           | Estado      |
+| ----- | --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
+| PB-01 | Must      | Como estudiante quiero crear una cuenta e iniciar/cerrar sesión.                    | Contraseña derivada, cookie revocable `HttpOnly` y rutas privadas con `401`.                               | Hecho       |
+| PB-02 | Must      | Como estudiante quiero mantener un perfil y portafolio verificable.                 | Todos los campos guardan; institución, campus y carrera usan catálogo; imágenes permiten crop.             | Hecho       |
+| PB-03 | Must      | Como estudiante quiero conectar sin un directorio que facilite hostigamiento.       | QR/código conecta explícitamente; dos intenciones privadas recíprocas crean la conexión.                   | Hecho       |
+| PB-04 | Must      | Como conexión quiero conversar en directo o grupo.                                  | Permisos por membresía, grupo con invitado, mensajes/archivos y reintentos sin duplicados.                 | Hecho       |
+| PB-05 | Must      | Como usuario quiero conocer envío, entrega, lectura y actividad pendiente.          | Reloj/uno/dos checks y visto; abrir contenido actualiza badges y notificaciones.                           | Hecho       |
+| PB-06 | Must      | Como moderador quiero revisar contenido y reportes sin destruir evidencia.          | Cola por rol, transiciones válidas, motivo de rechazo y sin borrado físico por moderador.                  | Hecho       |
+| PB-07 | Must      | Como estudiante quiero organizar materias y próximos pendientes.                    | CRUD propio, estados/prioridad/fecha, materias archivables y tareas enlazables.                            | Hecho       |
+| PB-08 | Should    | Como estudiante quiero importar mi calendario AVA sin entregar mi contraseña.       | Feed ICS explícito, URL no persistida, sincronización atómica y eventos cancelados inactivos.              | Hecho       |
+| PB-09 | Must      | Como estudiante quiero que KUCO me ayude a organizar, sin realizar entregas por mí. | IA configurable; acción estructurada; borrador editable y confirmación humana obligatoria.                 | Hecho       |
+| PB-10 | Must      | Como estudiante quiero seguir mis solicitudes institucionales.                      | Estados, respuestas y cronología append-only visibles para usuario y personal autorizado.                  | Hecho       |
+| PB-11 | Must      | Como estudiante quiero medir sesiones con distintos métodos.                        | Pomodoro, extendido, profundo, Flowtime y custom; pausar/reanudar/completar/cancelar.                      | Hecho       |
+| PB-12 | Must      | Como estudiante quiero entender cómo distribuyo mi estudio.                         | Hoy/semana/total, rachas, siete días, materias e historial basados en sesiones completadas.                | Hecho       |
+| PB-13 | Must      | Como estudiante quiero usar FocusBuddy como programa descargable.                   | Interfaz Electron propia con login/cuenta; misma API, refresco visible y recuperación de sesión; sin Vite. | Hecho       |
+| PB-14 | Must      | Como equipo quiero un entorno reproducible y un repositorio público seguro.         | Docker, migraciones, launcher, CI, checks y secretos/artefactos locales ignorados.                         | Hecho       |
+| PB-15 | Should    | Como usuario quiero un compañero que reaccione a la sesión en ambos clientes.       | Chibi HQ predeterminado en ambos clientes; 35 PNG, 13 escenas y parpadeo; Kuco opcional en escritorio.     | Hecho       |
+| PB-16 | Should    | Como equipo quiero demostrar Konea desde Internet.                                  | Web/API HTTPS, PostgreSQL/objetos persistentes, backups, CORS/cookies y smoke test.                        | Hecho       |
+| PB-17 | Should    | Como equipo quiero prevenir regresiones del recorrido completo.                     | E2E automatizado: login, tarea, sesión, pausa, cierre abrupto, recuperación y finalización.                | En progreso |
+| PB-18 | Could     | Como institución quiero sincronización autorizada con sistemas académicos.          | OAuth/API oficial, alcance mínimo y aprobación TI; no scraping de credenciales.                            | Bloqueado   |
+| PB-19 | Could     | Como usuario quiero eventos instantáneos sin polling.                               | WebSocket/SSE conserva permisos, cursores e idempotencia actuales.                                         | Planificado |
+| PB-20 | Must*     | Como institución quiero operar de forma responsable los casos de bienestar.         | Política humana de atención, consentimiento, retención, horarios y escalamiento aprobados.                 | Bloqueado   |
 
 `PB-20` es obligatorio antes de un piloto real, aunque no bloquea una demostración
 con datos ficticios. Konea no debe presentarse como un servicio de emergencias o
 de vigilancia continua.
+
+La historia `PB-16` quedó verificada el 11 de noviembre de 2026: Sites v3 y
+FocusBuddy oficial 0.1.2 con API HTTPS, descarga comprobada y sincronización remota.
+El registro reúne 420 pruebas aprobadas por suites: 107 de escritorio y 52 de web.
+
+`PB-17` cuenta con E2E local y pruebas remotas del ejecutable oficial,
+documentados en [FocusBuddy](./focusbuddy.md#estado-de-validación-y-publicación).
+Falta probar cierre abrupto y recuperación, caída de la API, instalación limpia
+y registro del protocolo en otro PC antes de cerrar la historia.
 
 ## Trazabilidad de objetivos Capstone
 
@@ -69,13 +80,13 @@ Una historia se mueve a **Hecho** solamente cuando:
 
 ## Riesgos de ejecución
 
-| Riesgo                                  | Mitigación actual                                                  | Decisión pendiente                                        |
-| --------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| Crecimiento del alcance                 | MVP explícito y backlog por prioridad.                             | Congelar funciones antes de la entrega final.             |
-| Dependencia de IA externa               | Modos `local`/Ollama y acciones validadas en backend.              | Presupuesto, evaluación y política de datos.              |
-| Integración institucional no autorizada | ICS aportado por usuario; no se guardan credenciales AVA.          | Convenio/API oficial con TI.                              |
-| Casos sensibles de acoso o autolesión   | Recursos inmediatos, formulario humano y ninguna alerta falsa.     | Protocolo institucional y responsables reales.            |
-| Cierre inesperado de FocusBuddy         | Heartbeat, gracia limitada y recuperación de sesión.               | Job de mantenimiento y notificación nativa.               |
-| Diferencia visual web/escritorio        | Derivados transparentes; fuentes y manifiesto preservados.         | Recibir alfa oficial/estados faltantes y portar a la web. |
-| Varias instancias de API                | Restricciones/transacciones en PostgreSQL.                         | Redis para límites y concurrencia de IA.                  |
-| Repositorio público                     | `.env`/ICS/datos locales ignorados y checklist previo a cada push. | Consentimiento sobre PII de entregables DOCX/PDF.         |
+| Riesgo                                  | Mitigación actual                                                      | Decisión pendiente                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Crecimiento del alcance                 | MVP explícito y backlog por prioridad.                                 | Congelar funciones antes de la entrega final.                       |
+| Dependencia de IA externa               | Modos `local`/Ollama y acciones validadas en backend.                  | Presupuesto, evaluación y política de datos.                        |
+| Integración institucional no autorizada | ICS aportado por usuario; no se guardan credenciales AVA.              | Convenio/API oficial con TI.                                        |
+| Casos sensibles de acoso o autolesión   | Recursos inmediatos, formulario humano y ninguna alerta falsa.         | Protocolo institucional y responsables reales.                      |
+| Cierre inesperado de FocusBuddy         | Heartbeat, gracia limitada y recuperación de sesión.                   | Job de mantenimiento y notificación nativa.                         |
+| Diferencia visual web/escritorio        | Chibi HQ y motor compartidos en web/escritorio; manifiesto preservado. | Integrar ojos por puntero y cierres propios de las poses restantes. |
+| Varias instancias de API                | Restricciones/transacciones en PostgreSQL.                             | Redis para límites y concurrencia de IA.                            |
+| Repositorio público                     | `.env`/ICS/datos locales ignorados y checklist previo a cada push.     | Consentimiento sobre PII de entregables DOCX/PDF.                   |

@@ -55,7 +55,7 @@ export type ManagedSupportRequest = {
 
 export async function getManagedSupportRequests() {
   const response = await apiRequest<{ requests: ManagedSupportRequest[] }>(
-    '/duco/requests/all',
+    '/kuco/requests/all',
   )
   return response.requests
 }
@@ -66,7 +66,7 @@ export async function updateManagedSupportRequest(
 ) {
   const response = await apiRequest<{
     request: Omit<ManagedSupportRequest, 'requester' | 'assignedTo'>
-  }>(`/duco/requests/${encodeURIComponent(requestId)}`, {
+  }>(`/kuco/requests/${encodeURIComponent(requestId)}`, {
     method: 'PATCH',
     body: JSON.stringify(update),
   })

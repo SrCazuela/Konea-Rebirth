@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getFocusBuddyDesktopChannel,
+  getFocusBuddyLaunchUrl,
   isFocusBuddyDesktopRuntime,
   normalizeFocusBuddyDownloadUrl,
 } from './focusbuddy-download'
@@ -15,6 +17,12 @@ describe('normalizeFocusBuddyDownloadUrl', () => {
     )
   })
 
+  it('accepts a versioned official release without changing the asset', () => {
+    const url =
+      'https://github.com/SrCazuela/Konea-Rebirth/releases/download/focusbuddy-v0.1.1/Konea-FocusBuddy-Windows-x64.exe'
+    expect(normalizeFocusBuddyDownloadUrl(url)).toBe(url)
+  })
+
   it.each([
     undefined,
     null,
@@ -27,8 +35,55 @@ describe('normalizeFocusBuddyDownloadUrl', () => {
     'https://user:password@downloads.example/focusbuddy.exe',
     'https://downloads.example/focusbuddy.exe?token=secret',
     'https://downloads.example/focusbuddy.exe#temporary-link',
+    'https://localhost/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe',
+    'https://github.com.evil.example/SrCazuela/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe',
+    'https://github.com:8443/SrCazuela/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe',
+    'https://github.com/another-owner/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe',
+    'https://github.com/SrCazuela/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Local-0.1.1-x64.exe',
+    'https://github.com/SrCazuela/Konea-Rebirth/blob/main/Konea-FocusBuddy-Windows-x64.exe',
+    'https://github.com/SrCazuela/Konea-Rebirth/releases/latest/download/Konea-FocusBuddy-Windows-x64.exe?token=secret',
   ])('rejects an unsafe or unpublished value: %s', (value) => {
     expect(normalizeFocusBuddyDownloadUrl(value)).toBeNull()
+  })
+})
+
+describe('FocusBuddy desktop channels', () => {
+  it.each([
+    'localhost',
+    'LOCALHOST',
+    'localhost.',
+    '127.0.0.1',
+    '::1',
+    '[::1]',
+  ])(
+    'opens the separate local client on loopback host %s, including production previews',
+    (hostname) => {
+      expect(getFocusBuddyDesktopChannel(hostname)).toBe('local')
+      expect(getFocusBuddyLaunchUrl(hostname)).toBe(
+        'konea-focusbuddy-local://open',
+      )
+    },
+  )
+
+  it.each([
+    'konea-campus-connect.divine-mule-7232.chatgpt.site',
+    'preview.chatgpt.site',
+    'localhost.evil.example',
+    '192.168.1.5',
+    '',
+  ])(
+    'reserves the official protocol for non-loopback origins: %s',
+    (hostname) => {
+      expect(getFocusBuddyDesktopChannel(hostname)).toBe('production')
+      expect(getFocusBuddyLaunchUrl(hostname)).toBe('konea-focusbuddy://open')
+    },
+  )
+
+  it('never includes an account, token, API endpoint or arbitrary input in the launch URL', () => {
+    const untrustedHost = 'localhost?token=private&api=http://localhost:3000'
+    expect(getFocusBuddyLaunchUrl(untrustedHost)).toBe(
+      'konea-focusbuddy://open',
+    )
   })
 })
 

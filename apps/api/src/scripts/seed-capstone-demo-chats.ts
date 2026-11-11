@@ -340,7 +340,7 @@ export async function seedCapstoneDemoChats() {
       chatId: valentinaChatId,
       senderId: people.valentina.id,
       content:
-        'También revisé DUCO: el formulario pide los datos antes de crear la solicitud.',
+        'También revisé KUCO: el formulario pide los datos antes de crear la solicitud.',
       type: 'text',
       tags: ['important'],
       createdAt: times[2]!,
@@ -434,7 +434,7 @@ export async function seedCapstoneDemoChats() {
       chatId: DEMO_CHAT_IDS.capstone,
       senderId: primary.id,
       content:
-        'Partimos con la red social, seguimos con DUCO y cerramos con FocusBuddy.',
+        'Partimos con la red social, seguimos con KUCO y cerramos con FocusBuddy.',
       type: 'text',
       tags: [],
       createdAt: times[11]!,
@@ -466,7 +466,7 @@ export async function seedCapstoneDemoChats() {
       chatId: DEMO_CHAT_IDS.capstone,
       senderId: people.camila.id,
       content:
-        'Camila Herrera creó la tarea “Ensayar flujo DUCO y solicitudes”.',
+        'Camila Herrera creó la tarea “Ensayar flujo KUCO y solicitudes”.',
       type: 'system',
       tags: ['delivery'],
       createdAt: times[14]!,
@@ -711,7 +711,7 @@ export async function seedCapstoneDemoChats() {
         {
           id: DEMO_POLL_OPTION_IDS[1],
           pollId: DEMO_POLL_ID,
-          label: 'DUCO y solicitudes',
+          label: 'KUCO y solicitudes',
           position: 1,
         },
         {
@@ -748,7 +748,7 @@ export async function seedCapstoneDemoChats() {
           chatId: DEMO_CHAT_IDS.capstone,
           createdById: people.camila.id,
           assignedToId: primary.id,
-          title: 'Ensayar flujo DUCO y solicitudes',
+          title: 'Ensayar flujo KUCO y solicitudes',
           description:
             'Completar una pasada del flujo estudiante y del panel administrativo.',
           dueDate: dateInSantiago(seededAt),

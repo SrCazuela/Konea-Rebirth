@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { ApiClientError, login, register, type KoneaUser } from '../api/auth'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { KoneaLogo } from './KoneaLogo'
 import './AuthDialog.css'
 
 export type AuthMode = 'login' | 'register'
@@ -257,7 +258,7 @@ export function AuthDialog({
 
         <div className="auth-dialog__content">
           <div className="dialog-brand">
-            <img src="/konea-logo.svg" alt="Konea" width="124" height="44" />
+            <KoneaLogo width={124} />
           </div>
 
           <div

@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     env: {
       NODE_ENV: 'test',
-      DUCO_AI_PROVIDER: 'local',
+      KUCO_AI_PROVIDER: 'local',
     },
   },
 })

@@ -5,6 +5,7 @@ const {
   apiBaseUrlFromAppUrl,
   buildApiUrl,
   normalizeApiBaseUrl,
+  normalizeChannelApiUrl,
   selectApiBaseUrl,
 } = require('./api-url.cjs')
 
@@ -76,25 +77,65 @@ describe('FocusBuddy API URL', () => {
     )
   })
 
-  it('locks packaged selection to baked configuration and uses safe fallbacks', () => {
+  it('locks packaged selection to its channel and fails closed without valid configuration', () => {
     assert.equal(
       selectApiBaseUrl({
         isPackaged: true,
+        channel: 'production',
         commandLineValue: 'https://phishing.example/api/v1',
         environmentValue: 'https://other.example/api/v1',
         packagedValue: 'https://api.konea.example/api/v1/',
       }),
       'https://api.konea.example/api/v1',
     )
-    assert.equal(
+    assert.throws(() =>
       selectApiBaseUrl({
         isPackaged: true,
+        channel: 'production',
         commandLineValue: 'https://phishing.example/api/v1',
         packagedValue: 'http://unsafe.example/api/v1',
         appUrl: 'https://konea.example/#focusbuddy',
       }),
-      'https://konea.example/api/v1',
+    )
+    assert.throws(() =>
+      selectApiBaseUrl({ isPackaged: true, channel: 'production' }),
     )
     assert.equal(selectApiBaseUrl({}), DEFAULT_API_BASE_URL)
+    assert.equal(
+      selectApiBaseUrl({
+        packagedValue: 'https://previous-build.example/api/v1',
+      }),
+      DEFAULT_API_BASE_URL,
+    )
+    assert.throws(() =>
+      selectApiBaseUrl({ environmentValue: 'https://remote.example/api/v1' }),
+    )
+  })
+
+  it('keeps local endpoints on loopback and official endpoints on public HTTPS', () => {
+    assert.equal(
+      normalizeChannelApiUrl('http://localhost:3010/api/v1', 'local'),
+      'http://localhost:3010/api/v1',
+    )
+    assert.equal(
+      normalizeChannelApiUrl('https://api.konea.example/api/v1', 'production'),
+      'https://api.konea.example/api/v1',
+    )
+    assert.throws(() =>
+      normalizeChannelApiUrl('https://api.konea.example/api/v1', 'local'),
+    )
+    for (const unsafe of [
+      'http://api.konea.example/api/v1',
+      'https://localhost:3000/api/v1',
+      'https://127.0.0.2/api/v1',
+      'https://192.168.0.1/api/v1',
+      'https://10.0.0.1/api/v1',
+      'https://[::1]/api/v1',
+      'https://[fc00::1]/api/v1',
+      'https://service.local/api/v1',
+      'https://localhost.evil.local/api/v1',
+      'https://api/api/v1',
+    ])
+      assert.throws(() => normalizeChannelApiUrl(unsafe, 'production'))
   })
 })

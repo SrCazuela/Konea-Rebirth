@@ -10,41 +10,42 @@ import {
 import type { KoneaUser } from '../api/auth'
 import { absoluteUploadUrl } from '../api/uploads'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { canonicalizeAssistantHash } from '../config/assistant-navigation'
 import {
-  cancelDucoDraft,
-  clearDucoMessages,
-  createDucoSupportRequest,
-  createDucoTask,
-  getDucoDrafts,
-  getDucoMessages,
-  getDucoSupportRequests,
-  sendDucoMessage,
-  type DucoCreateTaskAction,
-  type DucoDraft,
-  type DucoAiProvider,
-  type DucoDraftStatus,
-  type DucoMessage,
-  type DucoRequestCategory,
-  type DucoRequestDraft,
-  type DucoSupportRequest,
-  type DucoTaskDraft,
-} from '../api/duco'
-import './Duco.css'
+  cancelKucoDraft,
+  clearKucoMessages,
+  createKucoSupportRequest,
+  createKucoTask,
+  getKucoDrafts,
+  getKucoMessages,
+  getKucoSupportRequests,
+  sendKucoMessage,
+  type KucoCreateTaskAction,
+  type KucoDraft,
+  type KucoAiProvider,
+  type KucoDraftStatus,
+  type KucoMessage,
+  type KucoRequestCategory,
+  type KucoRequestDraft,
+  type KucoSupportRequest,
+  type KucoTaskDraft,
+} from '../api/kuco'
+import './Kuco.css'
 import { AvaCalendarSync } from './AvaCalendarSync'
 
-export type DucoProps = {
+export type KucoProps = {
   currentUser: Pick<KoneaUser, 'displayName' | 'avatarUrl'>
-  initialPanel?: DucoPanel
+  initialPanel?: KucoPanel
 }
 
 type MessageStatus = 'sent' | 'pending' | 'failed'
-type VisibleMessage = DucoMessage & { status: MessageStatus }
+type VisibleMessage = KucoMessage & { status: MessageStatus }
 type TaskFormState = {
   draftId: string | null
   sourceMessageId: string | null
-  draft: DucoTaskDraft
+  draft: KucoTaskDraft
 }
-type DucoPanel = 'conversation' | 'requests'
+type KucoPanel = 'conversation' | 'requests'
 type IconName =
   | 'assistant'
   | 'arrow'
@@ -76,7 +77,7 @@ const quickActions = [
   },
 ]
 
-const requestCategoryLabels: Record<DucoRequestCategory, string> = {
+const requestCategoryLabels: Record<KucoRequestCategory, string> = {
   section_change: 'Cambio de sección',
   missing_course: 'Asignatura faltante',
   enrollment: 'Inscripción de asignaturas',
@@ -175,7 +176,7 @@ function Icon({ name }: { name: IconName }) {
   return (
     <svg
       aria-hidden="true"
-      className="duco-icon"
+      className="kuco-icon"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -222,8 +223,8 @@ function toDateTimeLocal(value: string | null) {
 }
 
 function normalizeTaskDraft(
-  value: Partial<DucoTaskDraft> | null | undefined,
-): DucoTaskDraft {
+  value: Partial<KucoTaskDraft> | null | undefined,
+): KucoTaskDraft {
   const priority = value?.priority
   return {
     title: typeof value?.title === 'string' ? value.title : '',
@@ -238,7 +239,7 @@ function normalizeTaskDraft(
   }
 }
 
-const draftStatusLabels: Record<DucoDraftStatus, string> = {
+const draftStatusLabels: Record<KucoDraftStatus, string> = {
   collecting_information: 'En preparación',
   ready_for_review: 'Listo para revisar',
   confirmed: 'Pendiente creado',
@@ -246,7 +247,7 @@ const draftStatusLabels: Record<DucoDraftStatus, string> = {
   expired: 'Borrador vencido',
 }
 
-const taskPriorityLabels: Record<DucoTaskDraft['priority'], string> = {
+const taskPriorityLabels: Record<KucoTaskDraft['priority'], string> = {
   low: 'Prioridad baja',
   medium: 'Prioridad media',
   high: 'Prioridad alta',
@@ -258,17 +259,17 @@ function isAbortError(error: unknown) {
 
 function AssistantAvatar() {
   return (
-    <span className="duco-avatar duco-avatar--assistant" aria-hidden="true">
+    <span className="kuco-avatar kuco-avatar--assistant" aria-hidden="true">
       <Icon name="assistant" />
     </span>
   )
 }
 
-function UserAvatar({ user }: { user: DucoProps['currentUser'] }) {
+function UserAvatar({ user }: { user: KucoProps['currentUser'] }) {
   if (user.avatarUrl) {
     return (
       <img
-        className="duco-avatar duco-avatar--user"
+        className="kuco-avatar kuco-avatar--user"
         src={absoluteUploadUrl(user.avatarUrl)}
         alt=""
         aria-hidden="true"
@@ -278,7 +279,7 @@ function UserAvatar({ user }: { user: DucoProps['currentUser'] }) {
 
   return (
     <span
-      className="duco-avatar duco-avatar--user duco-avatar--initials"
+      className="kuco-avatar kuco-avatar--user kuco-avatar--initials"
       aria-hidden="true"
     >
       {initials(user.displayName) || 'K'}
@@ -286,34 +287,34 @@ function UserAvatar({ user }: { user: DucoProps['currentUser'] }) {
   )
 }
 
-function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
+function SupportRequestCard({ request }: { request: KucoSupportRequest }) {
   return (
-    <article className="duco-support-card">
+    <article className="kuco-support-card">
       <header>
         <div>
-          <span className="duco-support-card__category">
+          <span className="kuco-support-card__category">
             {requestCategoryLabels[request.category]}
           </span>
           <h4>{request.subject}</h4>
         </div>
         <span
-          className={`duco-support-status duco-support-status--${request.status}`}
+          className={`kuco-support-status kuco-support-status--${request.status}`}
         >
           {requestStatusLabels[request.status]}
         </span>
       </header>
 
-      <p className="duco-support-card__description">{request.description}</p>
+      <p className="kuco-support-card__description">{request.description}</p>
 
       {request.desiredOutcome && (
-        <div className="duco-support-card__outcome">
+        <div className="kuco-support-card__outcome">
           <strong>Resultado esperado</strong>
           <p>{request.desiredOutcome}</p>
         </div>
       )}
 
       <section
-        className="duco-support-timeline"
+        className="kuco-support-timeline"
         aria-label="Historial de la solicitud"
       >
         <h5>Seguimiento</h5>
@@ -335,7 +336,7 @@ function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
                   : `Estado: ${requestStatusLabels[event.toStatus]}`
             return (
               <li key={event.id}>
-                <span className="duco-support-timeline__dot" />
+                <span className="kuco-support-timeline__dot" />
                 <div>
                   <header>
                     <strong>{eventLabel}</strong>
@@ -343,7 +344,7 @@ function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
                       {formatDateTime(event.createdAt)}
                     </time>
                   </header>
-                  <span className="duco-support-timeline__actor">
+                  <span className="kuco-support-timeline__actor">
                     {actorName}
                     {event.fromStatus && (
                       <>
@@ -363,7 +364,7 @@ function SupportRequestCard({ request }: { request: DucoSupportRequest }) {
 
       <footer>
         <span
-          className={`duco-support-urgency duco-support-urgency--${request.urgency}`}
+          className={`kuco-support-urgency kuco-support-urgency--${request.urgency}`}
         >
           Urgencia {requestUrgencyLabels[request.urgency].toLowerCase()}
         </span>
@@ -383,8 +384,8 @@ function TaskDraftCard({
   onDiscard,
   discarding = false,
 }: {
-  draft: DucoTaskDraft
-  status: DucoDraftStatus
+  draft: KucoTaskDraft
+  status: KucoDraftStatus
   onReview?: () => void
   onDiscard?: () => void
   discarding?: boolean
@@ -396,39 +397,39 @@ function TaskDraftCard({
 
   return (
     <article
-      className={`duco-task-draft-card duco-task-draft-card--${status}`}
+      className={`kuco-task-draft-card kuco-task-draft-card--${status}`}
       aria-label={`${draftStatusLabels[status]}: ${draft.title || 'pendiente sin título'}`}
     >
       <header>
-        <span className="duco-task-draft-card__mark" aria-hidden="true">
+        <span className="kuco-task-draft-card__mark" aria-hidden="true">
           <Icon name={status === 'confirmed' ? 'check' : 'tasks'} />
         </span>
         <div>
-          <p className="duco-task-draft-card__eyebrow">
+          <p className="kuco-task-draft-card__eyebrow">
             {status === 'ready_for_review'
               ? 'Borrador guardado'
               : draftStatusLabels[status]}
           </p>
           <h4>{draft.title || 'Pendiente sin título'}</h4>
         </div>
-        <span className="duco-task-draft-card__status">
+        <span className="kuco-task-draft-card__status">
           {draftStatusLabels[status]}
         </span>
       </header>
 
       {draft.description && (
-        <p className="duco-task-draft-card__description">{draft.description}</p>
+        <p className="kuco-task-draft-card__description">{draft.description}</p>
       )}
 
-      <div className="duco-task-draft-card__details">
+      <div className="kuco-task-draft-card__details">
         {draft.courseName && <span>{draft.courseName}</span>}
         <span>{taskPriorityLabels[draft.priority]}</span>
         {draft.dueAt && <span>Para el {formatDateTime(draft.dueAt)}</span>}
       </div>
 
       {status === 'collecting_information' && (
-        <p className="duco-task-draft-card__note">
-          DUCO aún está reuniendo los datos necesarios para habilitar la
+        <p className="kuco-task-draft-card__note">
+          KUCO aún está reuniendo los datos necesarios para habilitar la
           revisión.
         </p>
       )}
@@ -438,7 +439,7 @@ function TaskDraftCard({
           {canReview && (
             <button
               type="button"
-              className="duco-task-draft-card__review"
+              className="kuco-task-draft-card__review"
               onClick={onReview}
             >
               <Icon name="check" />
@@ -448,7 +449,7 @@ function TaskDraftCard({
           {canDiscard && (
             <button
               type="button"
-              className="duco-task-draft-card__discard"
+              className="kuco-task-draft-card__discard"
               onClick={onDiscard}
               disabled={discarding}
             >
@@ -462,13 +463,14 @@ function TaskDraftCard({
   )
 }
 
-export function Duco({
+export function Kuco({
   currentUser,
   initialPanel = 'conversation',
-}: DucoProps) {
-  const [activePanel, setActivePanel] = useState<DucoPanel>(initialPanel)
+}: KucoProps) {
+  const [activePanel, setActivePanel] = useState<KucoPanel>(initialPanel)
+  const [aboutExpanded, setAboutExpanded] = useState(false)
   const [messages, setMessages] = useState<VisibleMessage[]>([])
-  const [aiProvider, setAiProvider] = useState<DucoAiProvider | null>(null)
+  const [aiProvider, setAiProvider] = useState<KucoAiProvider | null>(null)
   const [draft, setDraft] = useState('')
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState('')
@@ -478,11 +480,11 @@ export function Duco({
   const [announcement, setAnnouncement] = useState('')
   const [requestForm, setRequestForm] = useState<{
     sourceMessageId: string
-    draft: DucoRequestDraft
+    draft: KucoRequestDraft
   } | null>(null)
   const [requestSubmitting, setRequestSubmitting] = useState(false)
   const [requestError, setRequestError] = useState('')
-  const [supportRequests, setSupportRequests] = useState<DucoSupportRequest[]>(
+  const [supportRequests, setSupportRequests] = useState<KucoSupportRequest[]>(
     [],
   )
   const [requestsLoading, setRequestsLoading] = useState(false)
@@ -502,7 +504,7 @@ export function Duco({
     closeDisabled: taskSubmitting,
   })
   const [taskError, setTaskError] = useState('')
-  const [taskDrafts, setTaskDrafts] = useState<DucoDraft[]>([])
+  const [taskDrafts, setTaskDrafts] = useState<KucoDraft[]>([])
   const [draftsLoading, setDraftsLoading] = useState(true)
   const [draftsError, setDraftsError] = useState('')
   const [discardingDraftId, setDiscardingDraftId] = useState<string | null>(
@@ -516,7 +518,7 @@ export function Duco({
   const loadTaskDrafts = useCallback(async (signal?: AbortSignal) => {
     setDraftsError('')
     try {
-      const items = await getDucoDrafts(signal)
+      const items = await getKucoDrafts(signal)
       if (!signal?.aborted) setTaskDrafts(items)
     } catch (error) {
       if (!isAbortError(error)) {
@@ -532,7 +534,9 @@ export function Duco({
   useEffect(() => {
     const syncPanelWithHash = () =>
       setActivePanel(
-        window.location.hash === '#duco-requests' ? 'requests' : 'conversation',
+        canonicalizeAssistantHash(window.location.hash) === '#kuco-requests'
+          ? 'requests'
+          : 'conversation',
       )
     window.addEventListener('hashchange', syncPanelWithHash)
     window.addEventListener('popstate', syncPanelWithHash)
@@ -546,7 +550,7 @@ export function Duco({
     setHistoryLoading(true)
     setHistoryError('')
     try {
-      const history = await getDucoMessages(signal)
+      const history = await getKucoMessages(signal)
       setMessages(
         history.messages.map((message) => ({ ...message, status: 'sent' })),
       )
@@ -565,7 +569,7 @@ export function Duco({
 
   useEffect(() => {
     const controller = new AbortController()
-    getDucoMessages(controller.signal)
+    getKucoMessages(controller.signal)
       .then((history) => {
         setMessages(
           history.messages.map((message) => ({ ...message, status: 'sent' })),
@@ -607,7 +611,7 @@ export function Duco({
       setRequestsError('')
 
       try {
-        const items = await getDucoSupportRequests(signal)
+        const items = await getKucoSupportRequests(signal)
         if (signal?.aborted || requestId !== requestsRequestRef.current) return
 
         requestsLoadedRef.current = true
@@ -687,12 +691,12 @@ export function Duco({
     }
 
     setDraft('')
-    setAnnouncement('Enviando mensaje a DUCO.')
+    setAnnouncement('Enviando mensaje a KUCO.')
     setMessages((current) => [...current, optimisticMessage])
     setSending(true)
 
     try {
-      const reply = await sendDucoMessage(content)
+      const reply = await sendKucoMessage(content)
       setMessages((current) => [
         ...current.filter((message) => message.id !== temporaryId),
         { ...reply.userMessage, status: 'sent' },
@@ -700,7 +704,7 @@ export function Duco({
       ])
       setOpenTaskCount(reply.openTaskCount)
       setAiProvider(reply.aiProvider)
-      setAnnouncement('DUCO respondió tu mensaje.')
+      setAnnouncement('KUCO respondió tu mensaje.')
       void loadTaskDrafts()
     } catch (error) {
       setMessages((current) =>
@@ -711,7 +715,7 @@ export function Duco({
         ),
       )
       setAnnouncement(
-        readableError(error, 'No pudimos enviar el mensaje a DUCO.'),
+        readableError(error, 'No pudimos enviar el mensaje a KUCO.'),
       )
     } finally {
       setSending(false)
@@ -724,8 +728,8 @@ export function Duco({
     void sendPrompt(draft)
   }
 
-  const selectPanel = (panel: DucoPanel) => {
-    const nextHash = panel === 'requests' ? '#duco-requests' : '#duco'
+  const selectPanel = (panel: KucoPanel) => {
+    const nextHash = panel === 'requests' ? '#kuco-requests' : '#kuco'
     if (window.location.hash !== nextHash) {
       window.history.pushState(null, '', nextHash)
     }
@@ -765,9 +769,9 @@ export function Duco({
     })
   }
 
-  const updateRequestDraft = <Field extends keyof DucoRequestDraft>(
+  const updateRequestDraft = <Field extends keyof KucoRequestDraft>(
     field: Field,
-    value: DucoRequestDraft[Field],
+    value: KucoRequestDraft[Field],
   ) => {
     setRequestForm((current) =>
       current
@@ -792,7 +796,7 @@ export function Duco({
     })
   }
 
-  const discardTaskDraft = async (draftItem: DucoDraft) => {
+  const discardTaskDraft = async (draftItem: KucoDraft) => {
     if (discardingDraftId) return
     const confirmed = window.confirm(
       `¿Quieres descartar el borrador “${normalizeTaskDraft(draftItem.payload).title || 'sin título'}”?`,
@@ -802,7 +806,7 @@ export function Duco({
     setDiscardingDraftId(draftItem.id)
     setDraftsError('')
     try {
-      const cancelledDraft = await cancelDucoDraft(draftItem.id)
+      const cancelledDraft = await cancelKucoDraft(draftItem.id)
       setTaskDrafts((current) =>
         current.map((item) =>
           item.id === draftItem.id
@@ -843,9 +847,9 @@ export function Duco({
     }
   }
 
-  const updateTaskDraft = <Field extends keyof DucoTaskDraft>(
+  const updateTaskDraft = <Field extends keyof KucoTaskDraft>(
     field: Field,
-    value: DucoTaskDraft[Field],
+    value: KucoTaskDraft[Field],
   ) => {
     setTaskForm((current) =>
       current
@@ -869,7 +873,7 @@ export function Duco({
         return
       }
 
-      const createdTask = await createDucoTask(
+      const createdTask = await createKucoTask(
         {
           draftId: taskForm.draftId,
           sourceMessageId: taskForm.sourceMessageId,
@@ -937,7 +941,7 @@ export function Duco({
     setRequestSubmitting(true)
     setRequestError('')
     try {
-      const createdRequest = await createDucoSupportRequest(
+      const createdRequest = await createKucoSupportRequest(
         requestForm.sourceMessageId,
         requestForm.draft,
       )
@@ -971,23 +975,23 @@ export function Duco({
 
   const clearHistory = async () => {
     const confirmed = window.confirm(
-      '¿Quieres borrar toda tu conversación con DUCO? Esta acción no se puede deshacer.',
+      '¿Quieres borrar toda tu conversación con KUCO? Esta acción no se puede deshacer.',
     )
     if (!confirmed) return
 
     setClearing(true)
-    setAnnouncement('Borrando historial de DUCO.')
+    setAnnouncement('Borrando historial de KUCO.')
     try {
-      const result = await clearDucoMessages()
+      const result = await clearKucoMessages()
       setMessages([])
       setAnnouncement(
         result.deletedCount > 0
-          ? 'Historial de DUCO eliminado.'
+          ? 'Historial de KUCO eliminado.'
           : 'El historial ya estaba vacío.',
       )
     } catch (error) {
       setAnnouncement(
-        readableError(error, 'No pudimos borrar el historial de DUCO.'),
+        readableError(error, 'No pudimos borrar el historial de KUCO.'),
       )
     } finally {
       setClearing(false)
@@ -998,8 +1002,8 @@ export function Duco({
     currentUser.displayName.trim().split(/\s+/)[0] || currentUser.displayName
   const hasMessages = messages.length > 0
   const byRecentUpdate = (
-    left: DucoSupportRequest,
-    right: DucoSupportRequest,
+    left: KucoSupportRequest,
+    right: KucoSupportRequest,
   ) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   const activeRequests = supportRequests
     .filter(
@@ -1023,12 +1027,12 @@ export function Duco({
   const messageTaskDrafts = new Map<
     string,
     {
-      action: DucoCreateTaskAction
+      action: KucoCreateTaskAction
       draftId: string | null
       sourceMessageId: string
-      draft: DucoTaskDraft
-      status: DucoDraftStatus
-      persistentDraft: DucoDraft | null
+      draft: KucoTaskDraft
+      status: KucoDraftStatus
+      persistentDraft: KucoDraft | null
     }
   >()
   const latestMessageIdByDraftId = new Map<string, string>()
@@ -1080,10 +1084,10 @@ export function Duco({
           : 'Comprobando IA'
   const providerPrivacyCopy =
     aiProvider === 'openai'
-      ? 'Para responder, DUCO envía a OpenAI el contexto reciente necesario. Evita incluir contraseñas, documentos o datos sensibles.'
+      ? 'Para responder, KUCO envía a OpenAI el contexto reciente necesario. Evita incluir contraseñas, documentos o datos sensibles.'
       : aiProvider === 'ollama'
         ? 'Las respuestas de IA se procesan con Ollama en este equipo; los borradores siguen guardándose en Konea.'
-        : 'DUCO usa reglas de Konea en este servidor. Tú siempre revisas y confirmas antes de crear o enviar algo.'
+        : 'KUCO usa reglas de Konea en este servidor. Tú siempre revisas y confirmas antes de crear o enviar algo.'
 
   const renderTaskMessageAction = (message: VisibleMessage) => {
     const resolved = messageTaskDrafts.get(message.id)
@@ -1100,7 +1104,7 @@ export function Duco({
     )
     if (!isPersistent) {
       return resolved.action.task ? (
-        <span className="duco-request-sent">
+        <span className="kuco-request-sent">
           <Icon name="check" /> Pendiente creado
         </span>
       ) : (
@@ -1163,67 +1167,81 @@ export function Duco({
   }
 
   return (
-    <section className="duco-layout" aria-label="Asistente académico DUCO">
-      <aside className="duco-about">
-        <div className="duco-about__identity">
-          <span className="duco-about__mark" aria-hidden="true">
+    <section className="kuco-layout" aria-label="Asistente académico KUCO">
+      <aside className={`kuco-about${aboutExpanded ? ' is-expanded' : ''}`}>
+        <div className="kuco-about__identity">
+          <span className="kuco-about__mark" aria-hidden="true">
             <Icon name="assistant" />
           </span>
           <div>
-            <span className="duco-mode-pill">
+            <span className="kuco-mode-pill">
               <span aria-hidden="true" />
               {providerLabel}
             </span>
-            <h2>DUCO</h2>
+            <h2>KUCO</h2>
             <p>Tu compañero para organizar la vida académica.</p>
           </div>
         </div>
 
-        <div className="duco-privacy-card">
-          <span className="duco-privacy-card__icon">
-            <Icon name="privacy" />
-          </span>
-          <div>
-            <strong>Privado por diseño</strong>
-            <p>{providerPrivacyCopy}</p>
+        <button
+          type="button"
+          className="kuco-about__toggle"
+          aria-expanded={aboutExpanded}
+          aria-controls="kuco-about-tools"
+          onClick={() => setAboutExpanded((expanded) => !expanded)}
+        >
+          <Icon name="sparkles" />
+          <span>{aboutExpanded ? 'Cerrar herramientas' : 'Herramientas'}</span>
+          <Icon name="arrow" />
+        </button>
+
+        <div className="kuco-about__tools" id="kuco-about-tools">
+          <div className="kuco-privacy-card">
+            <span className="kuco-privacy-card__icon">
+              <Icon name="privacy" />
+            </span>
+            <div>
+              <strong>Privado por diseño</strong>
+              <p>{providerPrivacyCopy}</p>
+            </div>
           </div>
+
+          <AvaCalendarSync />
+
+          <div className="kuco-actions" aria-labelledby="kuco-actions-title">
+            <span id="kuco-actions-title">Acciones rápidas</span>
+            {quickActions.map((action) => (
+              <button
+                type="button"
+                key={action.label}
+                onClick={() => {
+                  selectPanel('conversation')
+                  void sendPrompt(action.prompt)
+                }}
+                disabled={sending || historyLoading}
+              >
+                <span className="kuco-actions__icon">
+                  <Icon name={action.icon} />
+                </span>
+                <span>{action.label}</span>
+                <Icon name="arrow" />
+              </button>
+            ))}
+          </div>
+
+          <p className="kuco-about__note">
+            KUCO organiza tu carga académica y prepara formularios, pero no
+            realiza tus trabajos ni hace gestiones sin tu confirmación.
+          </p>
         </div>
-
-        <AvaCalendarSync />
-
-        <div className="duco-actions" aria-labelledby="duco-actions-title">
-          <span id="duco-actions-title">Acciones rápidas</span>
-          {quickActions.map((action) => (
-            <button
-              type="button"
-              key={action.label}
-              onClick={() => {
-                selectPanel('conversation')
-                void sendPrompt(action.prompt)
-              }}
-              disabled={sending || historyLoading}
-            >
-              <span className="duco-actions__icon">
-                <Icon name={action.icon} />
-              </span>
-              <span>{action.label}</span>
-              <Icon name="arrow" />
-            </button>
-          ))}
-        </div>
-
-        <p className="duco-about__note">
-          DUCO organiza tu carga académica y prepara formularios, pero no
-          realiza tus trabajos ni hace gestiones sin tu confirmación.
-        </p>
       </aside>
 
-      <div className="duco-chat">
-        <header className="duco-chat__header">
-          <div className="duco-chat__status">
+      <div className="kuco-chat">
+        <header className="kuco-chat__header">
+          <div className="kuco-chat__status">
             <AssistantAvatar />
             <span>
-              <strong>DUCO</strong>
+              <strong>KUCO</strong>
               <small>
                 <span aria-hidden="true" />
                 Asistente disponible
@@ -1231,27 +1249,27 @@ export function Duco({
             </span>
           </div>
           <div
-            className="duco-view-tabs"
+            className="kuco-view-tabs"
             role="tablist"
-            aria-label="Secciones de DUCO"
+            aria-label="Secciones de KUCO"
           >
             <button
-              id="duco-conversation-tab"
+              id="kuco-conversation-tab"
               type="button"
               role="tab"
               aria-selected={activePanel === 'conversation'}
-              aria-controls="duco-conversation-panel"
+              aria-controls="kuco-conversation-panel"
               className={activePanel === 'conversation' ? 'is-active' : ''}
               onClick={() => selectPanel('conversation')}
             >
               Conversación
             </button>
             <button
-              id="duco-requests-tab"
+              id="kuco-requests-tab"
               type="button"
               role="tab"
               aria-selected={activePanel === 'requests'}
-              aria-controls="duco-requests-panel"
+              aria-controls="kuco-requests-panel"
               className={activePanel === 'requests' ? 'is-active' : ''}
               onClick={() => selectPanel('requests')}
             >
@@ -1265,26 +1283,26 @@ export function Duco({
               )}
             </button>
           </div>
-          <div className="duco-chat__header-actions">
+          <div className="kuco-chat__header-actions">
             {openTaskCount !== null && (
-              <span className="duco-task-count">
+              <span className="kuco-task-count">
                 {openTaskCount} {openTaskCount === 1 ? 'tarea' : 'tareas'}
               </span>
             )}
             {activePanel === 'conversation' ? (
               <button
-                className="duco-clear-button"
+                className="kuco-clear-button"
                 type="button"
                 onClick={() => void clearHistory()}
                 disabled={!hasMessages || clearing || sending}
-                aria-label="Borrar historial de DUCO"
+                aria-label="Borrar historial de KUCO"
               >
                 <Icon name="trash" />
                 <span>{clearing ? 'Borrando…' : 'Borrar historial'}</span>
               </button>
             ) : (
               <button
-                className="duco-refresh-button"
+                className="kuco-refresh-button"
                 type="button"
                 onClick={() => void loadSupportRequests({ silent: true })}
                 disabled={requestsLoading || requestsRefreshing}
@@ -1301,26 +1319,26 @@ export function Duco({
         {activePanel === 'conversation' && (
           <>
             <div
-              id="duco-conversation-panel"
+              id="kuco-conversation-panel"
               role="tabpanel"
-              aria-labelledby="duco-conversation-tab"
-              className="duco-messages"
+              aria-labelledby="kuco-conversation-tab"
+              className="kuco-messages"
               ref={viewportRef}
               aria-live="polite"
               aria-relevant="additions"
-              aria-label="Conversación con DUCO"
+              aria-label="Conversación con KUCO"
             >
               {historyLoading || draftsLoading ? (
-                <div className="duco-loading-history" role="status">
-                  <span className="duco-loading-history__mark">
+                <div className="kuco-loading-history" role="status">
+                  <span className="kuco-loading-history__mark">
                     <Icon name="assistant" />
                   </span>
-                  <span className="duco-loading-history__line" />
-                  <span className="duco-loading-history__line duco-loading-history__line--short" />
-                  <span className="duco-sr-only">Cargando conversación…</span>
+                  <span className="kuco-loading-history__line" />
+                  <span className="kuco-loading-history__line kuco-loading-history__line--short" />
+                  <span className="kuco-sr-only">Cargando conversación…</span>
                 </div>
               ) : historyError && !hasConversationContent ? (
-                <div className="duco-history-error" role="alert">
+                <div className="kuco-history-error" role="alert">
                   <span>
                     <Icon name="refresh" />
                   </span>
@@ -1332,17 +1350,17 @@ export function Duco({
                   </button>
                 </div>
               ) : !hasConversationContent ? (
-                <div className="duco-welcome">
-                  <span className="duco-welcome__mark">
+                <div className="kuco-welcome">
+                  <span className="kuco-welcome__mark">
                     <Icon name="sparkles" />
                   </span>
-                  <p className="duco-welcome__eyebrow">Asistente Konea</p>
+                  <p className="kuco-welcome__eyebrow">Asistente Konea</p>
                   <h3>¡Hola, {firstName}!</h3>
                   <p>
                     Puedo revisar tus pendientes y preparar una solicitud
                     editable cuando necesites ayuda institucional.
                   </p>
-                  <div className="duco-suggestions" aria-label="Sugerencias">
+                  <div className="kuco-suggestions" aria-label="Sugerencias">
                     {quickActions.slice(0, 2).map((action) => (
                       <button
                         type="button"
@@ -1359,7 +1377,7 @@ export function Duco({
                 <>
                   {messages.map((message) => (
                     <article
-                      className={`duco-message duco-message--${message.role}${message.status === 'failed' ? ' duco-message--failed' : ''}`}
+                      className={`kuco-message kuco-message--${message.role}${message.status === 'failed' ? ' kuco-message--failed' : ''}`}
                       key={message.id}
                     >
                       {message.role === 'assistant' ? (
@@ -1367,11 +1385,11 @@ export function Duco({
                       ) : (
                         <UserAvatar user={currentUser} />
                       )}
-                      <div className="duco-message__column">
-                        <div className="duco-message__meta">
+                      <div className="kuco-message__column">
+                        <div className="kuco-message__meta">
                           <strong>
                             {message.role === 'assistant'
-                              ? 'DUCO'
+                              ? 'KUCO'
                               : currentUser.displayName}
                           </strong>
                           {message.status === 'pending' ? (
@@ -1382,14 +1400,14 @@ export function Duco({
                             </time>
                           )}
                         </div>
-                        <div className="duco-message__bubble">
+                        <div className="kuco-message__bubble">
                           <p>{message.content}</p>
                         </div>
                         {message.action && message.status === 'sent' && (
-                          <div className="duco-message__request-action">
+                          <div className="kuco-message__request-action">
                             {message.action.type === 'manage_request' ? (
                               message.request ? (
-                                <span className="duco-request-sent">
+                                <span className="kuco-request-sent">
                                   <Icon name="privacy" />
                                   Solicitud enviada ·{' '}
                                   {requestStatusLabels[message.request.status]}
@@ -1409,7 +1427,7 @@ export function Duco({
                           </div>
                         )}
                         {message.status === 'failed' && (
-                          <div className="duco-message__failure" role="alert">
+                          <div className="kuco-message__failure" role="alert">
                             <span>No se pudo enviar.</span>
                             <button
                               type="button"
@@ -1434,13 +1452,13 @@ export function Duco({
 
                   {orphanTaskDrafts.length > 0 && (
                     <section
-                      className="duco-orphan-drafts"
-                      aria-labelledby="duco-saved-drafts-title"
+                      className="kuco-orphan-drafts"
+                      aria-labelledby="kuco-saved-drafts-title"
                     >
                       <header>
                         <Icon name="tasks" />
                         <div>
-                          <h3 id="duco-saved-drafts-title">
+                          <h3 id="kuco-saved-drafts-title">
                             Borradores guardados
                           </h3>
                           <p>
@@ -1449,7 +1467,7 @@ export function Duco({
                           </p>
                         </div>
                       </header>
-                      <div className="duco-orphan-drafts__list">
+                      <div className="kuco-orphan-drafts__list">
                         {orphanTaskDrafts.map((item) => {
                           const taskDraft = normalizeTaskDraft(item.payload)
                           return (
@@ -1484,7 +1502,7 @@ export function Duco({
               )}
 
               {draftsError && (
-                <div className="duco-drafts-error" role="alert">
+                <div className="kuco-drafts-error" role="alert">
                   <span>{draftsError}</span>
                   <button type="button" onClick={() => void loadTaskDrafts()}>
                     Reintentar
@@ -1493,30 +1511,30 @@ export function Duco({
               )}
 
               {sending && (
-                <div className="duco-typing" role="status">
+                <div className="kuco-typing" role="status">
                   <AssistantAvatar />
-                  <span className="duco-typing__bubble">
+                  <span className="kuco-typing__bubble">
                     <span />
                     <span />
                     <span />
                   </span>
-                  <span className="duco-sr-only">DUCO está escribiendo…</span>
+                  <span className="kuco-sr-only">KUCO está escribiendo…</span>
                 </div>
               )}
             </div>
 
-            <form className="duco-composer" onSubmit={submitMessage}>
-              <label className="duco-sr-only" htmlFor="duco-message-input">
-                Escribe un mensaje para DUCO
+            <form className="kuco-composer" onSubmit={submitMessage}>
+              <label className="kuco-sr-only" htmlFor="kuco-message-input">
+                Escribe un mensaje para KUCO
               </label>
-              <div className="duco-composer__field">
+              <div className="kuco-composer__field">
                 <textarea
-                  id="duco-message-input"
+                  id="kuco-message-input"
                   ref={composerRef}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
-                  placeholder="Pregunta por tus tareas o cuéntame qué gestión necesitas…"
+                  placeholder="¿Qué necesitas organizar?"
                   maxLength={2_000}
                   rows={1}
                   disabled={historyLoading || clearing}
@@ -1531,7 +1549,7 @@ export function Duco({
                   <Icon name="send" />
                 </button>
               </div>
-              <div className="duco-composer__hint">
+              <div className="kuco-composer__hint">
                 <span>
                   <Icon name="privacy" />
                   Ninguna solicitud se envía sin tu confirmación
@@ -1544,12 +1562,12 @@ export function Duco({
 
         {activePanel === 'requests' && (
           <div
-            id="duco-requests-panel"
-            className="duco-requests-panel"
+            id="kuco-requests-panel"
+            className="kuco-requests-panel"
             role="tabpanel"
-            aria-labelledby="duco-requests-tab"
+            aria-labelledby="kuco-requests-tab"
           >
-            <header className="duco-requests-panel__intro">
+            <header className="kuco-requests-panel__intro">
               <div>
                 <span>Seguimiento institucional</span>
                 <h3>Mis solicitudes</h3>
@@ -1558,21 +1576,21 @@ export function Duco({
                   fueron atendidas.
                 </p>
               </div>
-              <span className="duco-requests-panel__total">
+              <span className="kuco-requests-panel__total">
                 {supportRequests.length}{' '}
                 {supportRequests.length === 1 ? 'solicitud' : 'solicitudes'}
               </span>
             </header>
 
             {requestsLoading && !requestsLoaded ? (
-              <div className="duco-requests-state" role="status">
-                <span className="duco-loading-history__mark">
+              <div className="kuco-requests-state" role="status">
+                <span className="kuco-loading-history__mark">
                   <Icon name="inbox" />
                 </span>
                 <p>Cargando tus solicitudes…</p>
               </div>
             ) : requestsError && supportRequests.length === 0 ? (
-              <div className="duco-requests-state" role="alert">
+              <div className="kuco-requests-state" role="alert">
                 <span>
                   <Icon name="refresh" />
                 </span>
@@ -1586,13 +1604,13 @@ export function Duco({
                 </button>
               </div>
             ) : supportRequests.length === 0 ? (
-              <div className="duco-requests-state duco-requests-state--empty">
+              <div className="kuco-requests-state kuco-requests-state--empty">
                 <span>
                   <Icon name="inbox" />
                 </span>
                 <h4>Aún no tienes solicitudes</h4>
                 <p>
-                  Cuando confirmes un formulario preparado por DUCO aparecerá
+                  Cuando confirmes un formulario preparado por KUCO aparecerá
                   aquí para que puedas seguir su estado.
                 </p>
                 <button
@@ -1603,23 +1621,23 @@ export function Duco({
                 </button>
               </div>
             ) : (
-              <div className="duco-request-groups">
+              <div className="kuco-request-groups">
                 {requestsError && (
-                  <p className="duco-requests-inline-error" role="alert">
+                  <p className="kuco-requests-inline-error" role="alert">
                     {requestsError}
                   </p>
                 )}
 
-                <section aria-labelledby="duco-active-requests-title">
-                  <header className="duco-request-group__title">
+                <section aria-labelledby="kuco-active-requests-title">
+                  <header className="kuco-request-group__title">
                     <div>
-                      <span className="duco-request-group__dot" />
-                      <h4 id="duco-active-requests-title">Activas</h4>
+                      <span className="kuco-request-group__dot" />
+                      <h4 id="kuco-active-requests-title">Activas</h4>
                     </div>
                     <span>{activeRequests.length}</span>
                   </header>
                   {activeRequests.length > 0 ? (
-                    <div className="duco-request-cards">
+                    <div className="kuco-request-cards">
                       {activeRequests.map((request) => (
                         <SupportRequestCard
                           key={request.id}
@@ -1628,22 +1646,22 @@ export function Duco({
                       ))}
                     </div>
                   ) : (
-                    <p className="duco-request-group__empty">
+                    <p className="kuco-request-group__empty">
                       No tienes solicitudes pendientes o en revisión.
                     </p>
                   )}
                 </section>
 
-                <section aria-labelledby="duco-finished-requests-title">
-                  <header className="duco-request-group__title duco-request-group__title--finished">
+                <section aria-labelledby="kuco-finished-requests-title">
+                  <header className="kuco-request-group__title kuco-request-group__title--finished">
                     <div>
                       <Icon name="check" />
-                      <h4 id="duco-finished-requests-title">Finalizadas</h4>
+                      <h4 id="kuco-finished-requests-title">Finalizadas</h4>
                     </div>
                     <span>{finishedRequests.length}</span>
                   </header>
                   {finishedRequests.length > 0 ? (
-                    <div className="duco-request-cards">
+                    <div className="kuco-request-cards">
                       {finishedRequests.map((request) => (
                         <SupportRequestCard
                           key={request.id}
@@ -1652,7 +1670,7 @@ export function Duco({
                       ))}
                     </div>
                   ) : (
-                    <p className="duco-request-group__empty">
+                    <p className="kuco-request-group__empty">
                       Las solicitudes resueltas o rechazadas aparecerán aquí.
                     </p>
                   )}
@@ -1662,14 +1680,14 @@ export function Duco({
           </div>
         )}
 
-        <p className="duco-sr-only" aria-live="assertive" aria-atomic="true">
+        <p className="kuco-sr-only" aria-live="assertive" aria-atomic="true">
           {announcement}
         </p>
       </div>
 
       {requestForm && (
         <div
-          className="duco-request-modal"
+          className="kuco-request-modal"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !requestSubmitting) {
@@ -1679,29 +1697,29 @@ export function Duco({
         >
           <div
             ref={requestDialogRef}
-            className="duco-request-dialog"
+            className="kuco-request-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="duco-request-title"
+            aria-labelledby="kuco-request-title"
             tabIndex={-1}
           >
             <header>
-              <span className="duco-request-dialog__mark">
+              <span className="kuco-request-dialog__mark">
                 <Icon name="tasks" />
               </span>
               <div>
-                <p>Borrador preparado por DUCO</p>
-                <h3 id="duco-request-title">Gestionar solicitud</h3>
+                <p>Borrador preparado por KUCO</p>
+                <h3 id="kuco-request-title">Gestionar solicitud</h3>
               </div>
             </header>
 
-            <p className="duco-request-dialog__intro">
+            <p className="kuco-request-dialog__intro">
               Revisa y modifica los datos. La solicitud solo se enviará cuando
               confirmes este formulario.
             </p>
 
             <form onSubmit={submitSupportRequest}>
-              <div className="duco-request-form__row">
+              <div className="kuco-request-form__row">
                 <label>
                   Tipo de solicitud
                   <select
@@ -1709,14 +1727,14 @@ export function Duco({
                     onChange={(event) =>
                       updateRequestDraft(
                         'category',
-                        event.target.value as DucoRequestCategory,
+                        event.target.value as KucoRequestCategory,
                       )
                     }
                     disabled={requestSubmitting}
                   >
                     {(
                       Object.entries(requestCategoryLabels) as Array<
-                        [DucoRequestCategory, string]
+                        [KucoRequestCategory, string]
                       >
                     ).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -1732,7 +1750,7 @@ export function Duco({
                     onChange={(event) =>
                       updateRequestDraft(
                         'urgency',
-                        event.target.value as DucoRequestDraft['urgency'],
+                        event.target.value as KucoRequestDraft['urgency'],
                       )
                     }
                     disabled={requestSubmitting}
@@ -1788,7 +1806,7 @@ export function Duco({
               </label>
 
               {requestError && (
-                <p className="duco-request-form__error" role="alert">
+                <p className="kuco-request-form__error" role="alert">
                   {requestError}
                 </p>
               )}
@@ -1796,7 +1814,7 @@ export function Duco({
               <footer>
                 <button
                   type="button"
-                  className="duco-request-form__cancel"
+                  className="kuco-request-form__cancel"
                   onClick={() => setRequestForm(null)}
                   disabled={requestSubmitting}
                 >
@@ -1804,7 +1822,7 @@ export function Duco({
                 </button>
                 <button
                   type="submit"
-                  className="duco-request-form__submit"
+                  className="kuco-request-form__submit"
                   disabled={requestSubmitting}
                 >
                   <Icon name="send" />
@@ -1818,7 +1836,7 @@ export function Duco({
 
       {taskForm && (
         <div
-          className="duco-request-modal"
+          className="kuco-request-modal"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !taskSubmitting) {
@@ -1828,25 +1846,25 @@ export function Duco({
         >
           <div
             ref={taskDialogRef}
-            className="duco-request-dialog duco-task-dialog"
+            className="kuco-request-dialog kuco-task-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="duco-task-title"
+            aria-labelledby="kuco-task-title"
             tabIndex={-1}
           >
             <header>
-              <span className="duco-request-dialog__mark">
+              <span className="kuco-request-dialog__mark">
                 <Icon name="tasks" />
               </span>
               <div>
-                <p>Borrador preparado por DUCO</p>
-                <h3 id="duco-task-title">Crear pendiente</h3>
+                <p>Borrador preparado por KUCO</p>
+                <h3 id="kuco-task-title">Crear pendiente</h3>
               </div>
             </header>
 
-            <p className="duco-request-dialog__intro">
+            <p className="kuco-request-dialog__intro">
               Revisa los datos antes de añadir este pendiente a “Próximas
-              tareas”. DUCO no realizará la entrega por ti.
+              tareas”. KUCO no realizará la entrega por ti.
             </p>
 
             <form onSubmit={submitTask}>
@@ -1865,7 +1883,7 @@ export function Duco({
                 />
               </label>
 
-              <div className="duco-request-form__row duco-task-form__row">
+              <div className="kuco-request-form__row kuco-task-form__row">
                 <label>
                   Asignatura <span>(opcional)</span>
                   <input
@@ -1885,7 +1903,7 @@ export function Duco({
                     onChange={(event) =>
                       updateTaskDraft(
                         'priority',
-                        event.target.value as DucoTaskDraft['priority'],
+                        event.target.value as KucoTaskDraft['priority'],
                       )
                     }
                     disabled={taskSubmitting}
@@ -1924,7 +1942,7 @@ export function Duco({
               </label>
 
               {taskError && (
-                <p className="duco-request-form__error" role="alert">
+                <p className="kuco-request-form__error" role="alert">
                   {taskError}
                 </p>
               )}
@@ -1932,7 +1950,7 @@ export function Duco({
               <footer>
                 <button
                   type="button"
-                  className="duco-request-form__cancel"
+                  className="kuco-request-form__cancel"
                   onClick={() => setTaskForm(null)}
                   disabled={taskSubmitting}
                 >
@@ -1940,7 +1958,7 @@ export function Duco({
                 </button>
                 <button
                   type="submit"
-                  className="duco-request-form__submit"
+                  className="kuco-request-form__submit"
                   disabled={
                     taskSubmitting || taskForm.draft.title.trim().length < 2
                   }

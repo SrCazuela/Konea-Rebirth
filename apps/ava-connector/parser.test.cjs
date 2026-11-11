@@ -102,6 +102,7 @@ test('interpreta fechas ISO y fechas locales visibles', () => {
     new Date(2026, 8, 10, 23, 59).toISOString(),
   )
   assert.equal(parseDate('31/02/2030'), null)
+  assert.equal(parseDate('2030-02-31T18:30:00Z'), null)
 })
 
 test('extrae código, sección y semestre desde texto de una tarjeta', () => {
@@ -483,5 +484,82 @@ test('acepta una tarea del flujo solo cuando contiene vencimiento explícito', (
   assert.deepEqual(
     collectRecentActivities(root, 'https://campusvirtual.duoc.cl/ultra/stream'),
     [],
+  )
+})
+
+function dueActivities(
+  text,
+  { page = 'stream', dueAttribute, dueElement } = {},
+) {
+  const course = fakeElement({ text: 'CAPSTONE_002D' })
+  const title = fakeElement({ text: 'Entrega del proyecto' })
+  const row = fakeElement({
+    attributes: dueAttribute ? { 'data-due-date': dueAttribute } : {},
+    text,
+    queries: {
+      '[class*="course-title" i]': course,
+      '[class*="activity-detail" i]': title,
+      ...(dueElement ? { '[class*="due-date" i]': dueElement } : {}),
+    },
+    closest: (_selector, element) => element,
+  })
+  return collectActivities(
+    { querySelectorAll: () => [row] },
+    `https://campusvirtual.duoc.cl/ultra/${page}`,
+  )
+}
+
+test('relaciona el vencimiento con su etiqueta aunque la publicación tenga otra fecha', () => {
+  for (const page of ['stream', 'activity']) {
+    const activities = dueActivities(
+      'Publicado: 5 de octubre de 2026 CAPSTONE_002D Entrega del proyecto Vence: 10 de octubre de 2026 Actualizado: 7 de octubre de 2026',
+      { page },
+    )
+    assert.equal(activities.length, 1)
+    assert.equal(
+      activities[0].dueAt,
+      new Date(2026, 9, 10, 23, 59).toISOString(),
+    )
+  }
+})
+
+test('acepta las etiquetas de entrega con fecha local, ISO y hora explícita', () => {
+  const samples = [
+    ['Vencimiento: 10/10/2026 18:30', new Date(2026, 9, 10, 18, 30)],
+    [
+      'Fecha de entrega: el sábado, 10 de octubre de 2026 a las 18:30',
+      new Date(2026, 9, 10, 18, 30),
+    ],
+    ['Fecha límite: 10-10-2026', new Date(2026, 9, 10, 23, 59)],
+    ['Due date: 2026-10-10T18:30:00-03:00', new Date('2026-10-10T21:30:00Z')],
+  ]
+  for (const [label, expected] of samples) {
+    const activities = dueActivities(`Publicado: 01/10/2026. ${label}`)
+    assert.equal(activities.length, 1, label)
+    assert.equal(activities[0].dueAt, expected.toISOString(), label)
+  }
+})
+
+test('no reemplaza un vencimiento ausente o inválido con la fecha de publicación', () => {
+  for (const label of [
+    'Vence: no disponible. Publicado: 5 de octubre de 2026',
+    'Fecha de entrega: por confirmar. Actualizado: 5 de octubre de 2026',
+    'Publicado: 5 de octubre de 2026. Vence: 31/02/2026',
+    'Publicado: 5 de octubre de 2026. Vence: 10/10/2026 12:90',
+  ]) {
+    assert.deepEqual(dueActivities(label), [], label)
+  }
+})
+
+test('prioriza la fecha estructurada de entrega y analiza el texto del campo correcto', () => {
+  const text = 'Publicado: 5 de octubre de 2026. Vence: 10 de octubre de 2026'
+  const fromAttribute = dueActivities(text, {
+    dueAttribute: '2026-10-12T18:00:00-03:00',
+  })
+  assert.equal(fromAttribute[0].dueAt, '2026-10-12T21:00:00.000Z')
+  const fromElement = dueActivities(text, { dueElement: fakeElement({ text }) })
+  assert.equal(
+    fromElement[0].dueAt,
+    new Date(2026, 9, 10, 23, 59).toISOString(),
   )
 })

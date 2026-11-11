@@ -1,7 +1,9 @@
 # API REST de Konea
 
-Contrato verificado contra los routers y clientes de Konea Rebirth. La base de
-desarrollo es:
+Contrato verificado contra los routers y clientes de Konea Rebirth. Las rutas
+se expresan respecto de `/api/v1`; la base oficial es
+`https://konea-campus-connect.danaealvarez0917.chatgpt.site/api/v1`. La base de
+desarrollo local es:
 
 ```text
 http://localhost:3000/api/v1
@@ -9,10 +11,10 @@ http://localhost:3000/api/v1
 
 ## Convenciones
 
-- Salvo `GET /`, `GET /health`, registro e inicio de sesión, todas las rutas
+- Salvo `GET /`, `GET /health`, registro, inicio y cierre de sesión, las rutas
   requieren la cookie `konea_session`; `/health/database` también es privado.
-- El navegador debe usar `credentials: "include"`; Postman/Insomnia debe
-  conservar la cookie recibida en registro/login.
+- El navegador y `session.fetch` de Electron usan `credentials: "include"`;
+  cada cliente conserva su propia cookie de registro/login, también en Postman/Insomnia.
 - Los cuerpos normales son JSON con `Content-Type: application/json`.
 - Los identificadores son UUID, excepto el código personal QR de seis
   caracteres.
@@ -43,7 +45,9 @@ Estados habituales: `400` validación/regla, `401` sin sesión, `403` permiso,
 `404` recurso no visible, `409` conflicto, `410` QR expirado, `413` tamaño,
 `415` archivo, `422` contenido rechazado y `429` límite temporal. Los
 consumidores deben usar
-`error.code`, no comparar el texto traducido.
+`error.code`, no comparar el texto traducido. El contrato JSON corresponde a
+errores de aplicación; durante el arranque remoto se observaron respuestas
+HTML 503/429 de infraestructura, antes de que `/health` devolviera 200 JSON.
 
 Las escrituras de navegador deben provenir de un origen configurado en
 `CORS_ORIGIN` y comparten un límite general por IP; las rutas sensibles aplican
@@ -350,7 +354,14 @@ límite de 20 solicitudes cada 15 minutos por origen.
 | `DELETE` | `/users/:userId/connection-request` | —                     | cancela la intención unilateral propia     |
 | `DELETE` | `/users/:userId/connection`         | —                     | elimina conexión y archiva el chat directo |
 
-Todos los campos de `PATCH /profile` son opcionales:
+Todos los campos de `PATCH /profile` son opcionales. `username` solo se acepta
+si coincide con el actual; para cambiar el identificador de acceso debe usarse
+`PATCH /auth/account` con la contraseña actual. Un cambio por `/profile`
+devuelve `409 ACCOUNT_SETTINGS_REQUIRED` y no modifica el identificador ni
+revoca sesiones. El campo igual se omite del `UPDATE` para no revertir un
+cambio de cuenta concurrente.
+
+Ejemplo de perfil cuyo usuario actual es `ana.p`:
 
 ```json
 {
@@ -517,7 +528,10 @@ exclusivamente por `status`.
 
 Pregunta: 1–80 caracteres. Opciones: 2–6 valores únicos, cada uno de 1–40.
 `allowMultiple` default `false`. Votar reemplaza todas las selecciones anteriores
-del usuario; una encuesta simple exige exactamente un UUID.
+del usuario; una encuesta simple exige exactamente un UUID. En grupos,
+consultar una encuesta, votar o retirar el voto exige que su mensaje sea visible
+según la fecha `joinedAt`, con la misma excepción del propietario que aplica al
+historial. Conocer el identificador de una encuesta anterior no otorga acceso.
 
 ## Códigos personales
 
@@ -532,8 +546,11 @@ Un QR contiene `id`, `ownerId`, `code`, `expiresAt`, `createdAt`, `usedAt` y
 `usedById`. El código es alfanumérico, se normaliza a mayúsculas, vence en cinco
 minutos y el canje está limitado a 30 intentos cada 15 minutos por origen. La
 creación se serializa por propietario. Repetir el canje con la misma cuenta es
-idempotente (`redemptionRepeated:true`) y no duplica conexión, chat ni
-notificación; otra cuenta recibe conflicto.
+idempotente (`redemptionRepeated:true`) mientras sigan vigentes la conexión y
+el chat, sin duplicarlos ni restaurarlos. Eliminar una conexión invalida los
+códigos consumidos entre ambas personas: reutilizarlos no vuelve a conectar ni
+reanuda un chat archivado. Redención y eliminación se coordinan mediante un
+bloqueo por pareja; otra cuenta no puede usar un código ya consumido.
 
 ## Archivos
 
@@ -583,20 +600,20 @@ Una notificación contiene `id`, `type`, `title`, `body`, `href`, `resourceId`,
 
 ## Agenda académica y calendario AVA
 
-| Método   | Ruta                                | Entrada                                               | Respuesta/efecto                        |
-| -------- | ----------------------------------- | ----------------------------------------------------- | --------------------------------------- |
-| `GET`    | `/academic`                         | —                                                     | `{courses, tasks, events, sync}`        |
-| `POST`   | `/academic/courses`                 | `{name, code?, section?, term?}`                      | `200/201 {course, reactivated}`         |
-| `PATCH`  | `/academic/courses/:courseId`       | uno o más campos de materia                           | `{course}`; solo materia manual propia  |
-| `DELETE` | `/academic/courses/:courseId`       | —                                                     | `204`; desactiva una materia manual     |
-| `POST`   | `/academic/tasks`                   | `{courseId?, title, description?, dueAt?, priority?}` | `201 {task}`                            |
-| `PATCH`  | `/academic/tasks/:taskId`           | campos de pendiente, incluido `status`                | `{task}`                                |
-| `DELETE` | `/academic/tasks/:taskId`           | —                                                     | `204`                                   |
-| `GET`    | `/ava-calendar`                     | —                                                     | `{sync, upcomingCount, events}`         |
-| `POST`   | `/ava-calendar/sync`                | `{calendarUrl}`                                       | resumen más `{importedCount}`           |
-| `POST`   | `/ava-imports/previews`             | captura JSON v1 exportada por la extensión            | `201/200 {import, courses, activities}` |
-| `POST`   | `/ava-imports/previews/:id/confirm` | IDs seleccionados de materias y actividades           | `{result}` idempotente                  |
-| `DELETE` | `/ava-imports/previews/:id`         | —                                                     | `204`; descarta y minimiza el borrador  |
+| Método   | Ruta                                | Entrada                                               | Respuesta/efecto                                   |
+| -------- | ----------------------------------- | ----------------------------------------------------- | -------------------------------------------------- |
+| `GET`    | `/academic`                         | —                                                     | `{courses, tasks, events, sync}`                   |
+| `POST`   | `/academic/courses`                 | `{name, code?, section?, term?}`                      | `200/201 {course, reactivated}`                    |
+| `PATCH`  | `/academic/courses/:courseId`       | uno o más campos de materia                           | `{course}`; materia propia manual o de extensión   |
+| `DELETE` | `/academic/courses/:courseId`       | —                                                     | `204`; desactiva una materia manual o de extensión |
+| `POST`   | `/academic/tasks`                   | `{courseId?, title, description?, dueAt?, priority?}` | `201 {task}`                                       |
+| `PATCH`  | `/academic/tasks/:taskId`           | campos de pendiente, incluido `status`                | `{task}`                                           |
+| `DELETE` | `/academic/tasks/:taskId`           | —                                                     | `204`                                              |
+| `GET`    | `/ava-calendar`                     | —                                                     | `{sync, upcomingCount, events}`                    |
+| `POST`   | `/ava-calendar/sync`                | `{calendarUrl}`                                       | resumen más `{importedCount}`                      |
+| `POST`   | `/ava-imports/previews`             | captura JSON v1 exportada por la extensión            | `201/200 {import, courses, activities}`            |
+| `POST`   | `/ava-imports/previews/:id/confirm` | IDs seleccionados de materias y actividades           | `{result}` idempotente                             |
+| `DELETE` | `/ava-imports/previews/:id`         | —                                                     | `204`; descarta y minimiza el borrador             |
 
 Una materia contiene `name`, `normalizedName`, `code`, `section`, `term`,
 `source` (`manual | ava | ava_extension`) y `active`. Nombre: 2–300 caracteres; los otros textos
@@ -612,8 +629,15 @@ en el popup y no forma parte del archivo. La página y cada enlace deben ser HTT
 vista previa vence en 24 horas. Confirmar crea materias `ava_extension` y tareas
 pendientes con identificador externo único; no desactiva ni borra elementos que
 falten en capturas posteriores. Reimportar una materia `ava_extension` archivada
-reactiva la misma fila; las materias manuales homónimas permanecen intactas. El
-archivo entra por la SPA autenticada, por lo que no existe un endpoint de
+reactiva la misma fila. Para una materia importada activa, la vista previa
+puede devolver `updatable:true`, `state:"updatable"` y
+`changes:[{field,from,to}]` de código, sección y semestre. La materia vuelve a
+ser seleccionable; confirmar esa selección actualiza la fila en vez de crear
+otra. Los campos ausentes conservan el valor guardado y las materias manuales
+homónimas permanecen intactas. El resultado incluye `updatedCourses` cuando
+hubo actualizaciones, además de los conteos existentes. Repetir una confirmación
+conserva su resultado sin volver a aplicar cambios. El archivo entra por la SPA
+autenticada, por lo que no existe un endpoint de
 extensión exento de CORS o `trustedWriteOrigin`.
 
 Un pendiente académico admite materia propia activa o `null`, título de 2–160,
@@ -682,32 +706,41 @@ pausa de forma persistente en la siguiente consulta del overview o transición;
 incluso antes de esa consulta, el cálculo efectivo ya queda limitado por esa
 ventana y no crece indefinidamente.
 
-## DUCO
+Los clientes web y Electron comparten estas rutas y la misma cuenta, con
+sesiones de autenticación independientes. Consultan el resumen y el dashboard
+académico cada 10 segundos cuando están visibles, y al volver a la vista. El
+escritorio oculto mantiene consultas cada 30 segundos si su compañero está
+habilitado. Un `409` de transición provoca reconciliación con el estado de la API; no indica
+por sí mismo una caída de conexión. Completar una sesión no completa su tarea
+asociada: ese cambio necesita una acción explícita sobre
+`PATCH /academic/tasks/:taskId`.
+
+## KUCO
 
 Todas las rutas exigen sesión. El proveedor se configura en la API con
-`DUCO_AI_PROVIDER=local|ollama|openai`; `local` usa reglas determinísticas,
+`KUCO_AI_PROVIDER=local|ollama|openai`; `local` usa reglas determinísticas,
 `ollama` ejecuta el modelo configurado en el equipo y `openai` usa el modelo de
 `OPENAI_MODEL` (OpenAI Luna en la configuración de referencia).
 
 | Método   | Ruta                        | Entrada                              | Respuesta                                                        |
 | -------- | --------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `GET`    | `/duco/messages`            | —                                    | `{messages, openTaskCount, aiProvider}`, hasta 100 cronológicos  |
-| `POST`   | `/duco/messages`            | `{content}` o `{message}`            | `201 {userMessage, assistantMessage, openTaskCount, aiProvider}` |
-| `DELETE` | `/duco/messages`            | —                                    | `{deletedCount}`                                                 |
-| `GET`    | `/duco/drafts`              | —                                    | `{drafts}`, borradores activos y vigentes                        |
-| `DELETE` | `/duco/drafts/:draftId`     | —                                    | `{draft}` con estado `cancelled`                                 |
-| `POST`   | `/duco/tasks`               | borrador y datos finales editados    | `201 {task, action}`                                             |
-| `GET`    | `/duco/requests`            | —                                    | `{requests}` propias con `timeline`                              |
-| `POST`   | `/duco/requests`            | borrador de solicitud revisado       | `201 {request}`                                                  |
-| `GET`    | `/duco/requests/all`        | rol de moderación                    | `{requests}` con solicitante, responsable y `timeline`           |
-| `PATCH`  | `/duco/requests/:requestId` | rol de moderación, `{status?,note?}` | `{request}` con `timeline` actualizado                           |
+| `GET`    | `/kuco/messages`            | —                                    | `{messages, openTaskCount, aiProvider}`, hasta 100 cronológicos  |
+| `POST`   | `/kuco/messages`            | `{content}` o `{message}`            | `201 {userMessage, assistantMessage, openTaskCount, aiProvider}` |
+| `DELETE` | `/kuco/messages`            | —                                    | `{deletedCount}`                                                 |
+| `GET`    | `/kuco/drafts`              | —                                    | `{drafts}`, borradores activos y vigentes                        |
+| `DELETE` | `/kuco/drafts/:draftId`     | —                                    | `{draft}` con estado `cancelled`                                 |
+| `POST`   | `/kuco/tasks`               | borrador y datos finales editados    | `201 {task, action}`                                             |
+| `GET`    | `/kuco/requests`            | —                                    | `{requests}` propias con `timeline`                              |
+| `POST`   | `/kuco/requests`            | borrador de solicitud revisado       | `201 {request}`                                                  |
+| `GET`    | `/kuco/requests/all`        | rol de moderación                    | `{requests}` con solicitante, responsable y `timeline`           |
+| `PATCH`  | `/kuco/requests/:requestId` | rol de moderación, `{status?,note?}` | `{request}` con `timeline` actualizado                           |
 
 Cada mensaje contiene `id`, `role` (`user | assistant`), `content`, `action` y
 `createdAt`. La entrada admite 1–2.000 caracteres. En `GET`, `aiProvider`
 informa el proveedor configurado para la instancia; en `POST`, informa cuál
 produjo realmente esa respuesta y puede ser `local` cuando el proveedor
 generativo no está disponible. El timeout predeterminado es 120 segundos para
-Ollama (`DUCO_AI_TIMEOUT_MS`) y 45 para OpenAI (`OPENAI_TIMEOUT_MS`).
+Ollama (`KUCO_AI_TIMEOUT_MS`) y 45 para OpenAI (`OPENAI_TIMEOUT_MS`).
 
 El envío de mensajes admite 30 consultas por usuario y 120 por origen cada 15
 minutos. Una instancia procesa hasta cuatro respuestas simultáneas y no más de
@@ -729,15 +762,15 @@ muestra el formulario editable.
 
 Los borradores se persisten durante 30 días. Su ciclo admite
 `collecting_information`, `ready_for_review`, `confirmed`, `cancelled` y
-`expired`; `GET /duco/drafts` devuelve únicamente los estados activos
+`expired`; `GET /kuco/drafts` devuelve únicamente los estados activos
 (`collecting_information` o `ready_for_review`) cuya fecha `expiresAt` todavía
 no venció. Cada elemento también incluye `kind`, `payload`, `sourceMessageId`,
 `completedResourceId`, `createdAt` y `updatedAt`.
 
-`DELETE /duco/drafts/:draftId` descarta el borrador de forma lógica cambiando
+`DELETE /kuco/drafts/:draftId` descarta el borrador de forma lógica cambiando
 su estado a `cancelled`; no elimina una tarea ya confirmada. Borrar el historial
-con `DELETE /duco/messages` tampoco borra los borradores de tareas, por lo que
-pueden recuperarse desde `/duco/drafts`.
+con `DELETE /kuco/messages` tampoco borra los borradores de tareas, por lo que
+pueden recuperarse desde `/kuco/drafts`.
 
 Para confirmar un borrador, el cliente envía los valores ya revisados:
 
@@ -752,15 +785,15 @@ Para confirmar un borrador, el cliente envía los valores ya revisados:
 }
 ```
 
-`POST /duco/tasks` exige `draftId` o, para clientes anteriores,
+`POST /kuco/tasks` exige `draftId` o, para clientes anteriores,
 `sourceMessageId`. La operación crea el pendiente y marca el borrador como
 `confirmed` dentro de la misma transacción. Repetir la confirmación, confirmar
 un borrador cancelado/expirado o usar uno ajeno produce conflicto o no
 encontrado según corresponda.
 
 Las solicitudes institucionales siguen el mismo principio de revisión humana:
-DUCO puede proponer un formulario `manage_request`, pero solo
-`POST /duco/requests` lo envía después de que el usuario revisa sus campos.
+KUCO puede proponer un formulario `manage_request`, pero solo
+`POST /kuco/requests` lo envía después de que el usuario revisa sus campos.
 Cada solicitud incorpora una cronología inmutable con creación, cambios de
 estado y respuestas humanas. Las transiciones válidas son
 `pending → reviewing|resolved|rejected`, `reviewing → pending|resolved|rejected`

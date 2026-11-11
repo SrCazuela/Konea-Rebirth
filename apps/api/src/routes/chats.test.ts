@@ -4,7 +4,14 @@ import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { closeDatabaseConnection, db } from '../db/client.js'
-import { connections, notifications, qrCodes, users } from '../db/schema.js'
+import {
+  chatParticipants,
+  connections,
+  messages,
+  notifications,
+  qrCodes,
+  users,
+} from '../db/schema.js'
 
 function testAccount(label: string) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
@@ -466,6 +473,67 @@ describe.sequential('chat, collaboration and QR API', () => {
     await thirdAgent.get(`/api/v1/polls/${poll.id}`).expect(403)
   })
 
+  it('applies the group history boundary to poll details and every vote operation', async () => {
+    const created = await firstAgent.post('/api/v1/chats/groups').send({
+      name: 'Encuestas privadas anteriores',
+      participantIds: [secondUserId],
+    })
+    expect(created.status).toBe(201)
+    const chatId = created.body.chat.id
+    const createdPoll = await firstAgent
+      .post(`/api/v1/chats/${chatId}/polls`)
+      .send({
+        question: 'Encuesta anterior al ingreso',
+        options: ['Primera', 'Segunda'],
+        allowMultiple: false,
+      })
+    expect(createdPoll.status).toBe(201)
+    const poll = createdPoll.body.poll
+    // Make the timeline deterministic without sleeping: A/B joined first,
+    // the poll followed, and C joins through the real API below.
+    await db
+      .update(chatParticipants)
+      .set({ joinedAt: new Date(Date.now() - 120_000) })
+      .where(eq(chatParticipants.chatId, chatId))
+    await db
+      .update(messages)
+      .set({ createdAt: new Date(Date.now() - 60_000) })
+      .where(eq(messages.id, poll.messageId))
+    await firstAgent
+      .post(`/api/v1/chats/${chatId}/participants`)
+      .send({ userId: thirdUserId })
+      .expect(201)
+
+    const hiddenHistory = await thirdAgent.get(
+      `/api/v1/chats/${chatId}/messages`,
+    )
+    expect(hiddenHistory.status).toBe(200)
+    expect(hiddenHistory.body.messages).toHaveLength(0)
+    for (const attempt of [
+      () => thirdAgent.get(`/api/v1/polls/${poll.id}`),
+      () =>
+        thirdAgent
+          .post(`/api/v1/polls/${poll.id}/votes`)
+          .send({ optionIds: [poll.options[0].id] }),
+      () => thirdAgent.delete(`/api/v1/polls/${poll.id}/votes`),
+    ]) {
+      const denied = await attempt()
+      expect(denied.status).toBe(404)
+      expect(denied.body.error.code).toBe('POLL_NOT_FOUND')
+    }
+    const visibleToOwner = await firstAgent.get(`/api/v1/polls/${poll.id}`)
+    expect(visibleToOwner.status).toBe(200)
+    const visibleToExistingMember = await secondAgent.get(
+      `/api/v1/polls/${poll.id}`,
+    )
+    expect(visibleToExistingMember.status).toBe(200)
+    const allowedVote = await secondAgent
+      .post(`/api/v1/polls/${poll.id}/votes`)
+      .send({ optionIds: [poll.options[0].id] })
+    expect(allowedVote.status).toBe(200)
+    expect(allowedVote.body.poll.voteCount).toBe(1)
+  })
+
   it('generates short-lived, single-use personal QR codes', async () => {
     const generated = await thirdAgent.post('/api/v1/qr-codes/personal')
     expect(generated.status).toBe(201)
@@ -512,6 +580,116 @@ describe.sequential('chat, collaboration and QR API', () => {
       .where(and(eq(qrCodes.ownerId, thirdUserId), isNull(qrCodes.usedAt)))
     expect(Number(activeCodes?.total ?? 0)).toBe(1)
     await thirdAgent.delete('/api/v1/qr-codes/current').expect(204)
+  })
+
+  it('never restores a revoked QR relationship, including after expiry or later reconnection', async () => {
+    const ownerAccount = testAccount('qrowner')
+    const redeemerAccount = testAccount('qrredeemer')
+    createdEmails.push(ownerAccount.email, redeemerAccount.email)
+    const owner = request.agent(app)
+    const redeemer = request.agent(app)
+    const registration = await Promise.all([
+      owner.post('/api/v1/auth/register').send(ownerAccount),
+      redeemer.post('/api/v1/auth/register').send(redeemerAccount),
+    ])
+    expect(registration.every((result) => result.status === 201)).toBe(true)
+    const ownerId = registration[0]!.body.user.id
+    const redeemerId = registration[1]!.body.user.id
+    const generated = await owner.post('/api/v1/qr-codes/personal')
+    expect(generated.status).toBe(201)
+    const code = generated.body.qrCode.code
+    const first = await redeemer.post('/api/v1/qr-codes/redeem').send({ code })
+    expect(first.status).toBe(201)
+    const chatId = first.body.chatId
+    const beforeRetry = await owner.get(`/api/v1/chats/${chatId}/participants`)
+    expect(beforeRetry.status).toBe(200)
+    const repeated = await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code })
+    expect(repeated.status).toBe(200)
+    expect(repeated.body).toMatchObject({
+      chatId,
+      created: false,
+      redemptionRepeated: true,
+    })
+    const afterRetry = await owner.get(`/api/v1/chats/${chatId}/participants`)
+    expect(afterRetry.body.participants).toEqual(beforeRetry.body.participants)
+
+    await db
+      .update(qrCodes)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(qrCodes.code, code))
+    await owner.delete(`/api/v1/users/${redeemerId}/connection`).expect(200)
+    const denied = await redeemer.post('/api/v1/qr-codes/redeem').send({ code })
+    expect(denied.status).toBe(409)
+    await owner.get(`/api/v1/chats/${chatId}`).expect(403)
+    await redeemer.get(`/api/v1/chats/${chatId}`).expect(403)
+    const [connection] = await db
+      .select()
+      .from(connections)
+      .where(
+        and(
+          eq(connections.userOneId, [ownerId, redeemerId].sort()[0]!),
+          eq(connections.userTwoId, [ownerId, redeemerId].sort()[1]!),
+        ),
+      )
+    expect(connection).toBeUndefined()
+
+    const fresh = await owner.post('/api/v1/qr-codes/personal')
+    expect(fresh.status).toBe(201)
+    await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code: fresh.body.qrCode.code })
+      .expect(200)
+    const staleAfterReconnection = await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code })
+    expect(staleAfterReconnection.status).toBe(409)
+    await owner.get(`/api/v1/chats/${chatId}`).expect(200)
+  })
+
+  it('rejects expired unused QR codes and keeps revocation final during a concurrent retry', async () => {
+    const ownerAccount = testAccount('qrconcurrent')
+    const redeemerAccount = testAccount('qrrepeat')
+    createdEmails.push(ownerAccount.email, redeemerAccount.email)
+    const owner = request.agent(app)
+    const redeemer = request.agent(app)
+    const registration = await Promise.all([
+      owner.post('/api/v1/auth/register').send(ownerAccount),
+      redeemer.post('/api/v1/auth/register').send(redeemerAccount),
+    ])
+    expect(registration.every((result) => result.status === 201)).toBe(true)
+    const redeemerId = registration[1]!.body.user.id
+    const expired = await owner.post('/api/v1/qr-codes/personal')
+    expect(expired.status).toBe(201)
+    await db
+      .update(qrCodes)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(qrCodes.id, expired.body.qrCode.id))
+    await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code: expired.body.qrCode.code })
+      .expect(410)
+
+    const fresh = await owner.post('/api/v1/qr-codes/personal')
+    expect(fresh.status).toBe(201)
+    const redemption = await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code: fresh.body.qrCode.code })
+    expect(redemption.status).toBe(201)
+    const concurrent = await Promise.all([
+      owner.delete(`/api/v1/users/${redeemerId}/connection`),
+      redeemer
+        .post('/api/v1/qr-codes/redeem')
+        .send({ code: fresh.body.qrCode.code }),
+    ])
+    expect(concurrent[0]!.status).toBe(200)
+    expect([200, 409]).toContain(concurrent[1]!.status)
+    await owner.get(`/api/v1/chats/${redemption.body.chatId}`).expect(403)
+    await redeemer
+      .post('/api/v1/qr-codes/redeem')
+      .send({ code: fresh.body.qrCode.code })
+      .expect(409)
   })
 
   it('revokes report access after a participant leaves a chat', async () => {

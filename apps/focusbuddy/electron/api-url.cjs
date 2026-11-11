@@ -52,6 +52,52 @@ function apiBaseUrlFromAppUrl(candidate) {
   return normalizeApiBaseUrl(appUrl.toString())
 }
 
+function normalizeChannelApiUrl(candidate, channel = 'local') {
+  const normalized = normalizeApiBaseUrl(candidate)
+  const url = new URL(normalized)
+  const hostname = url.hostname.toLowerCase()
+  const isLoopback = LOCAL_API_HOSTS.has(hostname)
+  if (channel === 'local') {
+    if (!isLoopback) {
+      throw invalidApiUrl(
+        'FocusBuddy Local solo puede conectarse a la API de este equipo.',
+      )
+    }
+  } else if (channel === 'production') {
+    const ipv4 = hostname.split('.').map(Number)
+    const isPrivateIpv4 =
+      /^\d+\.\d+\.\d+\.\d+$/.test(hostname) &&
+      (ipv4[0] === 0 ||
+        ipv4[0] === 10 ||
+        ipv4[0] === 127 ||
+        (ipv4[0] === 169 && ipv4[1] === 254) ||
+        (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31) ||
+        (ipv4[0] === 192 && ipv4[1] === 168) ||
+        ipv4[0] >= 224)
+    const isPrivateIpv6 =
+      hostname.startsWith('[') &&
+      (hostname === '[::]' ||
+        hostname === '[::1]' ||
+        /^\[(?:fc|fd|fe[89ab])/i.test(hostname) ||
+        hostname.includes('::ffff:'))
+    if (
+      url.protocol !== 'https:' ||
+      isLoopback ||
+      isPrivateIpv4 ||
+      isPrivateIpv6 ||
+      !hostname.includes('.') ||
+      /(?:^|\.)(?:localhost|local|internal)$/.test(hostname)
+    ) {
+      throw invalidApiUrl(
+        'FocusBuddy Oficial requiere una API pública HTTPS explícita.',
+      )
+    }
+  } else {
+    throw invalidApiUrl('El canal de FocusBuddy no es válido.')
+  }
+  return normalized
+}
+
 function buildApiUrl(apiBaseUrl, resourcePath) {
   const normalizedBase = normalizeApiBaseUrl(apiBaseUrl)
   if (
@@ -86,33 +132,19 @@ function buildApiUrl(apiBaseUrl, resourcePath) {
 
 function selectApiBaseUrl({
   isPackaged,
+  channel = 'local',
   commandLineValue,
   environmentValue,
   packagedValue,
-  appUrl,
 } = {}) {
-  const candidates = isPackaged
-    ? [packagedValue]
-    : [commandLineValue, environmentValue, packagedValue]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    try {
-      return normalizeApiBaseUrl(candidate)
-    } catch {
-      // Las fuentes opcionales inválidas no deben reemplazar el fallback seguro.
-    }
+  if (isPackaged) {
+    return normalizeChannelApiUrl(packagedValue, channel)
   }
-
-  if (appUrl) {
-    try {
-      return apiBaseUrlFromAppUrl(appUrl)
-    } catch {
-      // El endpoint local explícito sigue siendo el último fallback.
-    }
-  }
-
-  return DEFAULT_API_BASE_URL
+  // Desarrollo nunca hereda la configuración de un instalador previo.
+  return normalizeChannelApiUrl(
+    commandLineValue || environmentValue || DEFAULT_API_BASE_URL,
+    'local',
+  )
 }
 
 module.exports = {
@@ -120,5 +152,6 @@ module.exports = {
   apiBaseUrlFromAppUrl,
   buildApiUrl,
   normalizeApiBaseUrl,
+  normalizeChannelApiUrl,
   selectApiBaseUrl,
 }

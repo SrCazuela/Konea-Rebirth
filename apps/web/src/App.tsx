@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   checkApiHealth,
   getCurrentUser,
@@ -7,6 +7,7 @@ import {
 } from './api/auth'
 import { AuthDialog, type AuthMode } from './components/AuthDialog'
 import { Portal } from './components/Portal'
+import { KoneaLogo } from './components/KoneaLogo'
 import './App.css'
 
 type ApiState = 'checking' | 'online' | 'offline'
@@ -17,11 +18,7 @@ function SessionLoading() {
   return (
     <main className="session-loading">
       <div className="session-loading__card" role="status" aria-live="polite">
-        <img
-          className="session-loading__logo"
-          src="/konea-logo.svg"
-          alt="Konea"
-        />
+        <KoneaLogo className="session-loading__logo" width={180} />
         <span className="session-loading__spinner" aria-hidden="true" />
         <p>Preparando tu espacio…</p>
       </div>
@@ -34,6 +31,13 @@ function App() {
   const [currentUser, setCurrentUser] = useState<KoneaUser | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode | null>(null)
+  const accountVersion = useRef(0)
+  const commitUser = useCallback((user: KoneaUser | null) => {
+    accountVersion.current += 1
+    setCurrentUser((previous) =>
+      JSON.stringify(previous) === JSON.stringify(user) ? previous : user,
+    )
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -48,7 +52,7 @@ function App() {
 
     void getCurrentUser()
       .then((user) => {
-        if (active) setCurrentUser(user)
+        if (active) commitUser(user)
       })
       .catch((error) => {
         console.error('Failed to restore session:', error)
@@ -60,18 +64,48 @@ function App() {
     return () => {
       active = false
     }
-  }, [])
+  }, [commitUser])
 
   useEffect(() => {
-    const handleSessionExpired = () => setCurrentUser(null)
+    const handleSessionExpired = () => commitUser(null)
     window.addEventListener('konea:session-expired', handleSessionExpired)
     return () =>
       window.removeEventListener('konea:session-expired', handleSessionExpired)
-  }, [])
+  }, [commitUser])
+
+  useEffect(() => {
+    if (!currentUser?.id) return
+    let active = true
+    let refreshing = false
+    const refreshAccount = async () => {
+      if (!active || refreshing || document.visibilityState !== 'visible')
+        return
+      refreshing = true
+      const version = accountVersion.current
+      try {
+        const user = await getCurrentUser()
+        if (active && version === accountVersion.current) commitUser(user)
+      } catch {
+        // A temporary outage must not discard an authenticated account.
+      } finally {
+        refreshing = false
+      }
+    }
+    const refresh = () => void refreshAccount()
+    const timer = window.setInterval(refresh, 10_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [currentUser?.id, commitUser])
 
   async function signOut() {
     await logout()
-    setCurrentUser(null)
+    commitUser(null)
   }
 
   if (!sessionReady) {
@@ -80,11 +114,7 @@ function App() {
 
   if (currentUser) {
     return (
-      <Portal
-        user={currentUser}
-        onUserChange={setCurrentUser}
-        onLogout={signOut}
-      />
+      <Portal user={currentUser} onUserChange={commitUser} onLogout={signOut} />
     )
   }
 
@@ -99,7 +129,7 @@ function App() {
           onModeChange={setAuthMode}
           onClose={() => setAuthMode(null)}
           onAuthenticated={(user) => {
-            setCurrentUser(user)
+            commitUser(user)
             setApiState('online')
           }}
         />

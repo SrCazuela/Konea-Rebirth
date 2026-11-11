@@ -341,7 +341,7 @@ export async function listChatsForUser(userId: string) {
 }
 
 export async function getPollDetails(pollId: string, currentUserId: string) {
-  const [poll] = await db
+  const [row] = await db
     .select({
       id: polls.id,
       messageId: polls.messageId,
@@ -350,17 +350,32 @@ export async function getPollDetails(pollId: string, currentUserId: string) {
       allowMultiple: polls.allowMultiple,
       createdAt: polls.createdAt,
       chatId: messages.chatId,
+      messageCreatedAt: messages.createdAt,
+      chatType: chats.type,
     })
     .from(polls)
     .innerJoin(messages, eq(polls.messageId, messages.id))
+    .innerJoin(chats, eq(messages.chatId, chats.id))
     .where(eq(polls.id, pollId))
     .limit(1)
 
-  if (!poll) {
+  if (!row) {
     throw new ApiError(404, 'POLL_NOT_FOUND', 'La encuesta no existe.')
   }
 
-  await requireActiveParticipant(poll.chatId, currentUserId)
+  const participant = await requireActiveParticipant(row.chatId, currentUserId)
+  if (
+    row.chatType === 'group' &&
+    participant.role !== 'owner' &&
+    row.messageCreatedAt < participant.joinedAt
+  ) {
+    throw new ApiError(404, 'POLL_NOT_FOUND', 'La encuesta no existe.')
+  }
+  const {
+    messageCreatedAt: _messageCreatedAt,
+    chatType: _chatType,
+    ...poll
+  } = row
   const [options, votes] = await Promise.all([
     db
       .select()

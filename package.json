@@ -12,10 +12,12 @@
     "dev:web": "npm run dev --workspace @konea/web",
     "focusbuddy": "npm run dev --workspace @konea/focusbuddy",
     "dist:focusbuddy": "npm run dist --workspace @konea/focusbuddy",
+    "dist:focusbuddy:local": "npm run dist:local --workspace @konea/focusbuddy",
+    "dist:focusbuddy:production": "npm run dist:production --workspace @konea/focusbuddy",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run capstone:test",
     "check": "npm run lint && npm run typecheck && npm run db:check && npm run test && npm run build && npm run format:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -28,14 +30,21 @@
     "db:seed:dev": "npm run db:seed:dev --workspace @konea/api",
     "db:seed:social": "npm run db:seed:social --workspace @konea/api",
     "db:seed:demo": "npm run db:seed:demo --workspace @konea/api",
-    "db:studio": "npm run db:studio --workspace @konea/api"
+    "db:studio": "npm run db:studio --workspace @konea/api",
+    "branding:sync": "npm run branding:sync --workspace @konea/focusbuddy",
+    "capstone:sync": "node scripts/capstone/sync.mjs --once",
+    "capstone:preview": "node scripts/capstone/sync.mjs --dry-run",
+    "capstone:watch": "node scripts/capstone/sync.mjs --watch",
+    "capstone:status": "node scripts/capstone/sync.mjs --status",
+    "capstone:stop": "node scripts/capstone/sync.mjs --stop",
+    "capstone:test": "node --test scripts/capstone/*.test.mjs"
   },
   "engines": {
     "node": ">=22.12.0",
     "npm": ">=11.0.0"
   },
   "overrides": {
-    "ip-address": "10.7.3",
+    "ip-address": "10.7.6",
     "proxy-addr": "2.0.8",
     "shell-quote": "1.12.0"
   },

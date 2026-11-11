@@ -1,5 +1,6 @@
 .notifications-layout {
-  width: min(100%, 830px);
+  width: min(100%, 960px);
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -15,15 +16,15 @@
 }
 
 .notifications-toolbar {
-  min-height: 58px;
-  padding: 9px 11px;
+  min-height: 64px;
+  padding: 9px 13px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   border: 1px solid var(--border);
-  border-radius: 15px;
-  background: white;
+  border-radius: 19px;
+  background: linear-gradient(115deg, #fff, #f7f2fc);
   box-shadow: 0 12px 34px rgb(47 29 73 / 5%);
 }
 
@@ -35,31 +36,32 @@
 
 .notifications-tabs button,
 .notifications-read-all {
-  min-height: 37px;
+  min-height: 44px;
   padding: 0 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 0;
   border-radius: 10px;
-  color: var(--soft-ink);
+  color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: 0.73rem;
   font-weight: 710;
 }
 
 .notifications-tabs button.is-active {
-  color: var(--primary);
-  background: #f1ebfb;
+  color: white;
+  background: var(--primary);
+  box-shadow: 0 4px 12px rgb(115 80 199 / 16%);
 }
 
 .notifications-tabs button span {
   min-width: 20px;
   padding: 2px 5px;
   border-radius: 999px;
-  color: white;
-  background: var(--primary);
+  color: var(--primary);
+  background: #f1ebfb;
   font-size: 0.57rem;
   text-align: center;
 }
@@ -80,27 +82,29 @@
 .notifications-list {
   margin-top: 16px;
   display: grid;
-  gap: 9px;
+  gap: 12px;
 }
 
 .notification-card {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 15px;
+  border-radius: 19px;
   background: white;
   box-shadow: 0 9px 28px rgb(47 29 73 / 4%);
 }
 
 .notification-card--unread {
   border-color: #d8c8ef;
+  border-left: 3px solid var(--primary);
   background:
     linear-gradient(90deg, rgb(103 58 183 / 4%), transparent 42%), white;
 }
 
 .notification-card > button {
   width: 100%;
-  min-height: 94px;
-  padding: 16px 17px;
+  min-height: 98px;
+  padding: 18px 20px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -121,12 +125,12 @@
 }
 
 .notification-card__icon {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  border-radius: 13px;
+  border-radius: 15px;
   color: var(--primary);
   background: #f1ebfb;
 }
@@ -164,6 +168,7 @@
   flex: 1;
   display: grid;
   gap: 5px;
+  overflow-wrap: anywhere;
 }
 
 .notification-card__title-row {
@@ -248,20 +253,21 @@
   align-items: center;
   flex-direction: column;
   justify-content: center;
-  border: 1px dashed #d9caef;
-  border-radius: 18px;
-  background: rgb(255 255 255 / 68%);
+  border: 1px solid var(--border);
+  border-radius: 23px;
+  background: radial-gradient(ellipse at top, #f0e7fb, transparent 75%), #fff;
   text-align: center;
 }
 
 .notifications-empty__icon {
-  width: 50px;
-  height: 50px;
+  width: 59px;
+  height: 59px;
   display: grid;
   place-items: center;
-  border-radius: 15px;
-  color: var(--primary);
-  background: #f1ebfb;
+  border-radius: 19px;
+  color: white;
+  background: linear-gradient(145deg, #a080d7, var(--primary));
+  box-shadow: 0 8px 23px rgb(115 80 199 / 15%);
 }
 
 .notifications-empty__icon svg {
@@ -283,7 +289,7 @@
 }
 
 .notifications-empty button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 13px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -316,7 +322,7 @@
 
   .notification-card > button {
     min-height: 102px;
-    padding: 14px;
+    padding: 15px 13px;
     align-items: flex-start;
   }
 

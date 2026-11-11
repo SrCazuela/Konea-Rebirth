@@ -26,6 +26,8 @@ describe('FocusBuddy package security', () => {
       'electron/api-url.cjs',
       'electron/assets/avatar-hq/*.png',
       'electron/assets/avatar-hq/source-manifest.json',
+      'electron/assets/branding/konea-logo.svg',
+      'electron/assets/branding/konea-mark.svg',
       'electron/avatar-animation.js',
       'electron/avatar-library.js',
       'electron/companion.css',
@@ -37,10 +39,13 @@ describe('FocusBuddy package security', () => {
       'electron/desktop.html',
       'electron/desktop.js',
       'electron/main.cjs',
+      'electron/motion-policy.js',
       'electron/owl-shimeji-provisional.png',
       'electron/preload.cjs',
       'electron/preferences.cjs',
+      'electron/release-channel.cjs',
       'electron/session-state.cjs',
+      'electron/ui-protocol.cjs',
       'electron/window-options.cjs',
       'package.json',
     ])
@@ -110,8 +115,11 @@ describe('FocusBuddy package security', () => {
     assert.match(desktopHtml, /connect-src 'none'/)
     assert.doesNotMatch(desktopHtml, /unsafe-inline/)
     assert.doesNotMatch(desktopHtml, /<script[^>]*>[^<]+<\/script>/)
-    assert.match(mainSource, /loadFile\([^)]*desktop\.html/)
-    assert.doesNotMatch(mainSource, /\.loadURL\(/)
+    assert.match(mainSource, /loadURL\(uiPageUrl\('desktop'\)\)/)
+    assert.match(mainSource, /loadURL\(uiPageUrl\('companion'\)\)/)
+    assert.doesNotMatch(mainSource, /\.loadFile\(/)
+    assert.equal((mainSource.match(/\.loadURL\(/g) || []).length, 2)
+    assert.match(mainSource, /isTrustedUiPageUrl\(/)
   })
 
   it('keeps the local companion under a strict content security policy', () => {
@@ -205,7 +213,7 @@ describe('FocusBuddy package security', () => {
     )
   })
 
-  it('verifies actual ASAR assets and rejects missing runtimes or changed sprites', async (context) => {
+  it('verifies actual ASAR assets and rejects missing runtimes, changed branding or sprites', async (context) => {
     const temporaryDirectory = mkdtempSync(
       path.join(tmpdir(), 'konea-release-check-'),
     )
@@ -241,6 +249,7 @@ describe('FocusBuddy package security', () => {
     for (const missingFile of [
       'electron/avatar-animation.js',
       'electron/companion.js',
+      'electron/assets/branding/konea-logo.svg',
     ]) {
       const incompleteArchive = path.join(
         temporaryDirectory,
@@ -254,6 +263,25 @@ describe('FocusBuddy package security', () => {
       )
       copyRuntimeFile(missingFile)
     }
+
+    const changedBrandPath = path.join(
+      stagingDirectory,
+      'electron/assets/branding/konea-mark.svg',
+    )
+    writeFileSync(
+      changedBrandPath,
+      readFileSync(changedBrandPath, 'utf8') + '\n',
+    )
+    const changedBrandArchive = path.join(
+      temporaryDirectory,
+      'changed-brand.asar',
+    )
+    await createPackage(stagingDirectory, changedBrandArchive)
+    assert.throws(
+      () => verifyRuntimeArchive(changedBrandArchive),
+      /La identidad empaquetada no coincide con el original: konea-mark.svg/,
+    )
+    copyRuntimeFile('electron/assets/branding/konea-mark.svg')
 
     const changedSpritePath = path.join(
       stagingDirectory,
@@ -289,12 +317,27 @@ describe('FocusBuddy package security', () => {
       safeDialogs: true,
       devTools: false,
       backgroundThrottling: false,
-      partition: 'persist:konea-focusbuddy',
+      partition: 'persist:konea-focusbuddy-local',
     })
     assert.equal(
       createWebPreferences({ preloadPath: 'preload.cjs', isPackaged: false })
         .devTools,
       true,
+    )
+    assert.equal(
+      createWebPreferences({
+        preloadPath: 'preload.cjs',
+        isPackaged: true,
+        partition: 'persist:konea-focusbuddy-production',
+      }).partition,
+      'persist:konea-focusbuddy-production',
+    )
+    assert.throws(() =>
+      createWebPreferences({
+        preloadPath: 'preload.cjs',
+        isPackaged: true,
+        partition: 'persist:konea-focusbuddy',
+      }),
     )
   })
 })

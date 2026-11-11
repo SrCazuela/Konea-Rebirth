@@ -31,7 +31,13 @@ function unlockBodyScroll() {
 function focusableElements(container: HTMLElement) {
   return Array.from(
     container.querySelectorAll<HTMLElement>(focusableSelector),
-  ).filter((element) => element.getClientRects().length > 0)
+  ).filter(
+    (element) =>
+      // :disabled also covers controls disabled by an ancestor fieldset.
+      !element.matches(':disabled') &&
+      element.tabIndex >= 0 &&
+      element.getClientRects().length > 0,
+  )
 }
 
 export function useModalDialog<TElement extends HTMLElement>({

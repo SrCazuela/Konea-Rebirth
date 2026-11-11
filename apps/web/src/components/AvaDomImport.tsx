@@ -18,6 +18,7 @@ function readableError(error: unknown) {
 
 function resultMessage(result: AvaImportResult) {
   const reactivated = result.reactivatedCourses ?? 0
+  const updated = result.updatedCourses ?? 0
   const imported = result.importedCourses + result.importedTasks
   const existing = result.existingCourses + result.existingTasks
   const parts = [
@@ -26,6 +27,9 @@ function resultMessage(result: AvaImportResult) {
       : '',
     reactivated > 0
       ? `${reactivated} ${reactivated === 1 ? 'materia reactivada' : 'materias reactivadas'}`
+      : '',
+    updated > 0
+      ? `${updated} ${updated === 1 ? 'materia actualizada' : 'materias actualizadas'}`
       : '',
     existing > 0 ? `${existing} ya existían` : '',
   ].filter(Boolean)
@@ -210,7 +214,9 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
           <p>
             Captura: <strong>{preview.courses.length}</strong> materias y{' '}
             <strong>{preview.activities.length}</strong> actividades. Los
-            elementos marcados como existentes no se duplicarán.
+            elementos marcados como existentes no se duplicarán. Las materias
+            con cambios muestran los datos que se actualizarán cuando confirmes
+            su selección.
           </p>
           <fieldset disabled={busy || preview.import.status !== 'draft'}>
             <legend>Materias</legend>
@@ -232,15 +238,29 @@ export function AvaDomImport({ onImported }: { onImported?: () => void }) {
                     <small>
                       {course.reactivatable
                         ? 'Archivada · se reactivará'
-                        : course.existing
-                          ? 'Ya existe en Konea'
-                          : [
-                              course.code,
-                              course.section && `Sección ${course.section}`,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ') || 'Nueva materia'}
+                        : course.updatable
+                          ? 'Datos de AVA actualizados · revisa los cambios'
+                          : course.existing
+                            ? 'Ya existe en Konea'
+                            : [
+                                course.code,
+                                course.section && `Sección ${course.section}`,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ') || 'Nueva materia'}
                     </small>
+                    {course.changes?.map((change) => (
+                      <small key={change.field}>
+                        {
+                          {
+                            code: 'Código',
+                            section: 'Sección',
+                            term: 'Semestre',
+                          }[change.field]
+                        }
+                        : {change.from || 'Sin dato'} → {change.to}
+                      </small>
+                    ))}
                   </span>
                 </label>
               ))

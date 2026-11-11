@@ -1,10 +1,12 @@
 .network-directory {
-  width: min(100%, 1120px);
+  width: min(100%, 1240px);
+  min-width: 0;
   margin: 0 auto;
 }
 
 .network-public-profile {
-  width: min(100%, 1120px);
+  width: min(100%, 1240px);
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -26,8 +28,8 @@
 }
 
 .network-intro {
-  min-height: 176px;
-  padding: 28px 30px;
+  min-height: 164px;
+  padding: 25px 28px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -42,7 +44,12 @@
       rgb(255 255 255 / 16%),
       transparent 9rem
     ),
-    linear-gradient(130deg, #2d213e, #6740aa 66%, #8c62ce);
+    radial-gradient(
+      circle at 74% 110%,
+      rgb(201 169 247 / 20%) 0 24%,
+      transparent 24.2%
+    ),
+    linear-gradient(130deg, #30203f, #644299 66%, #9270ce);
   box-shadow: 0 18px 48px rgb(47 29 73 / 12%);
 }
 
@@ -62,7 +69,7 @@
 .network-intro h2 {
   margin: 9px 0 10px;
   font-family: var(--font-display);
-  font-size: clamp(1.55rem, 3vw, 2.25rem);
+  font-size: clamp(1.45rem, 2.6vw, 2rem);
   letter-spacing: -0.045em;
 }
 
@@ -151,23 +158,35 @@
 .network-person-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 15px;
+  gap: 18px;
 }
 
 .network-person-card {
   min-width: 0;
   min-height: 302px;
-  padding: 19px;
+  position: relative;
+  padding: 23px 21px 19px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 18px;
-  background: white;
+  border-top: 3px solid #b39adf;
+  border-radius: 21px;
+  background: linear-gradient(150deg, #f7f2fd, white 38%);
   box-shadow: 0 13px 35px rgb(47 29 73 / 6%);
   transition:
     transform 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease;
+}
+
+.network-person-card:nth-child(3n + 2) {
+  border-top-color: #86b9ad;
+  background: linear-gradient(150deg, #f0f7f4, white 38%);
+}
+
+.network-person-card:nth-child(3n + 3) {
+  border-top-color: #d6b17e;
+  background: linear-gradient(150deg, #fcf6ed, white 38%);
 }
 
 .network-person-card:hover {
@@ -250,7 +269,8 @@
   font-size: 0.93rem;
   letter-spacing: -0.025em;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .network-person-card__identity p,
@@ -264,7 +284,7 @@
   min-height: 32px;
   margin: 12px 0 0;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.73rem;
   font-weight: 650;
   line-height: 1.45;
 }
@@ -274,8 +294,8 @@
   min-height: 38px;
   margin: 9px 0 14px;
   overflow: hidden;
-  color: var(--soft-ink);
-  font-size: 0.68rem;
+  color: var(--muted);
+  font-size: 0.73rem;
   line-height: 1.48;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -326,7 +346,7 @@
 .network-follow-button,
 .network-message-button,
 .network-empty button {
-  min-height: 37px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 10px;
   cursor: pointer;
@@ -350,7 +370,7 @@
 .network-follow-button {
   border: 1px solid var(--primary);
   color: white;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), #59348f);
 }
 
 .network-follow-button--following {
@@ -403,9 +423,10 @@
 
 .network-portfolio-block,
 .network-project-card {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 22px;
   background: white;
   box-shadow: 0 12px 34px rgb(45 27 77 / 7%);
 }
@@ -424,6 +445,11 @@
 .network-achievement-list h4 {
   margin: 0;
   color: var(--ink);
+}
+
+.network-portfolio-block > h3 {
+  padding-left: 11px;
+  border-left: 3px solid var(--primary);
 }
 
 .network-timeline,
@@ -497,6 +523,7 @@
 .network-project-card p {
   color: var(--muted);
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .network-project-tags,
@@ -623,9 +650,10 @@
 }
 
 .network-profile-card {
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 21px;
+  border-radius: 25px;
   background: white;
   box-shadow: 0 16px 46px rgb(47 29 73 / 7%);
 }
@@ -633,7 +661,7 @@
 .network-profile-cover {
   position: relative;
   width: 100%;
-  aspect-ratio: 5 / 1;
+  height: clamp(180px, 18vw, 240px);
   padding: 18px 26px;
   overflow: hidden;
   background:
@@ -685,7 +713,7 @@
 }
 
 .network-profile-card__body {
-  padding: 0 30px 25px;
+  padding: 0 28px 26px;
 }
 
 .network-profile-card__avatar-row {
@@ -719,6 +747,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .network-profile-card__actions .network-follow-button,
@@ -737,11 +766,13 @@
 }
 
 .network-profile-card__title h2 {
-  font-size: 1.35rem;
+  font-size: 1.5rem;
 }
 
 .network-profile-card__overview {
-  margin-top: 12px;
+  margin-top: 20px;
+  padding-top: 19px;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(270px, 330px);
   align-items: stretch;
@@ -781,9 +812,10 @@
   padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--soft-ink);
-  background: #faf8fc;
-  font-size: 0.62rem;
+  color: var(--muted);
+  background: var(--portal-surface-muted, #faf8fc);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
   text-decoration: none;
 }
 
@@ -798,7 +830,7 @@
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   border: 1px solid #e4d8f4;
-  border-radius: 16px;
+  border-radius: 19px;
   background:
     radial-gradient(circle at 100% 0, rgb(137 89 214 / 14%), transparent 8rem),
     #faf7ff;
@@ -814,7 +846,7 @@
 
 .network-profile-stats dt {
   color: var(--ink);
-  font-size: 1.08rem;
+  font-size: 1.3rem;
   font-weight: 800;
 }
 
@@ -851,7 +883,7 @@
   padding: 20px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 17px;
+  border-radius: 21px;
   background: white;
   box-shadow: 0 12px 34px rgb(47 29 73 / 5%);
 }
@@ -926,7 +958,7 @@
   }
 
   .network-profile-cover {
-    aspect-ratio: 5 / 1;
+    height: 170px;
   }
 
   .network-profile-card__body {
@@ -946,7 +978,7 @@
   }
 
   .network-intro {
-    min-height: 165px;
+    min-height: 158px;
     align-items: center;
     border-radius: 17px;
   }
@@ -959,6 +991,10 @@
     padding: 0 12px;
   }
 
+  .network-search input {
+    font-size: 16px;
+  }
+
   .network-person-grid {
     grid-template-columns: 1fr;
   }
@@ -968,7 +1004,7 @@
   }
 
   .network-profile-cover {
-    aspect-ratio: 5 / 1;
+    height: 145px;
     padding: 14px 16px;
   }
 
@@ -1024,11 +1060,37 @@
   }
 
   .network-profile-card__title h2 {
-    font-size: 1.15rem;
+    font-size: 1.22rem;
   }
 
   .network-empty__actions {
     flex-direction: column;
+  }
+
+  .network-profile-card__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .network-profile-card__actions .network-follow-button,
+  .network-profile-card__actions .network-message-button {
+    min-width: 0;
+    padding: 8px 10px;
+    font-size: 0.71rem;
+  }
+
+  .network-profile-stats {
+    min-width: 0;
+    padding: 16px 6px;
+  }
+
+  .network-profile-card__body {
+    padding-right: 17px;
+    padding-left: 17px;
+  }
+
+  .network-achievement-list article {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   }
 }
 

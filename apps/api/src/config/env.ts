@@ -41,11 +41,11 @@ const environmentSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
-    DUCO_AI_PROVIDER: z.enum(['local', 'ollama', 'openai']).optional(),
+    KUCO_AI_PROVIDER: z.enum(['local', 'ollama', 'openai']).optional(),
     OLLAMA_BASE_URL: z.url().default('http://127.0.0.1:11434'),
     OLLAMA_MODEL: z.string().trim().min(1).default('qwen3.5:4b'),
     OLLAMA_KEEP_ALIVE: z.string().trim().min(1).default('2m'),
-    DUCO_AI_TIMEOUT_MS: z.coerce
+    KUCO_AI_TIMEOUT_MS: z.coerce
       .number()
       .int()
       .min(5_000)
@@ -101,7 +101,7 @@ if (!result.success) {
 
 export const env = {
   ...result.data,
-  DUCO_AI_PROVIDER:
-    result.data.DUCO_AI_PROVIDER ??
+  KUCO_AI_PROVIDER:
+    result.data.KUCO_AI_PROVIDER ??
     (result.data.NODE_ENV === 'development' ? ('ollama' as const) : 'local'),
 }

@@ -12,5 +12,7 @@
 **/*.tsbuildinfo
 apps/focusbuddy/release
 apps/focusbuddy/build/focusbuddy.config.json
+apps/focusbuddy/build/*/focusbuddy.config.json
+apps/focusbuddy/build/*/electron-builder.config.json
 docs
 *.log

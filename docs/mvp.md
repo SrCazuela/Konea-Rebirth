@@ -20,12 +20,12 @@ La pregunta que responde el MVP es:
 - **Moderador:** revisa contenido y reportes sin recibir acceso a secretos o
   contraseñas.
 - **Administrador:** incluye moderación y eliminación administrativa de posts.
-- **DUCO:** organiza el contexto académico del usuario mediante reglas locales,
+- **KUCO:** organiza el contexto académico del usuario mediante reglas locales,
   Ollama o OpenAI Luna; toda acción propuesta se valida en la API y requiere
   confirmación humana.
-- **FocusBuddy:** acompaña sesiones de concentración y presenta el progreso; el
-  escritorio usa derivados transparentes de los fotogramas oficiales y el avatar
-  no toma decisiones por el estudiante.
+- **FocusBuddy:** acompaña sesiones de concentración y presenta el progreso.
+  Web y escritorio usan el chibi oficial de alta resolución y la misma API; el
+  avatar no toma decisiones por el estudiante.
 
 ## Funciones implementadas
 
@@ -33,6 +33,9 @@ La pregunta que responde el MVP es:
 
 - Registro con correo, nombre, usuario único y contraseña.
 - Inicio y cierre de sesión revocable mediante cookie `HttpOnly`.
+- Configuración de cuenta para nombre, usuario y correo, y cambio de contraseña
+  con verificación de la contraseña actual y revocación de las otras sesiones.
+  Cambiar el usuario de acceso no está permitido desde el formulario de perfil.
 - Perfil-portafolio editable: identidad, biografía, institución, carrera,
   campus, formación histórica, proyectos, logros, avatar, portada y sitio web.
 - No existe un directorio global de estudiantes.
@@ -65,10 +68,11 @@ La pregunta que responde el MVP es:
 - Paginación hacia mensajes anteriores y contadores de no leídos.
 - Edición del propio mensaje y eliminación por autor o administrador del grupo.
 - Los mensajes de sistema son inmutables y los nuevos integrantes de un grupo
-  solo acceden a mensajes y adjuntos creados desde su incorporación.
+  solo acceden a mensajes, adjuntos y encuestas creados desde su incorporación,
+  con la excepción del propietario original. Los votos usan la misma regla.
 - El marcado de lectura acepta el último mensaje visible para no resolver avisos
   de contenido que el cliente todavía no mostró.
-- Actualización periódica por polling para una demostración multiusuario local.
+- Actualización periódica por polling para una demostración multiusuario local o alojada.
 
 ### 4. Agenda y colaboración académica
 
@@ -79,20 +83,24 @@ La pregunta que responde el MVP es:
 - Encuestas con 2 a 6 opciones, voto único o múltiple y resultados acumulados.
 - Códigos personales alfanuméricos de seis caracteres, válidos por cinco
   minutos, de un solo uso y con límite de intentos; al canjearlos se crea una
-  conexión explícita y se abre un chat directo.
+  conexión explícita y se abre un chat directo. Reutilizar un código consumido
+  no restaura una conexión eliminada ni un chat revocado.
 - Materias manuales con código, sección y período, editables o desactivables.
 - Pendientes personales con materia opcional, descripción, fecha, prioridad y
-  estado; DUCO puede preparar su borrador, pero no confirmarlo.
+  estado; KUCO puede preparar su borrador, pero no confirmarlo.
 - Importación de próximos eventos y materias desde el enlace ICS privado de AVA
   Duoc, sin solicitar la contraseña de Blackboard.
 - Conector AVA experimental opcional: una extensión MV3 extrae solo el DOM
   visible, exporta un JSON local y exige vista previa y confirmación en Konea;
-  nunca recibe credenciales, cookies ni tokens institucionales.
+  nunca recibe credenciales, cookies ni tokens institucionales. La fecha de
+  entrega se obtiene de su etiqueta de vencimiento. Los cambios de sección,
+  código y semestre en materias importadas se muestran para revisión antes de
+  actualizar; las materias manuales quedan protegidas.
 
 ### 5. FocusBuddy
 
 - Disponible como pestaña web de Konea (`#focusbuddy`) y como aplicación
-  Electron para Windows con interfaz local propia, login y la misma API.
+  Electron para Windows 0.1.2 con interfaz propia, login y canales local/oficial.
 - Métodos Pomodoro 25/5, Pomodoro extendido 50/10, trabajo profundo 90/20,
   Flowtime libre y tiempos personalizados.
 - Asociación opcional de una sesión con materia y pendiente propios.
@@ -105,10 +113,18 @@ La pregunta que responde el MVP es:
 - Dashboard con tiempo de hoy, semana y total, sesiones completadas, racha
   actual/máxima, últimos siete días, distribución por materia e historial
   reciente.
-- Kuco es el avatar transparente y animado predeterminado en web y escritorio.
-  El escritorio también incluye doce derivados transparentes del chibi como
-  alternativa y preserva los PNG fuente; todavía faltan exportaciones alfa
-  oficiales y poses dedicadas para pausa/celebración de ese personaje.
+- Chibi oficial es el personaje predeterminado en web y escritorio: 35 PNG HQ
+  transparentes y 13 escenas compartidas, con flotación y parpadeo según los
+  fotogramas disponibles. Kuco sigue como alternativa en los ajustes de escritorio.
+- Cuenta en FocusBuddy permite editar nombre, usuario, correo y contraseña con
+  los mismos controles de la API. Sus preferencias de ventana y personaje son
+  propias del dispositivo.
+- Ambos clientes renuevan los datos cada 10 segundos cuando están visibles y
+  recuperan el estado de sesión ante acciones concurrentes. Se requiere la
+  misma cuenta y API; las bases local y alojada siguen siendo independientes.
+- El escritorio oculto conserva el refresco cada 30 segundos si el compañero
+  sigue habilitado. La web local abre `konea-focusbuddy-local://open` y la alojada
+  `konea-focusbuddy://open`, sin transferir credenciales ni iniciar sesión.
 
 ### 6. Actividad, reportes y moderación
 
@@ -126,7 +142,7 @@ La pregunta que responde el MVP es:
 - Archivos con cuota total de 100 MB por cuenta y límites de carga, además de la
   validación de tamaño, MIME, firma y propiedad.
 
-### 7. DUCO
+### 7. KUCO
 
 - Conversación individual persistida en PostgreSQL.
 - Resumen y priorización de tareas pendientes asignadas al usuario.
@@ -139,7 +155,7 @@ La pregunta que responde el MVP es:
   backend antes de mostrarse.
 - Borradores de tareas persistentes durante 30 días, recuperables aunque se
   borre la conversación.
-- Formulario editable para revisar, confirmar o descartar cada borrador. DUCO no
+- Formulario editable para revisar, confirmar o descartar cada borrador. KUCO no
   crea tareas, envía solicitudes ni contacta personas por sí solo.
 - “Mis solicitudes” muestra estados y una cronología persistente de respuestas;
   moderación puede contestar, revisar, resolver, rechazar y reabrir, con una
@@ -169,7 +185,7 @@ La pregunta que responde el MVP es:
 | Archivo disfrazado con MIME permitido              | Rechazado por firma binaria                                            |
 | Usuario reporta un recurso invisible               | Se responde como no disponible                                         |
 | `POSTS_REQUIRE_APPROVAL=true` y publica estudiante | Post `pending` visible al autor y moderación                           |
-| DUCO propone guardar una tarea                     | Persiste un borrador; no crea el pendiente sin confirmación            |
+| KUCO propone guardar una tarea                     | Persiste un borrador; no crea el pendiente sin confirmación            |
 | Usuario borra el chat con un borrador activo       | El historial desaparece y el borrador sigue recuperable                |
 | Usuario repite `clientRequestId` de sesión         | Recupera la misma sesión, sin duplicarla                               |
 | Usuario intenta iniciar dos sesiones               | `409 STUDY_SESSION_ALREADY_CURRENT`                                    |
@@ -192,14 +208,14 @@ B y moderador; opcionalmente un profesor.
 4. Crear un grupo, enviar un PDF etiquetado, asignar una tarea y votar una
    encuesta.
 5. Mostrar cómo aumentan no leídos y notificaciones en la otra sesión.
-6. Contar a DUCO que hay un examen, pedir guardarlo, revisar el formulario y
+6. Contar a KUCO que hay un examen, pedir guardarlo, revisar el formulario y
    confirmar que recién entonces aparece en próximos pendientes.
-7. Preguntar a DUCO “organiza mis tareas” y comprobar que usa la tarea creada.
+7. Preguntar a KUCO “organiza mis tareas” y comprobar que usa la tarea creada.
 8. Abrir FocusBuddy, elegir materia/pendiente, iniciar un Pomodoro, pausar,
    reanudar y completar; comprobar que el dashboard y el historial cambian.
-9. Abrir `iniciar-focusbuddy.bat`, iniciar sesión en la interfaz local de
-   Electron y mostrar que la sesión y sus métricas coinciden con la web, junto
-   con los derivados transparentes del chibi oficial.
+9. Descargar el instalador oficial 0.1.2 desde la web publicada e iniciar sesión
+   con una cuenta de ese entorno; mostrar la sesión y sus métricas sincronizadas.
+   Para la demo local, usar `iniciar-focusbuddy.bat` y una cuenta local.
 10. Reportar una publicación y, con la cuenta moderadora, revisar el reporte.
 11. Con aprobación activada, crear un post como estudiante y resolverlo en el
     centro de moderación.
@@ -212,7 +228,7 @@ multiusuario.
 
 Se conservaron la intención de producto, la identidad visual morada y los
 flujos útiles de feed, perfiles, conexiones, chat, tareas, encuestas, QR,
-notificaciones, moderación y DUCO. El espacio académico persistente y
+notificaciones, moderación y KUCO. El espacio académico persistente y
 FocusBuddy se integraron sobre esa base como evolución del alcance Capstone.
 
 Se reimplementaron sobre PostgreSQL y una API propia porque el proyecto legacy
@@ -224,7 +240,7 @@ integración borrada.
 
 - Secretos o claves antiguas de Supabase/Groq.
 - PHP o configuración del hosting anterior.
-- Webhooks de n8n, Flowise o endpoints externos de DUCO.
+- Webhooks de n8n, Flowise o endpoints externos de KUCO.
 - Botones legacy sin persistencia real, como compartir fuera del navegador o
   quitar miembros mediante `console.log`.
 - Datos de producción que ya no existen.
@@ -243,11 +259,12 @@ red externa.
 - Los archivos locales registran propietario, aplican una cuota de 100 MB y
   controlan lectura por recurso, pero no tienen antivirus ni limpieza automática
   de huérfanos.
-- No hay verificación/recuperación de correo, segundo factor o cierre de todas
-  las sesiones.
+- No hay verificación/recuperación de correo ni segundo factor. Cambiar datos
+  de acceso o contraseña revoca las otras sesiones; no existe todavía una
+  pantalla para inventariar y cerrar sesiones individualmente.
 - No hay notificaciones push, búsqueda global indexada ni paginación del feed.
 - El filtro local de texto es una defensa básica, no moderación inteligente.
-- DUCO puede usar un LLM, pero sus respuestas pueden equivocarse y no son
+- KUCO puede usar un LLM, pero sus respuestas pueden equivocarse y no son
   asesoría académica o institucional oficial. La API limita las acciones y la
   persona usuaria siempre revisa y confirma.
 - La API admite reportar cinco tipos de recurso. La interfaz actual expone
@@ -256,30 +273,31 @@ red externa.
 - FocusBuddy no ejecuta descansos automáticamente. La pausa por pérdida de
   heartbeat se materializa cuando llega la siguiente consulta o transición,
   aunque el tiempo computable ya queda limitado a 90 segundos de gracia.
-- El cliente Electron incorpora su interfaz, pero no incluye cola offline ni
-  despliega API/PostgreSQL por sí mismo. Solo sincroniza mediante las operaciones
-  de API permitidas. Kuco cubre los cuatro estados principales; los PNG del
-  runtime del chibi son derivados transparentes y aún carecen de
-  pausa/celebración dedicadas.
-- Los límites de tasa y la concurrencia de DUCO usan memoria local del proceso;
+- El cliente Electron incorpora su interfaz, pero no incluye cola offline ni actualizaciones
+  automáticas y no despliega API/PostgreSQL. Solo sincroniza mediante operaciones de API permitidas.
+  El instalador oficial sigue sin firma digital. El chibi HQ y Kuco reaccionan a la sesión;
+  el seguimiento de ojos mediante el puntero sigue pendiente.
+- Los límites de tasa y la concurrencia de KUCO usan memoria local del proceso;
   varias réplicas requerirán un almacén compartido como Redis.
 
 ## Siguiente fase
 
-1. Desplegar API y web con HTTPS y PostgreSQL administrado.
-2. Migrar archivos a almacenamiento de objetos con URLs firmadas.
+1. Ampliar la validación remota ya aprobada con instalación limpia en otro PC,
+   apertura del protocolo, cierre abrupto y recuperación tras una caída de la API.
+2. Validar la persistencia y restauración de archivos en el almacenamiento de
+   objetos configurado para la demo alojada.
 3. Incorporar verificación/recuperación de cuenta y protección CSRF explícita
    si web y API dejan de compartir sitio.
 4. Sustituir polling por WebSocket/SSE y añadir notificaciones push.
 5. Agregar aislamiento por institución, políticas de retención y auditoría.
 6. Evaluar privacidad, costo y calidad de los proveedores generativos, mantener
-   el modo local como fallback y ampliar las pruebas de seguridad de DUCO.
+   el modo local como fallback y ampliar las pruebas de seguridad de KUCO.
 7. Añadir un proceso de mantenimiento para materializar sesiones abandonadas
    sin esperar otra consulta y ciclos automáticos configurables de
    concentración/descanso.
-8. Sustituir los derivados por exportaciones alfa oficiales del chibi, completar
-   sus estados faltantes y definir dashboards adicionales a partir de pruebas con
-   estudiantes.
-9. Publicar web/API, configurar `FOCUSBUDDY_API_URL`, firmar el instalador y
-   preparar su estrategia de actualización.
+8. Integrar el seguimiento del puntero con capas y máscaras para los ojos,
+   solicitar cierres propios para las poses que aún no los tienen y definir
+   dashboards adicionales a partir de pruebas con estudiantes.
+9. Firmar el instalador oficial publicado, preparar actualizaciones verificadas y
+   mantener separados los canales local y oficial al publicar nuevas versiones.
 10. Mover rate limits y concurrencia a Redis antes de escalar horizontalmente.

@@ -1,4 +1,14 @@
-import { and, count, eq, gt, ilike, inArray, or, type SQL } from 'drizzle-orm'
+import {
+  and,
+  count,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db/client.js'
@@ -9,6 +19,7 @@ import {
   connections,
   posts,
   profiles,
+  qrCodes,
   users,
 } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
@@ -263,12 +274,32 @@ usersRouter.delete('/:userId/connection', async (request, response) => {
   const [userOneId, userTwoId] = [currentUser.id, userId].sort()
   if (!userOneId || !userTwoId) throw new Error('Invalid connection pair')
   await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${userOneId}:${userTwoId}`}))`,
+    )
     await transaction
       .delete(connections)
       .where(
         and(
           eq(connections.userOneId, userOneId),
           eq(connections.userTwoId, userTwoId),
+        ),
+      )
+    // A consumed invitation must stay invalid after revocation, including if
+    // these people later connect again through a newly accepted invitation.
+    await transaction
+      .update(qrCodes)
+      .set({ usedAt: new Date(), usedById: sql`${qrCodes.ownerId}` })
+      .where(
+        or(
+          and(
+            eq(qrCodes.ownerId, currentUser.id),
+            eq(qrCodes.usedById, userId),
+          ),
+          and(
+            eq(qrCodes.ownerId, userId),
+            eq(qrCodes.usedById, currentUser.id),
+          ),
         ),
       )
     const [directChat] = await transaction

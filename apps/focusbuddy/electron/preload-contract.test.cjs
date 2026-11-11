@@ -59,33 +59,57 @@ describe('FocusBuddy desktop preload contract', () => {
     delete require.cache[require.resolve('./preload.cjs')]
   })
 
-  it('exposes frozen named capabilities and unwraps successful API envelopes', async () => {
+  it('exposes frozen named capabilities and serializable successful API envelopes', async () => {
     assert.ok(Object.isFrozen(bridge))
     assert.ok(Object.isFrozen(bridge.api))
     assert.equal(Object.hasOwn(bridge, 'ipcRenderer'), false)
 
     const result = await bridge.api.getCurrentUser()
-    assert.deepEqual(result, { operation: 'auth.me' })
+    assert.deepEqual(result, { ok: true, data: { operation: 'auth.me' } })
     assert.deepEqual(calls.at(-1), {
       channel: 'focusbuddy:api',
       args: ['auth.me', undefined],
     })
   })
 
-  it('turns sanitized failure envelopes into useful renderer errors', async () => {
-    await assert.rejects(
-      bridge.api.login({ identifier: 'student', password: 'incorrect' }),
-      (error) => {
-        assert.equal(error.message, 'Credenciales incorrectas.')
-        assert.equal(error.status, 401)
-        assert.equal(error.code, 'INVALID_CREDENTIALS')
-        assert.deepEqual(error.fields, { identifier: ['Inválido'] })
-        return true
-      },
+  it('keeps error metadata in a serializable envelope across the context bridge', async () => {
+    const result = structuredClone(
+      await bridge.api.login({ identifier: 'student', password: 'incorrect' }),
     )
+    assert.deepEqual(result, {
+      ok: false,
+      error: {
+        message: 'Credenciales incorrectas.',
+        status: 401,
+        code: 'INVALID_CREDENTIALS',
+        fields: { identifier: ['Inválido'] },
+      },
+    })
   })
 
   it('maps renderer-friendly arguments onto allowlisted operations', async () => {
+    await bridge.api.updateTaskStatus(
+      '11111111-1111-4111-8111-111111111111',
+      'completed',
+    )
+    assert.deepEqual(calls.at(-1).args, [
+      'academic.tasks.updateStatus',
+      { taskId: '11111111-1111-4111-8111-111111111111', status: 'completed' },
+    ])
+    const account = {
+      displayName: 'Ana',
+      username: 'ana',
+      email: 'ana@example.test',
+      currentPassword: 'current-test',
+    }
+    await bridge.api.updateAccount(account)
+    assert.deepEqual(calls.at(-1).args, ['auth.account.update', account])
+    const password = {
+      currentPassword: 'current-test',
+      newPassword: 'new-test-password',
+    }
+    await bridge.api.changePassword(password)
+    assert.deepEqual(calls.at(-1).args, ['auth.password.change', password])
     await bridge.api.getOverview('America/Santiago')
     assert.deepEqual(calls.at(-1).args, [
       'study.overview',

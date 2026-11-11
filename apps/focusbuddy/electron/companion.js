@@ -25,7 +25,7 @@ const STATUS_LABELS = Object.freeze({
 let currentStatus = 'idle'
 let currentScene = 'idle'
 let currentCharacter = 'chibi'
-let reducedMotionPreference = false
+let motionPreferences = {}
 
 const animator = window.FocusBuddyAnimation.createAnimator({
   animations: library.animations,
@@ -54,6 +54,13 @@ const animator = window.FocusBuddyAnimation.createAnimator({
 })
 function syncAnimation() {
   const visible = document.visibilityState !== 'hidden'
+  const reduced = window.FocusBuddyMotion.resolveMotionPolicy(
+    motionPreferences,
+    motionQuery.matches,
+  )
+  document.documentElement.dataset.motionPreference =
+    window.FocusBuddyMotion.resolveMotionPreference(motionPreferences)
+  document.documentElement.classList.toggle('reduce-motion', reduced)
   preloadScene(visible && currentCharacter === 'chibi' ? currentScene : null)
   animator.update({
     state:
@@ -61,7 +68,7 @@ function syncAnimation() {
         ? 'kuco:' + STATUS_MOODS[currentStatus]
         : 'chibi:' + currentScene,
     visible,
-    reducedMotion: reducedMotionPreference || motionQuery.matches,
+    reducedMotion: reduced,
   })
 }
 function renderSession(state) {
@@ -80,13 +87,9 @@ function renderSession(state) {
   syncAnimation()
 }
 function renderPreferences(preferences) {
-  reducedMotionPreference = Boolean(preferences?.reducedMotion)
+  motionPreferences = preferences ?? {}
   currentCharacter =
     preferences?.companionCharacter === 'kuco' ? 'kuco' : 'chibi'
-  document.documentElement.classList.toggle(
-    'reduce-motion',
-    reducedMotionPreference,
-  )
   syncAnimation()
 }
 document.querySelector('#open-button')?.addEventListener('click', () => {

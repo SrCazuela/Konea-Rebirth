@@ -127,21 +127,19 @@ select:focus-visible,
 .brand-mark,
 .startup-mark,
 .account-mark {
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: linear-gradient(145deg, #a477ca, #734395);
-  box-shadow: 0 9px 20px rgb(24 10 30 / 22%);
-  font-weight: 900;
+  display: block;
+  object-fit: contain;
 }
 
 .brand-mark {
-  width: 39px;
-  height: 39px;
+  width: 44px;
+  height: 44px;
+  padding: 3px;
   flex: 0 0 auto;
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 13px;
-  font-size: 1.1rem;
+  background: #fbf8ff;
+  box-shadow: 0 9px 20px rgb(24 10 30 / 22%);
 }
 
 .brand-block > span:last-child,
@@ -1476,11 +1474,10 @@ select:focus-visible,
 }
 
 .account-mark {
-  width: 46px;
-  height: 46px;
+  width: min(164px, 100%);
+  height: auto;
+  aspect-ratio: 450 / 166;
   margin-bottom: 22px;
-  border-radius: 15px;
-  font-size: 1.2rem;
 }
 
 .login-card h2,
@@ -1548,6 +1545,78 @@ select:focus-visible,
   text-align: center;
 }
 
+.account-edit-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.account-edit-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+.account-edit-section > p,
+.account-edit-section small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.6;
+}
+.account-edit-section form {
+  display: grid;
+  gap: 12px;
+}
+.account-edit-section label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.account-edit-section input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #ddcfe8;
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fcfaff;
+  font: inherit;
+  font-weight: 400;
+}
+.account-edit-section input:focus-visible {
+  outline: 2px solid #9c6ac5;
+  outline-offset: 2px;
+}
+.account-form-feedback {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 0.66rem;
+}
+.account-form-feedback[data-tone='error'] {
+  color: #9b3e51;
+}
+.account-form-feedback[data-tone='success'] {
+  color: #287354;
+}
+
+.task-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.task-action > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
 .account-visual {
   position: relative;
   min-width: 0;
@@ -1585,10 +1654,10 @@ select:focus-visible,
 }
 
 .startup-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 17px;
-  font-size: 1.3rem;
+  width: clamp(164px, 30vw, 220px);
+  height: auto;
+  aspect-ratio: 450 / 166;
+  margin-bottom: 8px;
 }
 
 .startup-overlay p {
@@ -1618,7 +1687,7 @@ select:focus-visible,
     transform: translateY(0);
   }
   50% {
-    transform: translateY(3px);
+    transform: translateY(-8px);
   }
 }
 
@@ -1933,9 +2002,10 @@ select:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  body:not([data-motion-preference='full']),
+  body:not([data-motion-preference='full']) *,
+  body:not([data-motion-preference='full']) *::before,
+  body:not([data-motion-preference='full']) *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

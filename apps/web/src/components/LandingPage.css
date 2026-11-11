@@ -82,6 +82,7 @@
 
 .landing-brand img {
   display: block;
+  height: auto;
   object-fit: contain;
 }
 
@@ -775,7 +776,7 @@
   background: #f2eafb;
   font-size: 8px;
 }
-.landing-day__duco {
+.landing-day__kuco {
   margin-top: 15px;
   padding: 12px;
   display: flex;
@@ -784,16 +785,16 @@
   color: #8d6eaf;
   background: #f3edf9;
 }
-.landing-day__duco > .landing-icon {
+.landing-day__kuco > .landing-icon {
   width: 16px;
   height: 16px;
 }
-.landing-day__duco p {
+.landing-day__kuco p {
   margin: 0;
   font-size: 9px;
   line-height: 1.6;
 }
-.landing-day__duco strong {
+.landing-day__kuco strong {
   display: block;
   color: #684390;
 }
@@ -1059,25 +1060,25 @@
   font-size: 8px;
   font-style: normal;
 }
-.landing-feature--duco {
+.landing-feature--kuco {
   background: #f3f4ec;
   border-color: #e7e8d9;
 }
-.landing-feature--duco .landing-feature__icon {
+.landing-feature--kuco .landing-feature__icon {
   color: #80885d;
   border-color: #e2e4d2;
 }
-.landing-feature--duco .landing-feature__top > span:last-child {
+.landing-feature--kuco .landing-feature__top > span:last-child {
   color: #667046;
 }
-.landing-feature--duco > p {
+.landing-feature--kuco > p {
   color: #65704e;
 }
-.landing-duco-art {
+.landing-kuco-art {
   max-width: 350px;
   margin: 25px auto 0;
 }
-.landing-duco-art > span:first-child {
+.landing-kuco-art > span:first-child {
   width: fit-content;
   margin-left: auto;
   padding: 11px 15px;
@@ -1088,13 +1089,13 @@
   background: #647545;
   font-size: 10px;
 }
-.landing-duco-art > div {
+.landing-kuco-art > div {
   margin-top: 14px;
   display: flex;
   align-items: center;
   gap: 9px;
 }
-.landing-duco-art > div > .landing-icon {
+.landing-kuco-art > div > .landing-icon {
   width: 28px;
   height: 28px;
   padding: 5px;
@@ -1102,18 +1103,18 @@
   border-radius: 9px;
   color: #8c9a6e;
 }
-.landing-duco-art p {
+.landing-kuco-art p {
   margin: 0;
   color: #68704f;
   font-size: 10px;
   line-height: 1.8;
 }
-.landing-duco-art strong {
+.landing-kuco-art strong {
   display: block;
   color: #58613d;
   font-weight: 500;
 }
-.landing-duco-art__draft {
+.landing-kuco-art__draft {
   width: fit-content;
   margin: 13px 0 0 37px;
   padding: 8px 10px;
@@ -1126,7 +1127,7 @@
   background: #fcfff6;
   font-size: 9px;
 }
-.landing-duco-art__draft .landing-icon {
+.landing-kuco-art__draft .landing-icon {
   width: 12px;
   height: 12px;
 }
@@ -1149,6 +1150,41 @@
 }
 .landing-feature--focus .landing-feature__top > span:last-child {
   color: #b59bc6;
+}
+.landing-focus-download {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 10px 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d9f39655;
+  border-radius: 10px;
+  color: #e8f7bf;
+  background: #d9f3960d;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    transform 200ms ease,
+    background-color 200ms ease;
+}
+.landing-focus-download:hover {
+  transform: translateY(-2px);
+  background: #d9f3961a;
+}
+.landing-focus-download .landing-icon {
+  width: 18px;
+  transform: rotate(90deg);
+}
+.landing-focus-download small {
+  display: block;
+  margin-top: 3px;
+  color: #c0accd;
+  font-size: 9px;
+  font-weight: 400;
 }
 .landing-focus-art {
   min-height: 175px;

@@ -52,7 +52,7 @@ function runBuilder(argumentsFromCommandLine = process.argv.slice(2)) {
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli.js')
   const result = spawnSync(
     process.execPath,
-    [electronBuilderCli, ...argumentsFromCommandLine],
+    ['--no-maglev', electronBuilderCli, ...argumentsFromCommandLine],
     {
       env: environmentForBuilder(),
       stdio: 'inherit',

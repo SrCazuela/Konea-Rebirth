@@ -60,10 +60,15 @@ import {
 } from '../api/support-requests'
 import { absoluteUploadUrl, uploadImage, validateImage } from '../api/uploads'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { canonicalizeAssistantHash } from '../config/assistant-navigation'
 import { ImageCropDialog } from './ImageCropDialog'
 import { SafeExternalLink } from './SafeExternalLink'
 import { SearchableSelect } from './SearchableSelect'
 import { AccountSettings } from './AccountSettings'
+import { CampusAgenda } from './CampusAgenda'
+import { PortalMotionStage } from './PortalMotion'
+import { usePortalNavigationMotion } from '../hooks/usePortalNavigationMotion'
+import { KoneaLogo } from './KoneaLogo'
 import './Portal.css'
 
 const Network = lazy(() =>
@@ -77,8 +82,8 @@ const Notifications = lazy(() =>
 const Chat = lazy(() =>
   import('./Chat').then((module) => ({ default: module.Chat })),
 )
-const Duco = lazy(() =>
-  import('./Duco').then((module) => ({ default: module.Duco })),
+const Kuco = lazy(() =>
+  import('./Kuco').then((module) => ({ default: module.Kuco })),
 )
 const Academic = lazy(() =>
   import('./Academic').then((module) => ({ default: module.Academic })),
@@ -91,7 +96,7 @@ type PortalView =
   | 'feed'
   | 'network'
   | 'chat'
-  | 'duco'
+  | 'kuco'
   | 'academic'
   | 'focus'
   | 'notifications'
@@ -117,12 +122,13 @@ const uuidHashPattern =
   '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 function routeFromHash(hash: string, canModerate: boolean): PortalRoute {
+  hash = canonicalizeAssistantHash(hash)
   const simpleRoutes: Record<string, PortalView> = {
     '#feed': 'feed',
     '#people': 'network',
     '#chat': 'chat',
-    '#duco': 'duco',
-    '#duco-requests': 'duco',
+    '#kuco': 'kuco',
+    '#kuco-requests': 'kuco',
     '#academic': 'academic',
     '#focusbuddy': 'focus',
     '#profile': 'profile',
@@ -197,7 +203,7 @@ function hashForView(view: PortalView) {
     feed: '#feed',
     network: '#people',
     chat: '#chat',
-    duco: '#duco',
+    kuco: '#kuco',
     academic: '#academic',
     focus: '#focusbuddy',
     notifications: '#notifications',
@@ -209,6 +215,8 @@ function hashForView(view: PortalView) {
 }
 
 type IconName =
+  | 'collapse'
+  | 'motion'
   | 'brand'
   | 'feed'
   | 'profile'
@@ -231,7 +239,7 @@ type IconName =
   | 'reply'
   | 'megaphone'
   | 'chat'
-  | 'duco'
+  | 'kuco'
   | 'academic'
   | 'focus'
 
@@ -248,6 +256,17 @@ const monthFormatter = new Intl.DateTimeFormat('es-CL', {
 
 function PortalIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
+    collapse: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16m7-12-4 4 4 4" />
+      </>
+    ),
+    motion: (
+      <>
+        <path d="m13 3-3 7H5l6 4-2 7 10-12h-6l2-6Z" />
+      </>
+    ),
     brand: (
       <>
         <path d="M7 5.5h6.4a3.6 3.6 0 0 1 0 7.2H10l-3 3v-3.4A3.6 3.6 0 0 1 7 5.5Z" />
@@ -363,7 +382,7 @@ function PortalIcon({ name }: { name: IconName }) {
         <path d="M8 11h8M8 15h5" />
       </>
     ),
-    duco: (
+    kuco: (
       <>
         <path d="m12 3 1.4 4.2L18 9l-4.6 1.8L12 15l-1.4-4.2L6 9l4.6-1.8L12 3Z" />
         <path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15ZM5 3l.7 2.3L8 6l-2.3.7L5 9l-.7-2.3L2 6l2.3-.7L5 3Z" />
@@ -1765,6 +1784,7 @@ function FeedView({
       </div>
 
       <aside className="portal-rail" aria-label="Información de tu comunidad">
+        <CampusAgenda />
         <section className="portal-card portal-community-card">
           <span className="portal-card-kicker">Tu comunidad</span>
           <h2>{user.institution || 'Konea Campus'}</h2>
@@ -2262,7 +2282,7 @@ function ProfileView({
     setError('')
     setSuccess('')
     const cleaned: ProfileUpdate = {
-      username: form.username.trim().toLowerCase(),
+      username: user.username,
       displayName: form.displayName.trim(),
       bio: form.bio?.trim() || null,
       institution: form.institution?.trim() || null,
@@ -2506,21 +2526,13 @@ function ProfileView({
                 <span>Nombre de usuario</span>
                 <div className="portal-input-prefix">
                   <span>@</span>
-                  <input
-                    value={form.username}
-                    onChange={(event) =>
-                      setField('username', event.target.value.toLowerCase())
-                    }
-                    minLength={3}
-                    maxLength={30}
-                    pattern="[a-z0-9._]+"
-                    title="Usa letras minúsculas, números, punto y guion bajo"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    required
-                    disabled={saving || uploadsBusy}
-                  />
+                  <input value={user.username} readOnly />
                 </div>
+                <small>
+                  Cambia tu usuario en{' '}
+                  <a href="#profile-settings">Configuración de cuenta</a>,
+                  confirmando tu contraseña.
+                </small>
               </label>
               <SearchableSelect
                 label="Institución"
@@ -4262,6 +4274,15 @@ function ModerationView() {
 }
 
 export function Portal({ user, onUserChange, onLogout }: PortalProps) {
+  const portalRef = useRef<HTMLDivElement>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [motionEnabled, setMotionEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('konea.portal.motion') !== 'off'
+    } catch {
+      return true
+    }
+  })
   const canModerate = user.role === 'moderator' || user.role === 'admin'
   const [initialRoute] = useState(() =>
     routeFromHash(window.location.hash, canModerate),
@@ -4284,6 +4305,16 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
   const notificationRequestRef = useRef(0)
   const [loggingOut, setLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState('')
+
+  usePortalNavigationMotion(portalRef, view, motionEnabled, sidebarCollapsed)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('konea.portal.motion', motionEnabled ? 'on' : 'off')
+    } catch {
+      // The preference still applies for this session when storage is blocked.
+    }
+  }, [motionEnabled])
 
   const applyRoute = useCallback(
     (
@@ -4403,7 +4434,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'academic', label: 'Materias', icon: 'academic' },
     { view: 'focus', label: 'FocusBuddy', icon: 'focus' },
-    { view: 'duco', label: 'DUCO', icon: 'duco' },
+    { view: 'kuco', label: 'KUCO', icon: 'kuco' },
     ...(canModerate
       ? ([
           { view: 'moderation', label: 'Moderación', icon: 'shield' },
@@ -4417,7 +4448,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     { view: 'chat', label: 'Chat', icon: 'chat' },
     { view: 'academic', label: 'Materias', icon: 'academic' },
     { view: 'focus', label: 'Focus', icon: 'focus' },
-    { view: 'duco', label: 'DUCO', icon: 'duco' },
+    { view: 'kuco', label: 'KUCO', icon: 'kuco' },
     { view: 'profile', label: 'Perfil', icon: 'profile' },
   ]
 
@@ -4425,13 +4456,59 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     feed: { eyebrow: 'Comunidad', title: 'Tu campus, en un solo lugar' },
     network: { eyebrow: 'Privacidad por diseño', title: 'Mis conexiones' },
     chat: { eyebrow: 'Conversaciones', title: 'Chat Konea' },
-    duco: { eyebrow: 'Asistente', title: 'Organízate con DUCO' },
+    kuco: { eyebrow: 'Asistente', title: 'Organízate con KUCO' },
     academic: { eyebrow: 'Planificación', title: 'Mi espacio académico' },
     focus: { eyebrow: 'Concentración', title: 'Estudia con FocusBuddy' },
     notifications: { eyebrow: 'Actividad', title: 'Tus notificaciones' },
     profile: { eyebrow: 'Identidad', title: 'Tu perfil Konea' },
     account: { eyebrow: 'Cuenta', title: 'Configuración de tu cuenta' },
     moderation: { eyebrow: 'Seguridad', title: 'Centro de moderación' },
+  }
+
+  const pagePresentation: Record<
+    PortalView,
+    { icon: IconName; description: string }
+  > = {
+    feed: {
+      icon: 'feed',
+      description: 'Conversa, comparte y descubre lo que pasa en tu comunidad.',
+    },
+    network: {
+      icon: 'users',
+      description: 'Personas, proyectos e ideas que vale la pena conectar.',
+    },
+    chat: {
+      icon: 'chat',
+      description: 'Tu comunidad, a una conversación de distancia.',
+    },
+    kuco: {
+      icon: 'kuco',
+      description: 'Un poco de organización para todo lo que tienes en mente.',
+    },
+    academic: {
+      icon: 'academic',
+      description: 'Tus materias y pendientes, con espacio para lo que viene.',
+    },
+    focus: {
+      icon: 'focus',
+      description: 'Encuentra tu ritmo y avanza a tu manera.',
+    },
+    notifications: {
+      icon: 'bell',
+      description: 'Mantente al día con lo que importa para ti.',
+    },
+    profile: {
+      icon: 'profile',
+      description: 'Muestra quién eres y todo lo que estás construyendo.',
+    },
+    account: {
+      icon: 'lock',
+      description: 'Tu información y seguridad, bajo tu control.',
+    },
+    moderation: {
+      icon: 'shield',
+      description: 'Cuidemos juntos los espacios de nuestra comunidad.',
+    },
   }
 
   const goTo = (nextView: PortalView) => {
@@ -4480,7 +4557,7 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
   }
 
   const openSupportRequests = () => {
-    applyRoute(routeFromHash('#duco-requests', canModerate))
+    applyRoute(routeFromHash('#kuco-requests', canModerate))
   }
 
   const openProfile = () => {
@@ -4518,8 +4595,26 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     }
   }
 
+  const motionControl = (
+    <button
+      type="button"
+      className="portal-motion-toggle"
+      aria-pressed={!motionEnabled}
+      aria-label={motionEnabled ? 'Pausar animaciones' : 'Activar animaciones'}
+      title={motionEnabled ? 'Pausar animaciones' : 'Activar animaciones'}
+      onClick={() => setMotionEnabled((enabled) => !enabled)}
+    >
+      <PortalIcon name="motion" />
+    </button>
+  )
+
   return (
-    <div className="portal-shell">
+    <div
+      className={`portal-shell${sidebarCollapsed ? ' portal-shell--collapsed' : ''}`}
+      ref={portalRef}
+      data-view={view}
+      data-motion={motionEnabled ? 'on' : 'off'}
+    >
       <button
         className="portal-skip-link"
         type="button"
@@ -4529,39 +4624,82 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
       </button>
 
       <aside className="portal-sidebar">
-        <button
-          className="portal-brand"
-          type="button"
-          onClick={() => goTo('feed')}
-          aria-label="Ir al inicio de Konea"
-        >
-          <img
-            className="portal-brand__logo"
-            src="/konea-logo.svg"
-            alt=""
-            aria-hidden="true"
-          />
-        </button>
+        <div className="portal-sidebar__brand-row">
+          <button
+            className="portal-brand"
+            type="button"
+            onClick={() => goTo('feed')}
+            aria-label="Ir al inicio de Konea"
+          >
+            <KoneaLogo className="portal-brand__logo" width={130} decorative />
+            <KoneaLogo
+              className="portal-brand__compact"
+              width={48}
+              compact
+              decorative
+            />
+          </button>
+          <button
+            type="button"
+            className="portal-sidebar-toggle"
+            aria-label={
+              sidebarCollapsed
+                ? 'Expandir menú lateral'
+                : 'Contraer menú lateral'
+            }
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            <PortalIcon name="collapse" />
+          </button>
+        </div>
+        <div className="portal-sidebar__intro">
+          <span>TU CAMPUS, CONECTADO</span>
+          <p>Un lugar para conectar y avanzar.</p>
+        </div>
 
         <nav className="portal-nav" aria-label="Navegación principal">
-          {desktopNavigation.map((item) => (
-            <button
-              key={item.view}
-              className={view === item.view ? 'is-active' : ''}
-              type="button"
-              onClick={() => goTo(item.view)}
-              aria-current={view === item.view ? 'page' : undefined}
-            >
-              {navigationButtonContent(item)}
-            </button>
+          {desktopNavigation.map((item, index) => (
+            <div className="portal-nav-item" key={item.view}>
+              {(index === 0 || index === 3 || index === 6) && (
+                <span className="portal-nav-section-label">
+                  {index === 0
+                    ? 'Comunidad'
+                    : index === 3
+                      ? 'Tu organización'
+                      : 'Gestión'}
+                </span>
+              )}
+              <button
+                className={view === item.view ? 'is-active' : ''}
+                type="button"
+                onClick={() => goTo(item.view)}
+                aria-current={view === item.view ? 'page' : undefined}
+                aria-label={item.label}
+                title={item.label}
+                data-portal-nav="desktop"
+                data-view={item.view}
+              >
+                {navigationButtonContent(item)}
+              </button>
+            </div>
           ))}
         </nav>
+
+        <div className="portal-sidebar__tip">
+          <PortalIcon name="brand" />
+          <div>
+            <strong>Conecta. Organiza. Avanza.</strong>
+            <small>Tu próxima idea empieza aquí.</small>
+          </div>
+        </div>
 
         <div className="portal-sidebar__account">
           <button
             className={`portal-account-button${view === 'profile' || view === 'account' ? ' is-active' : ''}`}
             type="button"
             onClick={openProfile}
+            aria-label={`Abrir perfil de ${user.displayName}`}
             aria-current={
               view === 'profile' || view === 'account' ? 'page' : undefined
             }
@@ -4577,9 +4715,10 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             type="button"
             onClick={() => void handleLogout()}
             disabled={loggingOut}
+            aria-label={loggingOut ? 'Cerrando sesión' : 'Cerrar sesión'}
           >
             <PortalIcon name="logout" />
-            {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
+            <span>{loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</span>
           </button>
           {logoutError && (
             <p className="portal-inline-error" role="alert">
@@ -4596,14 +4735,10 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
           onClick={() => goTo('feed')}
           aria-label="Ir al inicio de Konea"
         >
-          <img
-            className="portal-brand__logo"
-            src="/konea-logo.svg"
-            alt=""
-            aria-hidden="true"
-          />
+          <KoneaLogo className="portal-brand__logo" width={90} decorative />
         </button>
         <div className="portal-mobile-actions">
+          {motionControl}
           {canModerate && (
             <button
               className={`portal-notification-button portal-notification-button--mobile${view === 'moderation' ? ' is-active' : ''}`}
@@ -4642,18 +4777,27 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
       </header>
 
       <main
-        className={`portal-main${view === 'chat' || view === 'duco' ? ' portal-main--immersive' : ''}${view === 'chat' ? ' portal-main--chat' : ''}`}
+        className={`portal-main${view === 'chat' || view === 'kuco' ? ' portal-main--immersive' : ''}${view === 'chat' ? ' portal-main--chat' : ''}`}
         id="portal-main"
         tabIndex={-1}
       >
         <header
-          className={`portal-page-header${view === 'chat' || view === 'duco' ? ' portal-page-header--immersive' : ''}${view === 'chat' ? ' portal-page-header--chat' : ''}`}
+          className={`portal-page-header${view === 'chat' || view === 'kuco' ? ' portal-page-header--immersive' : ''}${view === 'chat' ? ' portal-page-header--chat' : ''}`}
         >
-          <div>
-            <span>{pageDetails[view].eyebrow}</span>
-            <h1>{pageDetails[view].title}</h1>
+          <div className="portal-page-heading">
+            <span className="portal-page-heading__symbol" aria-hidden="true">
+              <PortalIcon name={pagePresentation[view].icon} />
+            </span>
+            <div>
+              <span>{pageDetails[view].eyebrow}</span>
+              <h1>{pageDetails[view].title}</h1>
+              <p className="portal-page-heading__description">
+                {pagePresentation[view].description}
+              </p>
+            </div>
           </div>
           <div className="portal-page-actions">
+            {motionControl}
             <button
               className={`portal-notification-button${view === 'notifications' ? ' is-active' : ''}`}
               type="button"
@@ -4699,100 +4843,106 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             </div>
           }
         >
-          {(view === 'profile' || view === 'account') && (
-            <nav className="portal-account-tabs" aria-label="Perfil y cuenta">
-              <button
-                type="button"
-                className={view === 'profile' ? 'is-active' : ''}
-                aria-current={view === 'profile' ? 'page' : undefined}
-                onClick={openProfile}
-              >
-                <PortalIcon name="profile" />
-                Mi perfil
-              </button>
-              <button
-                type="button"
-                className={view === 'account' ? 'is-active' : ''}
-                aria-current={view === 'account' ? 'page' : undefined}
-                onClick={() => goTo('account')}
-              >
-                <PortalIcon name="lock" />
-                Configuración de cuenta
-              </button>
-            </nav>
-          )}
-          {view === 'feed' && (
-            <FeedView
-              key={activePostId ?? 'feed'}
-              user={user}
-              onOpenUser={(userId) =>
-                userId === user.id ? openProfile() : openNetworkUser(userId)
-              }
-            />
-          )}
-          {view === 'network' && (
-            <Network
-              key={networkUserId ?? 'directory'}
-              currentUser={user}
-              initialUserId={networkUserId}
-              onOpenOwnProfile={openProfile}
-              onStartChat={startChatWithUser}
-              onProfileChange={(userId) => {
-                if (userId) openNetworkUser(userId)
-                else goTo('network')
-              }}
-            />
-          )}
-          {view === 'chat' && (
-            <Chat
-              currentUser={user}
-              initialChatId={initialChatId}
-              initialUserId={initialChatUserId}
-              onUnreadChange={setUnreadChats}
-              onNotificationsRead={() => void refreshUnreadNotifications()}
-              onOpenUser={openNetworkUser}
-              onChatChange={syncChatRoute}
-            />
-          )}
-          {view === 'duco' && (
-            <Duco
-              currentUser={user}
-              initialPanel={
-                window.location.hash === '#duco-requests'
-                  ? 'requests'
-                  : 'conversation'
-              }
-            />
-          )}
-          {view === 'academic' && <Academic />}
-          {view === 'focus' && <FocusBuddy />}
-          {view === 'notifications' && (
-            <Notifications
-              unreadCount={unreadNotifications}
-              onUnreadCountChange={commitUnreadNotificationCount}
-              onOpenUser={openNetworkUser}
-              onOpenFeed={openPost}
-              onOpenChat={openChat}
-              onOpenSupportRequests={openSupportRequests}
-            />
-          )}
-          {view === 'profile' && (
-            <ProfileView
-              user={user}
-              onUserChange={onUserChange}
-              onOpenUser={(userId) =>
-                userId === user.id ? openProfile() : openNetworkUser(userId)
-              }
-            />
-          )}
-          {view === 'account' && (
-            <AccountSettings
-              user={user}
-              onUserChange={onUserChange}
-              onLogout={onLogout}
-            />
-          )}
-          {view === 'moderation' && canModerate && <ModerationView />}
+          <PortalMotionStage
+            routeKey={`${view}:${networkUserId ?? activePostId ?? ''}`}
+            enabled={motionEnabled}
+          >
+            {(view === 'profile' || view === 'account') && (
+              <nav className="portal-account-tabs" aria-label="Perfil y cuenta">
+                <button
+                  type="button"
+                  className={view === 'profile' ? 'is-active' : ''}
+                  aria-current={view === 'profile' ? 'page' : undefined}
+                  onClick={openProfile}
+                >
+                  <PortalIcon name="profile" />
+                  Mi perfil
+                </button>
+                <button
+                  type="button"
+                  className={view === 'account' ? 'is-active' : ''}
+                  aria-current={view === 'account' ? 'page' : undefined}
+                  onClick={() => goTo('account')}
+                >
+                  <PortalIcon name="lock" />
+                  Configuración de cuenta
+                </button>
+              </nav>
+            )}
+            {view === 'feed' && (
+              <FeedView
+                key={activePostId ?? 'feed'}
+                user={user}
+                onOpenUser={(userId) =>
+                  userId === user.id ? openProfile() : openNetworkUser(userId)
+                }
+              />
+            )}
+            {view === 'network' && (
+              <Network
+                key={networkUserId ?? 'directory'}
+                currentUser={user}
+                initialUserId={networkUserId}
+                onOpenOwnProfile={openProfile}
+                onStartChat={startChatWithUser}
+                onProfileChange={(userId) => {
+                  if (userId) openNetworkUser(userId)
+                  else goTo('network')
+                }}
+              />
+            )}
+            {view === 'chat' && (
+              <Chat
+                currentUser={user}
+                initialChatId={initialChatId}
+                initialUserId={initialChatUserId}
+                onUnreadChange={setUnreadChats}
+                onNotificationsRead={() => void refreshUnreadNotifications()}
+                onOpenUser={openNetworkUser}
+                onChatChange={syncChatRoute}
+              />
+            )}
+            {view === 'kuco' && (
+              <Kuco
+                currentUser={user}
+                initialPanel={
+                  canonicalizeAssistantHash(window.location.hash) ===
+                  '#kuco-requests'
+                    ? 'requests'
+                    : 'conversation'
+                }
+              />
+            )}
+            {view === 'academic' && <Academic />}
+            {view === 'focus' && <FocusBuddy />}
+            {view === 'notifications' && (
+              <Notifications
+                unreadCount={unreadNotifications}
+                onUnreadCountChange={commitUnreadNotificationCount}
+                onOpenUser={openNetworkUser}
+                onOpenFeed={openPost}
+                onOpenChat={openChat}
+                onOpenSupportRequests={openSupportRequests}
+              />
+            )}
+            {view === 'profile' && (
+              <ProfileView
+                user={user}
+                onUserChange={onUserChange}
+                onOpenUser={(userId) =>
+                  userId === user.id ? openProfile() : openNetworkUser(userId)
+                }
+              />
+            )}
+            {view === 'account' && (
+              <AccountSettings
+                user={user}
+                onUserChange={onUserChange}
+                onLogout={onLogout}
+              />
+            )}
+            {view === 'moderation' && canModerate && <ModerationView />}
+          </PortalMotionStage>
         </Suspense>
       </main>
 
@@ -4808,6 +4958,9 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             }
             type="button"
             onClick={() => goTo(item.view)}
+            aria-label={item.label}
+            data-portal-nav="mobile"
+            data-view={item.view}
             aria-current={
               view === item.view ||
               (view === 'account' && item.view === 'profile')

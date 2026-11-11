@@ -5,7 +5,9 @@ const {
   Menu,
   nativeImage,
   Notification,
+  protocol,
   screen,
+  session,
   Tray,
 } = require('electron')
 const {
@@ -15,7 +17,10 @@ const {
   writeFileSync,
 } = require('node:fs')
 const path = require('node:path')
-const { DEFAULT_API_BASE_URL, selectApiBaseUrl } = require('./api-url.cjs')
+const {
+  channelDataPaths,
+  resolveRuntimeChannel,
+} = require('./release-channel.cjs')
 const { createDesktopApiClient } = require('./desktop-api.cjs')
 const {
   DEFAULT_PREFERENCES,
@@ -27,6 +32,14 @@ const {
   normalizeSessionState,
 } = require('./session-state.cjs')
 const { createWebPreferences } = require('./window-options.cjs')
+const {
+  UI_SCHEME_REGISTRATION,
+  uiPageUrl,
+  isTrustedUiPageUrl,
+  registerUiProtocolForSession,
+} = require('./ui-protocol.cjs')
+
+protocol.registerSchemesAsPrivileged([UI_SCHEME_REGISTRATION])
 
 const NORMAL_MINIMUM_SIZE = [980, 680]
 const COMPACT_SIZE = { width: 460, height: 720 }
@@ -40,7 +53,7 @@ const COMPANION_SIZES = {
 let mainWindow = null
 let companionWindow = null
 let tray = null
-let apiBaseUrl = DEFAULT_API_BASE_URL
+let apiBaseUrl = null
 let desktopApi = null
 let isQuitting = false
 let normalWindowBounds = null
@@ -49,13 +62,48 @@ let sessionState = { ...DEFAULT_SESSION_STATE }
 let companionMoveTimer = null
 const notifiedSessions = new Set()
 
-const customDataDirectory = process.env.FOCUSBUDDY_DATA_DIR
-if (!app.isPackaged && customDataDirectory) {
-  const resolvedDataDirectory = path.resolve(customDataDirectory)
-  const sessionDataDirectory = path.join(resolvedDataDirectory, 'session')
-  mkdirSync(sessionDataDirectory, { recursive: true })
-  app.setPath('userData', resolvedDataDirectory)
-  app.setPath('sessionData', sessionDataDirectory)
+let releaseContext
+let startupError
+try {
+  let packagedConfigSource
+  let packagedMetadata
+  if (app.isPackaged) {
+    try {
+      packagedConfigSource = readFileSync(
+        path.join(process.resourcesPath, 'focusbuddy.config.json'),
+        'utf8',
+      )
+      packagedMetadata = JSON.parse(
+        readFileSync(path.join(__dirname, '../package.json'), 'utf8'),
+      ).focusbuddyRelease
+    } catch {
+      throw new Error(
+        'El instalador no contiene una configuración verificable de FocusBuddy.',
+      )
+    }
+  }
+  releaseContext = resolveRuntimeChannel({
+    isPackaged: app.isPackaged,
+    packagedConfigSource,
+    packagedMetadata,
+    commandLineValue: process.argv
+      .find((argument) => argument.startsWith('--api-url='))
+      ?.slice(10),
+    environmentValue: process.env.FOCUSBUDDY_API_URL,
+  })
+  apiBaseUrl = releaseContext.apiBaseUrl
+  app.setName(releaseContext.productName)
+  const dataPaths = channelDataPaths(
+    releaseContext,
+    app.getPath('appData'),
+    !app.isPackaged ? process.env.FOCUSBUDDY_DATA_DIR : undefined,
+  )
+  mkdirSync(dataPaths.sessionData, { recursive: true })
+  // Se define antes del lock para que Local y Oficial no compartan una sesión.
+  app.setPath('userData', dataPaths.userData)
+  app.setPath('sessionData', dataPaths.sessionData)
+} catch (error) {
+  startupError = error
 }
 
 function preferencesPath() {
@@ -83,57 +131,14 @@ function persistPreferences() {
   renameSync(temporary, target)
 }
 
-function resolveApiBaseUrl() {
-  const commandLineValue = process.argv
-    .find((argument) => argument.startsWith('--api-url='))
-    ?.slice('--api-url='.length)
-  const legacyCommandLineValue = process.argv
-    .find((argument) => argument.startsWith('--app-url='))
-    ?.slice('--app-url='.length)
-
-  let config = {}
-  try {
-    const configPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'focusbuddy.config.json')
-      : path.join(__dirname, '../build/focusbuddy.config.json')
-    const value = JSON.parse(readFileSync(configPath, 'utf8'))
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      config = value
-    }
-  } catch {
-    // En desarrollo el archivo es opcional; localhost sigue siendo el fallback.
-  }
-
-  const configuredApiUrl =
-    typeof config.apiBaseUrl === 'string' ? config.apiBaseUrl : null
-  const configuredAppUrl =
-    typeof config.appUrl === 'string' ? config.appUrl : null
-
-  return selectApiBaseUrl({
-    isPackaged: app.isPackaged,
-    commandLineValue,
-    environmentValue: process.env.FOCUSBUDDY_API_URL,
-    packagedValue: configuredApiUrl,
-    appUrl: app.isPackaged
-      ? configuredAppUrl
-      : legacyCommandLineValue || process.env.FOCUSBUDDY_APP_URL,
-  })
-}
-
 function connectionInfo() {
   const endpoint = new URL(apiBaseUrl)
-  const isLocal = new Set(['localhost', '127.0.0.1', '[::1]']).has(
-    endpoint.hostname.toLowerCase(),
-  )
   return {
     apiBaseUrl,
     url: apiBaseUrl,
     server: endpoint.host,
-    environment: isLocal
-      ? 'API local'
-      : app.isPackaged
-        ? 'Producción'
-        : 'Desarrollo',
+    environment: releaseContext.label,
+    channel: releaseContext.channel,
     isPackaged: app.isPackaged,
     version: app.getVersion(),
   }
@@ -144,7 +149,11 @@ function isWindowSender(event, window) {
     event?.sender?.id &&
     window &&
     !window.isDestroyed() &&
-    window.webContents.id === event.sender.id,
+    window.webContents.id === event.sender.id &&
+    isTrustedUiPageUrl(
+      event.senderFrame?.url ?? window.webContents.getURL(),
+      window === mainWindow ? 'desktop' : 'companion',
+    ),
   )
 }
 
@@ -194,7 +203,7 @@ function applyCompactMode() {
     if (!normalWindowBounds) normalWindowBounds = mainWindow.getBounds()
     mainWindow.setMinimumSize(...COMPACT_MINIMUM_SIZE)
     mainWindow.setBounds(compactBounds(), true)
-    mainWindow.setTitle('Konea FocusBuddy · Mini')
+    mainWindow.setTitle(`${releaseContext.productName} · Mini`)
     return
   }
 
@@ -208,7 +217,7 @@ function applyCompactMode() {
   ) {
     mainWindow.setSize(1360, 880, true)
   }
-  mainWindow.setTitle('Konea FocusBuddy')
+  mainWindow.setTitle(releaseContext.productName)
 }
 
 function companionSize() {
@@ -271,7 +280,7 @@ function iconPath() {
 
 function buildTrayMenu() {
   if (!tray) return
-  tray.setToolTip(`Konea FocusBuddy · ${statusLabel()}`)
+  tray.setToolTip(`${releaseContext.productName} · ${statusLabel()}`)
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusLabel(), enabled: false },
@@ -437,19 +446,19 @@ function secureLocalWindow(window) {
 }
 
 function createMainWindow() {
-  apiBaseUrl = resolveApiBaseUrl()
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 880,
     minWidth: NORMAL_MINIMUM_SIZE[0],
     minHeight: NORMAL_MINIMUM_SIZE[1],
     backgroundColor: '#f7f3ff',
-    title: 'Konea FocusBuddy',
+    title: releaseContext.productName,
     autoHideMenuBar: true,
     show: false,
     webPreferences: createWebPreferences({
       preloadPath: path.join(__dirname, 'preload.cjs'),
       isPackaged: app.isPackaged,
+      partition: releaseContext.partition,
     }),
   })
 
@@ -466,7 +475,9 @@ function createMainWindow() {
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault()
     mainWindow?.setTitle(
-      preferences.compactMode ? 'Konea FocusBuddy · Mini' : 'Konea FocusBuddy',
+      preferences.compactMode
+        ? `${releaseContext.productName} · Mini`
+        : releaseContext.productName,
     )
   })
   mainWindow.on('close', (event) => {
@@ -502,7 +513,7 @@ function createMainWindow() {
   })
 
   void mainWindow
-    .loadFile(path.join(__dirname, 'desktop.html'))
+    .loadURL(uiPageUrl('desktop'))
     .catch((error) =>
       console.error('No se pudo abrir la interfaz local de FocusBuddy.', error),
     )
@@ -522,10 +533,11 @@ function createCompanionWindow() {
     fullscreenable: false,
     skipTaskbar: true,
     show: false,
-    title: 'Compañero FocusBuddy',
+    title: `Compañero · ${releaseContext.productName}`,
     webPreferences: createWebPreferences({
       preloadPath: path.join(__dirname, 'companion-preload.cjs'),
       isPackaged: app.isPackaged,
+      partition: releaseContext.partition,
     }),
   })
 
@@ -560,7 +572,7 @@ function createCompanionWindow() {
     companionWindow = null
   })
 
-  void companionWindow.loadFile(path.join(__dirname, 'companion.html'))
+  void companionWindow.loadURL(uiPageUrl('companion'))
 }
 
 function createTray() {
@@ -625,20 +637,34 @@ function registerIpcHandlers() {
   })
 }
 
-const hasLock = app.requestSingleInstanceLock()
+const hasLock = !startupError && app.requestSingleInstanceLock()
 
 if (!hasLock) {
+  if (startupError)
+    console.error('FocusBuddy no pudo iniciarse:', startupError.message)
   app.quit()
 } else {
   app.on('second-instance', showMainWindow)
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    if (
+      url === `${releaseContext.protocol}://open` ||
+      url === `${releaseContext.protocol}://open/`
+    ) {
+      if (app.isReady()) showMainWindow()
+    }
+  })
   app.on('before-quit', () => {
     isQuitting = true
   })
 
   app
     .whenReady()
-    .then(() => {
-      app.setAppUserModelId('cl.konea.focusbuddy')
+    .then(async () => {
+      app.setAppUserModelId(releaseContext.appId)
+      if (app.isPackaged) {
+        app.setAsDefaultProtocolClient(releaseContext.protocol)
+      }
       preferences = readPreferences()
       try {
         persistPreferences()
@@ -649,6 +675,9 @@ if (!hasLock) {
         )
       }
       registerIpcHandlers()
+      await registerUiProtocolForSession(
+        session.fromPartition(releaseContext.partition),
+      )
       createMainWindow()
       createCompanionWindow()
       createTray()

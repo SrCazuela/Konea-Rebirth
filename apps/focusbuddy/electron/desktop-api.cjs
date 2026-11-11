@@ -5,7 +5,10 @@ const DESKTOP_API_OPERATIONS = Object.freeze([
   'auth.login',
   'auth.me',
   'auth.logout',
+  'auth.account.update',
+  'auth.password.change',
   'academic.dashboard',
+  'academic.tasks.updateStatus',
   'study.overview',
   'study.sessions.list',
   'study.sessions.events',
@@ -48,6 +51,8 @@ class DesktopApiResponseError extends Error {
     this.body = body
   }
 }
+
+class DesktopApiTimeoutError extends Error {}
 
 function isPlainObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -144,6 +149,70 @@ function validateOverview(value) {
         ? 'America/Santiago'
         : requiredString(input.timeZone, 'La zona horaria', { max: 100 }),
   }
+}
+
+function password(value, label, minimum = 1) {
+  if (
+    typeof value !== 'string' ||
+    value.length < minimum ||
+    value.length > 128
+  ) {
+    throw new DesktopApiInputError(
+      `${label} debe tener entre ${minimum} y 128 caracteres.`,
+    )
+  }
+  return value
+}
+
+function validateAccountUpdate(value) {
+  const input = objectInput(value, 'datos de cuenta')
+  assertOnlyKeys(
+    input,
+    ['displayName', 'email', 'username', 'currentPassword'],
+    'datos de cuenta',
+  )
+  const username = requiredString(input.username, 'El usuario', {
+    min: 3,
+    max: 30,
+  }).toLowerCase()
+  const email = requiredString(input.email, 'El correo', {
+    max: 320,
+  }).toLowerCase()
+  if (!USERNAME_PATTERN.test(username) || !EMAIL_PATTERN.test(email)) {
+    throw new DesktopApiInputError(
+      'El correo o nombre de usuario no es válido.',
+    )
+  }
+  return {
+    displayName: requiredString(input.displayName, 'El nombre', {
+      min: 2,
+      max: 100,
+    }),
+    email,
+    username,
+    currentPassword: password(input.currentPassword, 'La contraseña actual'),
+  }
+}
+
+function validatePasswordChange(value) {
+  const input = objectInput(value, 'cambio de contraseña')
+  assertOnlyKeys(
+    input,
+    ['currentPassword', 'newPassword'],
+    'cambio de contraseña',
+  )
+  return {
+    currentPassword: password(input.currentPassword, 'La contraseña actual'),
+    newPassword: password(input.newPassword, 'La nueva contraseña', 10),
+  }
+}
+
+function validateTaskStatus(value) {
+  const input = objectInput(value, 'estado de pendiente')
+  assertOnlyKeys(input, ['taskId', 'status'], 'estado de pendiente')
+  if (!['pending', 'in_progress', 'completed'].includes(input.status))
+    throw new DesktopApiInputError('El estado del pendiente no es válido.')
+  return { taskId: uuid(input.taskId, 'El pendiente'), status: input.status }
 }
 
 function validateSessionList(value) {
@@ -270,9 +339,27 @@ const operationDefinitions = Object.freeze({
     validateNoInput(value, 'cierre de sesión')
     return { method: 'POST', path: '/auth/logout' }
   },
+  'auth.account.update': (value) => ({
+    method: 'PATCH',
+    path: '/auth/account',
+    body: validateAccountUpdate(value),
+  }),
+  'auth.password.change': (value) => ({
+    method: 'POST',
+    path: '/auth/password',
+    body: validatePasswordChange(value),
+  }),
   'academic.dashboard': (value) => {
     validateNoInput(value, 'panel académico')
     return { method: 'GET', path: '/academic' }
+  },
+  'academic.tasks.updateStatus': (value) => {
+    const input = validateTaskStatus(value)
+    return {
+      method: 'PATCH',
+      path: `/academic/tasks/${encodeURIComponent(input.taskId)}`,
+      body: { status: input.status },
+    }
   },
   'study.overview': (value) => {
     const input = validateOverview(value)
@@ -338,6 +425,14 @@ function cleanFields(value) {
 }
 
 function sanitizedError(error) {
+  if (error instanceof DesktopApiTimeoutError) {
+    return {
+      status: 0,
+      code: 'REQUEST_TIMEOUT',
+      message:
+        'Konea tardó demasiado en responder. Comprueba la conexión y vuelve a intentarlo.',
+    }
+  }
   if (error instanceof DesktopApiInputError) {
     return {
       status: 0,
@@ -390,12 +485,19 @@ async function parseResponseBody(response) {
   }
 }
 
-function createDesktopApiClient({ apiBaseUrl, fetchImpl } = {}) {
+function createDesktopApiClient({
+  apiBaseUrl,
+  fetchImpl,
+  timeoutMs = 20_000,
+} = {}) {
   const normalizedBase = normalizeApiBaseUrl(apiBaseUrl)
   if (typeof fetchImpl !== 'function') {
     throw new TypeError(
       'FocusBuddy requiere una implementación fetch asociada a su sesión.',
     )
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+    throw new TypeError('El tiempo límite de la API no es válido.')
   }
 
   async function request(operation, payload) {
@@ -407,30 +509,48 @@ function createDesktopApiClient({ apiBaseUrl, fetchImpl } = {}) {
     }
     const definition = defineOperation(payload)
     const hasBody = definition.body !== undefined
-    const response = await fetchImpl(
-      buildApiUrl(normalizedBase, definition.path),
-      {
-        method: definition.method,
-        credentials: 'include',
-        redirect: 'error',
-        headers: {
-          Accept: 'application/json',
-          ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    const controller = new AbortController()
+    let timeout
+    const deadline = new Promise((_, reject) => {
+      timeout = setTimeout(() => {
+        reject(new DesktopApiTimeoutError())
+        controller.abort()
+      }, timeoutMs)
+    })
+    const perform = async () => {
+      const response = await fetchImpl(
+        buildApiUrl(normalizedBase, definition.path),
+        {
+          method: definition.method,
+          credentials: 'include',
+          redirect: 'error',
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+            ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+          },
+          ...(hasBody ? { body: JSON.stringify(definition.body) } : {}),
         },
-        ...(hasBody ? { body: JSON.stringify(definition.body) } : {}),
-      },
-    )
-    if (
-      !response ||
-      typeof response.status !== 'number' ||
-      typeof response.ok !== 'boolean' ||
-      typeof response.json !== 'function'
-    ) {
-      throw new Error('Invalid fetch response')
+      )
+      if (
+        !response ||
+        typeof response.status !== 'number' ||
+        typeof response.ok !== 'boolean' ||
+        typeof response.json !== 'function'
+      ) {
+        throw new Error('Invalid fetch response')
+      }
+      const body = await parseResponseBody(response)
+      if (!response.ok) throw new DesktopApiResponseError(response.status, body)
+      return body
     }
-    const body = await parseResponseBody(response)
-    if (!response.ok) throw new DesktopApiResponseError(response.status, body)
-    return body
+    try {
+      // Also bound body decoding and fetch implementations that ignore abort.
+      // Writes are never retried here; the renderer reconciles their outcome.
+      return await Promise.race([perform(), deadline])
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 
   return Object.freeze({

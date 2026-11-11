@@ -50,6 +50,54 @@ describe.sequential('account settings API', () => {
     await request(app).post('/api/v1/auth/password').send({}).expect(401)
   })
 
+  it('keeps login-identifier changes behind account confirmation while accepting legacy profile saves', async () => {
+    const account = await fixture()
+    const secondSession = await createSession(account.id)
+    const changedUsername = `edited_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+    const rejected = await request(app)
+      .patch('/api/v1/profile')
+      .set('Cookie', account.cookie)
+      .send({ username: changedUsername, bio: 'No se debe guardar.' })
+    expect(rejected.status).toBe(409)
+    expect(rejected.body.error.code).toBe('ACCOUNT_SETTINGS_REQUIRED')
+    const unchanged = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Cookie', account.cookie)
+      .expect(200)
+    expect(unchanged.body.user.username).toBe(account.username)
+    expect(unchanged.body.user.bio).toBeNull()
+
+    const saved = await request(app)
+      .patch('/api/v1/profile')
+      .set('Cookie', account.cookie)
+      .send({ username: account.username, bio: 'Biografía del perfil.' })
+    expect(saved.status).toBe(200)
+    expect(saved.body.user).toMatchObject({
+      username: account.username,
+      bio: 'Biografía del perfil.',
+    })
+    await request(app)
+      .get('/api/v1/auth/me')
+      .set('Cookie', `konea_session=${secondSession.token}`)
+      .expect(200)
+
+    const changed = await request(app)
+      .patch('/api/v1/auth/account')
+      .set('Cookie', account.cookie)
+      .send({
+        email: account.email,
+        displayName: account.displayName,
+        username: changedUsername,
+        currentPassword: password,
+      })
+    expect(changed.status).toBe(200)
+    expect(changed.body.user.username).toBe(changedUsername)
+    await request(app)
+      .get('/api/v1/auth/me')
+      .set('Cookie', `konea_session=${secondSession.token}`)
+      .expect(401)
+  })
+
   it('rejects the wrong current password without logging out or modifying the user', async () => {
     const account = await fixture()
     const input = {

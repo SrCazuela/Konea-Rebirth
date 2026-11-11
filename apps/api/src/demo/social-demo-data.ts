@@ -1067,7 +1067,7 @@ export const SOCIAL_DEMO_POSTS: SocialDemoPost[] = [
     id: postId(13),
     authorId: SOCIAL_DEMO_USER_IDS.cami,
     content:
-      '¿Alguien ha gestionado un cambio de sección este semestre? DUCO me ayudó a ordenar los antecedentes y preparar el borrador, pero quisiera saber cuánto demoró la respuesta.',
+      '¿Alguien ha gestionado un cambio de sección este semestre? KUCO me ayudó a ordenar los antecedentes y preparar el borrador, pero quisiera saber cuánto demoró la respuesta.',
     contentType: 'community',
     visibility: 'campus',
     shareCount: 1,

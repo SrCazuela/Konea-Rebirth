@@ -51,18 +51,32 @@ export function ChibiSprite({
       } else if (!visible) {
         preloaded = []
       }
-      animator.update({ visible, reducedMotion: !animated || motion.matches })
+      animator.update({
+        visible,
+        reducedMotion:
+          !animated ||
+          motion.matches ||
+          Boolean(container.closest('[data-motion="off"]')),
+      })
     }
     const observer = new IntersectionObserver(([entry]) => {
       inViewport = entry?.isIntersecting ?? false
       sync()
     })
     observer.observe(container)
+    const portal = container.closest('.portal-shell')
+    const preferenceObserver = new MutationObserver(sync)
+    if (portal)
+      preferenceObserver.observe(portal, {
+        attributes: true,
+        attributeFilter: ['data-motion'],
+      })
     motion.addEventListener('change', sync)
     document.addEventListener('visibilitychange', sync)
     sync()
     return () => {
       observer.disconnect()
+      preferenceObserver.disconnect()
       motion.removeEventListener('change', sync)
       document.removeEventListener('visibilitychange', sync)
       animator.dispose()

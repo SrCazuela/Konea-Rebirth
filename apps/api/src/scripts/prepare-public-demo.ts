@@ -158,7 +158,7 @@ async function runFixtureScript(scriptName: string) {
     ...process.env,
     NODE_ENV: 'development',
     DATABASE_URL: env.DATABASE_URL,
-    DUCO_AI_PROVIDER: 'local',
+    KUCO_AI_PROVIDER: 'local',
     CAPSTONE_DEMO_USERNAME: DEMO_ACCOUNTS[1].username,
     UPLOAD_DIRECTORY: dedicatedUploadDirectory,
   }

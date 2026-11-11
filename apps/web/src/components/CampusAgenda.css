@@ -1,0 +1,141 @@
+.campus-agenda {
+  padding: 22px;
+  overflow: hidden;
+}
+.campus-agenda__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.campus-agenda h2 {
+  margin: 7px 0 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.035em;
+}
+.campus-agenda__symbol {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  background: var(--portal-purple-soft);
+  color: var(--primary);
+}
+.campus-agenda__symbol svg {
+  width: 23px;
+  height: 23px;
+}
+.campus-agenda__counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 22px 0 18px;
+}
+.campus-agenda__counts div {
+  display: grid;
+  gap: 3px;
+}
+.campus-agenda__counts div + div {
+  border-left: 1px solid var(--border);
+  padding-left: 17px;
+}
+.campus-agenda__counts strong {
+  font-size: 1.7rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+}
+.campus-agenda__counts span,
+.campus-agenda p {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.campus-agenda ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 15px;
+}
+.campus-agenda li {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.campus-agenda li div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.campus-agenda li strong {
+  font-size: 0.79rem;
+  font-weight: 670;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.campus-agenda li div > span {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.campus-agenda__dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--primary-light);
+  box-shadow: 0 0 0 4px var(--portal-purple-soft);
+}
+.campus-agenda__dot.is-important {
+  background: #c4734f;
+  box-shadow: 0 0 0 4px #fcf0e9;
+}
+.campus-agenda__link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 730;
+}
+.campus-agenda__focus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 13px;
+  padding: 15px 12px;
+  border-radius: 14px;
+  background: linear-gradient(110deg, #f2eafa, #f9f4fd);
+  text-decoration: none;
+  color: var(--primary);
+}
+.campus-agenda__focus div {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+.campus-agenda__focus strong {
+  font-size: 0.78rem;
+}
+.campus-agenda__focus small {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.campus-agenda__link:hover,
+.campus-agenda__focus:hover {
+  color: var(--ink);
+}
+@media (max-width: 560px) {
+  .campus-agenda {
+    padding: 18px;
+  }
+  .campus-agenda__counts {
+    margin: 16px 0;
+  }
+}
