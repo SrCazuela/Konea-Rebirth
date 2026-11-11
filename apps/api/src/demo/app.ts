@@ -146,14 +146,14 @@ export function createDemoApp({
       skip: (request) =>
         request.method !== 'POST' ||
         request.path.toLowerCase().replace(/\/+$/, '') !==
-          '/api/v1/duco/messages',
+          '/api/v1/kuco/messages',
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       message: {
         error: {
-          code: 'DEMO_DUCO_LIMIT_REACHED',
+          code: 'DEMO_KUCO_LIMIT_REACHED',
           message:
-            'La demostracion permite 20 consultas a DUCO cada 15 minutos por conexion.',
+            'La demostracion permite 20 consultas a KUCO cada 15 minutos por conexion.',
         },
       },
     }),

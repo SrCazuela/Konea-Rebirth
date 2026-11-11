@@ -4,15 +4,21 @@ import { Router } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
 import { db, isUniqueViolation } from '../db/client.js'
-import { qrCodes } from '../db/schema.js'
+import { chatParticipants, chats, connections, qrCodes } from '../db/schema.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody } from '../http/validation.js'
 import {
   getAuthenticatedUser,
   requireAuthentication,
 } from '../middleware/authentication.js'
-import { createOrRestoreDirectChat } from '../services/chat-service.js'
-import { createConfirmedConnection } from '../services/connection-service.js'
+import {
+  createOrRestoreDirectChat,
+  directChatKey,
+} from '../services/chat-service.js'
+import {
+  canonicalConnectionPair,
+  createConfirmedConnection,
+} from '../services/connection-service.js'
 import { createNotification } from '../services/notification-service.js'
 
 const redeemSchema = z.strictObject({
@@ -116,20 +122,35 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(redeemSchema, request.body)
   const result = await db.transaction(async (transaction) => {
-    const [code] = await transaction
-      .select()
+    const [found] = await transaction
+      .select({ ownerId: qrCodes.ownerId })
       .from(qrCodes)
       .where(eq(qrCodes.code, input.code))
       .limit(1)
-    if (!code) {
+    if (!found) {
       throw new ApiError(404, 'QR_CODE_NOT_FOUND', 'El código QR no existe.')
     }
-    if (code.ownerId === currentUser.id) {
+    if (found.ownerId === currentUser.id) {
       throw new ApiError(
         400,
         'CANNOT_REDEEM_OWN_QR',
         'No puedes usar tu propio código.',
       )
+    }
+    const pair = canonicalConnectionPair(currentUser.id, found.ownerId)
+    // Use the same pair lock as connection deletion and mutual acceptance.
+    // Re-read after acquiring it so a pending redemption observes revocation.
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${pair.userOneId}:${pair.userTwoId}`}))`,
+    )
+    const [code] = await transaction
+      .select()
+      .from(qrCodes)
+      .where(eq(qrCodes.code, input.code))
+      .limit(1)
+      .for('update')
+    if (!code) {
+      throw new ApiError(404, 'QR_CODE_NOT_FOUND', 'El código QR no existe.')
     }
     if (code.usedAt && code.usedById !== currentUser.id) {
       throw new ApiError(
@@ -142,35 +163,60 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       throw new ApiError(410, 'QR_CODE_EXPIRED', 'El código QR expiró.')
     }
 
-    const [claimed] = code.usedAt
-      ? []
-      : await transaction
-          .update(qrCodes)
-          .set({ usedAt: new Date(), usedById: currentUser.id })
-          .where(and(eq(qrCodes.id, code.id), isNull(qrCodes.usedAt)))
-          .returning({ id: qrCodes.id })
-
-    // Si el UPDATE no afectó filas significa que el código fue canjeado
-    // concurrentemente. Verificamos si lo canjeo el mismo usuario (idempotente)
-    // o fue otro (error).
-    let redemptionRepeated = Boolean(code.usedAt)
-    if (!claimed) {
-      const [latest] = await transaction
-        .select({ usedById: qrCodes.usedById })
-        .from(qrCodes)
-        .where(eq(qrCodes.id, code.id))
+    if (code.usedAt) {
+      const [connection] = await transaction
+        .select({ userOneId: connections.userOneId })
+        .from(connections)
+        .where(
+          and(
+            eq(connections.userOneId, pair.userOneId),
+            eq(connections.userTwoId, pair.userTwoId),
+          ),
+        )
         .limit(1)
-      if (latest?.usedById !== currentUser.id) {
+      const [chat] = await transaction
+        .select({ id: chats.id })
+        .from(chats)
+        .where(eq(chats.directKey, directChatKey(currentUser.id, code.ownerId)))
+        .limit(1)
+      const participants = chat
+        ? await transaction
+            .select({ userId: chatParticipants.userId })
+            .from(chatParticipants)
+            .where(
+              and(
+                eq(chatParticipants.chatId, chat.id),
+                isNull(chatParticipants.archivedAt),
+              ),
+            )
+        : []
+      const activeUserIds = new Set(participants.map(({ userId }) => userId))
+      if (
+        !connection ||
+        !chat ||
+        !activeUserIds.has(currentUser.id) ||
+        !activeUserIds.has(code.ownerId)
+      ) {
         throw new ApiError(
           409,
-          'QR_CODE_ALREADY_USED',
-          'El código QR ya fue utilizado.',
+          'QR_CODE_CONNECTION_REVOKED',
+          'Este código ya fue utilizado. Solicita uno nuevo para volver a conectar.',
         )
       }
-      // El mismo usuario ya lo canjeó antes: operación idempotente
-      redemptionRepeated = true
+      // An idempotent retry only reads the existing result. It never restores
+      // archived participants or recreates a relationship the owner removed.
+      return {
+        chatId: chat.id,
+        created: false,
+        ownerId: code.ownerId,
+        redemptionRepeated: true,
+      }
     }
 
+    await transaction
+      .update(qrCodes)
+      .set({ usedAt: new Date(), usedById: currentUser.id })
+      .where(eq(qrCodes.id, code.id))
     await createConfirmedConnection(transaction, currentUser.id, code.ownerId)
     const chat = await createOrRestoreDirectChat(
       transaction,
@@ -178,7 +224,7 @@ qrCodesRouter.post('/redeem', redeemLimiter, async (request, response) => {
       code.ownerId,
       currentUser.id,
     )
-    return { ...chat, ownerId: code.ownerId, redemptionRepeated }
+    return { ...chat, ownerId: code.ownerId, redemptionRepeated: false }
   })
 
   if (!result.redemptionRepeated) {

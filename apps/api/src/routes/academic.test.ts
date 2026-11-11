@@ -372,21 +372,21 @@ END:VCALENDAR\r
       ]),
     )
 
-    const ducoSummary = await studentAgent.post('/api/v1/duco/messages').send({
+    const kucoSummary = await studentAgent.post('/api/v1/kuco/messages').send({
       content: '¿Cuáles son mis tareas y actividades pendientes?',
     })
-    expect(ducoSummary.status).toBe(201)
-    expect(ducoSummary.body.assistantMessage.content).toContain(
+    expect(kucoSummary.status).toBe(201)
+    expect(kucoSummary.body.assistantMessage.content).toContain(
       'Hito de varios días',
     )
-    const todayLine = (ducoSummary.body.assistantMessage.content as string)
+    const todayLine = (kucoSummary.body.assistantMessage.content as string)
       .split('\n')
       .find((line) => line.includes('Hito de todo el día'))
     expect(todayLine).toContain('08-09-26')
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
   })
 
-  it('does not reactivate an archived AVA course through a DUCO task', async () => {
+  it('does not reactivate an archived AVA course through a KUCO task', async () => {
     const courseName = `AVA Histórica ${randomUUID().slice(0, 8)}`
     const [course] = await db
       .insert(academicCourses)
@@ -399,13 +399,13 @@ END:VCALENDAR\r
       })
       .returning({ id: academicCourses.id })
 
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: `Tengo que estudiar para una evaluación de ${courseName} y quiero guardarla como tarea.`,
     })
     expect(reply.status).toBe(201)
     expect(reply.body.assistantMessage.action?.type).toBe('create_task')
 
-    const confirmation = await studentAgent.post('/api/v1/duco/tasks').send({
+    const confirmation = await studentAgent.post('/api/v1/kuco/tasks').send({
       draftId: reply.body.assistantMessage.action.draftId,
       title: 'Preparar evaluación histórica',
       description: 'Repasar el contenido antes de la evaluación.',

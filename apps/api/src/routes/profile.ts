@@ -129,6 +129,19 @@ profileRouter.get('/catalog', (_request, response) => {
 profileRouter.patch('/', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const parsedInput = parseBody(updateProfileSchema, request.body)
+  if (
+    parsedInput.username !== undefined &&
+    parsedInput.username !== currentUser.username
+  ) {
+    throw new ApiError(
+      409,
+      'ACCOUNT_SETTINGS_REQUIRED',
+      'Cambia tu nombre de usuario desde Configuración de cuenta y confirma tu contraseña actual.',
+    )
+  }
+  // Older clients send the unchanged username with profile updates. Accept it
+  // without writing the identity field or reverting a concurrent account edit.
+  const { username: _username, ...profileInput } = parsedInput
   const institution = canonicalCatalogValue(
     parsedInput.institution,
     profileCatalog.institutions,
@@ -181,7 +194,7 @@ profileRouter.patch('/', async (request, response) => {
   })
 
   const input = {
-    ...parsedInput,
+    ...profileInput,
     ...(parsedInput.institution !== undefined ? { institution } : {}),
     ...(parsedInput.campus !== undefined ? { campus } : {}),
     ...(parsedInput.career !== undefined ? { career } : {}),

@@ -11,6 +11,30 @@ if (destinationArgument < 0 || !process.argv[destinationArgument + 1]) {
   )
 }
 const destination = resolve(process.argv[destinationArgument + 1])
+const downloadArgument = process.argv.indexOf('--focusbuddy-download-url')
+const downloadUrl =
+  downloadArgument < 0 ? '' : process.argv[downloadArgument + 1]
+if (downloadArgument >= 0) {
+  if (
+    !downloadUrl ||
+    !/^https:\/\/github\.com\/SrCazuela\/Konea-Rebirth\/releases\/(?:latest\/download|download\/focusbuddy-v\d+\.\d+\.\d+)\/Konea-FocusBuddy-Windows-x64\.exe$/.test(
+      downloadUrl,
+    )
+  ) {
+    throw new Error(
+      'Use una descarga oficial de FocusBuddy en GitHub Releases.',
+    )
+  }
+  const response = await fetch(downloadUrl, {
+    method: 'HEAD',
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) {
+    throw new Error(
+      `El instalador oficial todavía no está disponible (${response.status}).`,
+    )
+  }
+}
 const fromRepository = relative(repository, destination)
 if (
   !fromRepository ||
@@ -38,7 +62,7 @@ async function run(args, cwd) {
       env: {
         ...process.env,
         VITE_API_URL: '/api/v1',
-        VITE_FOCUSBUDDY_DOWNLOAD_URL: '',
+        VITE_FOCUSBUDDY_DOWNLOAD_URL: downloadUrl,
       },
     })
     child.once('error', reject)
@@ -132,7 +156,7 @@ await writeFile(
 )
 await writeFile(
   resolve(destination, 'README.md'),
-  `# Konea en Sites\n\nEste checkout contiene el frontend real compilado desde Konea-Rebirth y el adaptador de Sites.\nLa API Express, PostgreSQL y los archivos privados se alojan fuera de Sites (Render y Neon).\nLa base local se conserva separada. No hay datos personales, respaldos SQL ni archivos .env en este checkout.\n\n## Actualizar\n\nDesde Konea-Rebirth, ejecutar:\n\n    node scripts/hosting/prepare-sites.mjs --directory "${destination.replace(/\\/g, '/')}"\n\nDespués usar el flujo de build, fuente y publicación de la habilidad Sites, conservando project_id.\nEl sitio nuevo permanece privado mientras se verifica el backend.\n\n## Secretos del servidor de Sites\n\n- KONEA_BACKEND_ORIGIN: origen HTTPS del servicio Render, sin ruta.\n- SITES_BACKEND_TOKEN: mismo valor privado que en Render.\n\nLos secretos de PostgreSQL, S3 y DUCO se configuran únicamente en Render.\nEl proxy transmite solo la cookie konea_session; las cookies e identidad de ChatGPT no salen de Sites.\nEl instalador existente de FocusBuddy sigue apuntando a su configuración local; no se publica como instalador remoto compatible hasta adaptarlo y probarlo.\n`,
+  `# Konea en Sites\n\nEste checkout contiene el frontend real compilado desde Konea-Rebirth y el adaptador de Sites.\nLa API Express, PostgreSQL y los archivos privados se alojan fuera de Sites (Render y Neon).\nLa base local se conserva separada. No hay datos personales, respaldos SQL ni archivos .env en este checkout.\n\n## Actualizar\n\nDesde Konea-Rebirth, ejecutar:\n\n    node scripts/hosting/prepare-sites.mjs --directory "${destination.replace(/\\/g, '/')}"\n\nDespués usar el flujo de build, fuente y publicación de la habilidad Sites, conservando project_id.\nConservar siempre la audiencia existente del sitio.\n\n## Secretos del servidor de Sites\n\n- KONEA_BACKEND_ORIGIN: origen HTTPS del servicio Render, sin ruta.\n- SITES_BACKEND_TOKEN: mismo valor privado que en Render.\n\nLos secretos de PostgreSQL, S3 y KUCO se configuran únicamente en Render.\nEl proxy transmite solo la cookie konea_session; las cookies e identidad de ChatGPT no salen de Sites.\nFocusBuddy tiene canales separados: local solo usa loopback y production exige la API HTTPS oficial. Para activar la descarga, usar --focusbuddy-download-url con el enlace real del instalador oficial en GitHub Releases; se verifica su disponibilidad antes de compilar.\n`,
 )
 console.log(
   JSON.stringify({

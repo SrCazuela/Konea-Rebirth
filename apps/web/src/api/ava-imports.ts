@@ -27,6 +27,7 @@ export type AvaDomImportPayload = {
 export type AvaImportResult = {
   importedCourses: number
   reactivatedCourses: number
+  updatedCourses?: number
   importedTasks: number
   existingCourses: number
   existingTasks: number
@@ -43,7 +44,13 @@ export type AvaImportPreview = {
     AvaDomImportPayload['courses'][number] & {
       existing: boolean
       reactivatable: boolean
-      state: 'new' | 'reactivatable' | 'existing'
+      updatable?: boolean
+      changes?: Array<{
+        field: 'code' | 'section' | 'term'
+        from: string | null
+        to: string
+      }>
+      state: 'new' | 'reactivatable' | 'updatable' | 'existing'
     }
   >
   activities: Array<

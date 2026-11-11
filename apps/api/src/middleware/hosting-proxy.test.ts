@@ -14,7 +14,7 @@ function appFor(secret?: string) {
 
 describe('hosting proxy boundary', () => {
   it('keeps local deployments unchanged when no token is configured', async () => {
-    await request(appFor()).post('/api/v1/duco/messages').expect(200)
+    await request(appFor()).post('/api/v1/kuco/messages').expect(200)
   })
 
   it('allows the health probe without exposing private API operations', async () => {

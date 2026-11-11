@@ -8,13 +8,25 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Konea FocusBuddy</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./assets/branding/konea-mark.svg"
+    />
     <link rel="stylesheet" href="./desktop.css" />
   </head>
   <body>
     <div class="desktop-shell" id="desktop-shell">
       <aside class="sidebar" aria-label="FocusBuddy">
         <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true">K</span>
+          <img
+            class="brand-mark"
+            src="./assets/branding/konea-mark.svg"
+            alt=""
+            aria-hidden="true"
+            width="44"
+            height="44"
+          />
           <span>
             <strong>FocusBuddy</strong>
             <small>por Konea</small>
@@ -345,6 +357,16 @@
                     Cancelar
                   </button>
                 </div>
+              </div>
+              <div class="task-action" id="task-action" hidden>
+                <span id="task-action-label"></span>
+                <button
+                  id="task-complete-button"
+                  class="button button-secondary"
+                  type="button"
+                >
+                  Marcar como completada
+                </button>
               </div>
             </article>
 
@@ -744,7 +766,13 @@
         >
           <div class="account-layout">
             <article class="login-card" id="login-card">
-              <span class="account-mark" aria-hidden="true">K</span>
+              <img
+                class="account-mark"
+                src="./assets/branding/konea-logo.svg"
+                alt="Konea"
+                width="450"
+                height="166"
+              />
               <span class="eyebrow">Tu cuenta Konea</span>
               <h2>Qué bueno verte de nuevo</h2>
               <p>
@@ -813,6 +841,121 @@
                   <dd id="account-sync">Conectada</dd>
                 </div>
               </dl>
+              <section
+                class="account-edit-section"
+                aria-labelledby="account-edit-heading"
+              >
+                <h3 id="account-edit-heading">Datos de tu cuenta</h3>
+                <p>Se guardan en Konea y se verán también en la página.</p>
+                <form id="account-form">
+                  <label
+                    ><span>Nombre visible</span
+                    ><input
+                      id="account-display-name"
+                      autocomplete="nickname"
+                      minlength="2"
+                      maxlength="100"
+                      required
+                  /></label>
+                  <label
+                    ><span>Nombre de usuario</span
+                    ><input
+                      id="account-username"
+                      autocomplete="username"
+                      autocapitalize="none"
+                      spellcheck="false"
+                      pattern="[a-zA-Z0-9._]{3,30}"
+                      minlength="3"
+                      maxlength="30"
+                      required
+                  /></label>
+                  <label
+                    ><span>Correo electrónico</span
+                    ><input
+                      id="account-email-input"
+                      type="email"
+                      autocomplete="email"
+                      maxlength="320"
+                      required
+                  /></label>
+                  <label
+                    ><span>Contraseña actual</span
+                    ><input
+                      id="account-current-password"
+                      type="password"
+                      autocomplete="current-password"
+                      maxlength="128"
+                      required
+                  /></label>
+                  <button
+                    id="account-save"
+                    class="button button-primary button-wide"
+                    type="submit"
+                  >
+                    Guardar datos de cuenta
+                  </button>
+                  <p
+                    id="account-feedback"
+                    class="account-form-feedback"
+                    role="status"
+                    aria-live="polite"
+                  ></p>
+                </form>
+              </section>
+              <section
+                class="account-edit-section"
+                aria-labelledby="password-edit-heading"
+              >
+                <h3 id="password-edit-heading">Cambiar contraseña</h3>
+                <form id="password-form">
+                  <label
+                    ><span>Contraseña actual</span
+                    ><input
+                      id="password-current"
+                      type="password"
+                      autocomplete="current-password"
+                      maxlength="128"
+                      required
+                  /></label>
+                  <label
+                    ><span>Nueva contraseña</span
+                    ><input
+                      id="password-new"
+                      type="password"
+                      autocomplete="new-password"
+                      minlength="10"
+                      maxlength="128"
+                      required
+                  /></label>
+                  <label
+                    ><span>Confirmar nueva contraseña</span
+                    ><input
+                      id="password-confirmation"
+                      type="password"
+                      autocomplete="new-password"
+                      minlength="10"
+                      maxlength="128"
+                      required
+                  /></label>
+                  <small
+                    >Entre 10 y 128 caracteres. Al guardar se cerrarán las
+                    sesiones de otros dispositivos.</small
+                  >
+                  <button
+                    id="password-save"
+                    class="button button-primary button-wide"
+                    type="submit"
+                  >
+                    Actualizar contraseña
+                  </button>
+                  <p
+                    id="password-feedback"
+                    class="account-form-feedback"
+                    role="status"
+                    aria-live="polite"
+                  ></p>
+                </form>
+              </section>
               <button
                 class="button button-danger"
                 id="logout-button"
@@ -856,7 +999,13 @@
       role="status"
       aria-live="polite"
     >
-      <span class="startup-mark" aria-hidden="true">K</span>
+      <img
+        class="startup-mark"
+        src="./assets/branding/konea-logo.svg"
+        alt="Konea"
+        width="450"
+        height="166"
+      />
       <span class="spinner" aria-hidden="true"></span>
       <p id="startup-label">Preparando FocusBuddy…</p>
     </div>

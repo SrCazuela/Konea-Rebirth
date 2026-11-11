@@ -86,6 +86,28 @@ describe('FocusBuddy desktop preload contract', () => {
   })
 
   it('maps renderer-friendly arguments onto allowlisted operations', async () => {
+    await bridge.api.updateTaskStatus(
+      '11111111-1111-4111-8111-111111111111',
+      'completed',
+    )
+    assert.deepEqual(calls.at(-1).args, [
+      'academic.tasks.updateStatus',
+      { taskId: '11111111-1111-4111-8111-111111111111', status: 'completed' },
+    ])
+    const account = {
+      displayName: 'Ana',
+      username: 'ana',
+      email: 'ana@example.test',
+      currentPassword: 'current-test',
+    }
+    await bridge.api.updateAccount(account)
+    assert.deepEqual(calls.at(-1).args, ['auth.account.update', account])
+    const password = {
+      currentPassword: 'current-test',
+      newPassword: 'new-test-password',
+    }
+    await bridge.api.changePassword(password)
+    assert.deepEqual(calls.at(-1).args, ['auth.password.change', password])
     await bridge.api.getOverview('America/Santiago')
     assert.deepEqual(calls.at(-1).args, [
       'study.overview',

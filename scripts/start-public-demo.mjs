@@ -484,7 +484,7 @@ async function run() {
     const databaseUrl = `postgresql://konea_demo:${settings.databasePassword}@127.0.0.1:${DATABASE_PORT}/konea_public_demo`
     const useAi = !args.has('--basic-ai')
     const aiProvider = useAi
-      ? (process.env.DUCO_AI_PROVIDER ?? 'local')
+      ? (process.env.KUCO_AI_PROVIDER ?? 'local')
       : 'local'
     if (aiProvider === 'openai' && !process.env.OPENAI_API_KEY)
       throw new Error(
@@ -498,7 +498,7 @@ async function run() {
       PUBLIC_DEMO_ADMIN_PASSWORD: settings.adminPassword,
       PUBLIC_DEMO_STUDENT_PASSWORD: settings.studentPassword,
       CAPSTONE_DEMO_USERNAME: 'demo.estudiante',
-      DUCO_AI_PROVIDER: aiProvider,
+      KUCO_AI_PROVIDER: aiProvider,
     }
     await ensureDatabase(settings)
     await progress('Aplicando migraciones unicamente a la base de demostracion')
@@ -657,7 +657,7 @@ async function run() {
         `Administrador: demo.admin`,
         `Clave administrador: ${settings.adminPassword}`,
         '',
-        `DUCO: ${aiProvider}${aiProvider === 'openai' ? ' (usa tus creditos; la clave de API solo esta en el servidor)' : ''}`,
+        `KUCO: ${aiProvider}${aiProvider === 'openai' ? ' (usa tus creditos; la clave de API solo esta en el servidor)' : ''}`,
         'Cerrar: ejecutar detener-demo.bat. La laptop debe permanecer encendida y conectada.',
         'La base y los archivos de esta demo estan separados de tu proyecto personal.',
       ].join('\r\n'),

@@ -234,7 +234,7 @@ export function Notifications({
       onOpenFeed(destination.id || undefined)
     } else if (destination?.type === 'chat' && destination.id) {
       onOpenChat?.(destination.id)
-    } else if (destination?.type === 'duco-request') {
+    } else if (destination?.type === 'kuco-request') {
       onOpenSupportRequests?.()
     }
   }

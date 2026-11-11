@@ -31,12 +31,19 @@ const api = Object.freeze({
   getCurrentUser: () => invokeApi('auth.me'),
   login: (input) => invokeApi('auth.login', input),
   logout: () => invokeApi('auth.logout'),
+  updateAccount: (input) => invokeApi('auth.account.update', input),
+  changePassword: (input) => invokeApi('auth.password.change', input),
   getOverview: (input) =>
     invokeApi(
       'study.overview',
       typeof input === 'string' ? { timeZone: input } : input,
     ),
   getAcademic: () => invokeApi('academic.dashboard'),
+  updateTaskStatus: (input, status) =>
+    invokeApi(
+      'academic.tasks.updateStatus',
+      typeof input === 'string' ? { taskId: input, status } : input,
+    ),
   startSession: (input) => invokeApi('study.sessions.start', input),
   transitionSession: (input, action) =>
     invokeApi(

@@ -21,8 +21,10 @@
 }
 
 .session-loading__logo {
-  width: 132px;
+  width: 180px;
+  max-width: calc(100vw - 64px);
   height: auto;
+  object-fit: contain;
 }
 
 .session-loading__spinner {

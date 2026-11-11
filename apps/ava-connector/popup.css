@@ -33,15 +33,14 @@ header {
   gap: 11px;
 }
 
-header > span {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
+.connector-brand {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  flex: 0 0 auto;
   border-radius: 12px;
-  color: white;
-  background: linear-gradient(145deg, #8854d0, #6338b0);
-  font-weight: 800;
+  object-fit: contain;
+  background: #fff;
 }
 
 h1,

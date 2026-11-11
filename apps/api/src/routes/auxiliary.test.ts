@@ -221,11 +221,11 @@ describe.sequential('auxiliary backend routes', () => {
   })
 
   afterEach(async () => {
-    const response = await studentAgent.get('/api/v1/duco/drafts')
+    const response = await studentAgent.get('/api/v1/kuco/drafts')
     expect(response.status).toBe(200)
 
     for (const draft of response.body.drafts as Array<{ id: string }>) {
-      await studentAgent.delete(`/api/v1/duco/drafts/${draft.id}`).expect(200)
+      await studentAgent.delete(`/api/v1/kuco/drafts/${draft.id}`).expect(200)
     }
   })
 
@@ -258,7 +258,7 @@ describe.sequential('auxiliary backend routes', () => {
     const notificationsResponse = await request(app).get(
       '/api/v1/notifications',
     )
-    const ducoResponse = await request(app).get('/api/v1/duco/messages')
+    const kucoResponse = await request(app).get('/api/v1/kuco/messages')
     const uploadResponse = await request(app)
       .post('/api/v1/uploads/files')
       .attach('file', Buffer.from('not an image'), {
@@ -267,7 +267,7 @@ describe.sequential('auxiliary backend routes', () => {
       })
 
     expect(notificationsResponse.status).toBe(401)
-    expect(ducoResponse.status).toBe(401)
+    expect(kucoResponse.status).toBe(401)
     expect(uploadResponse.status).toBe(401)
   })
 
@@ -529,8 +529,8 @@ END:VCALENDAR\r
     )
   })
 
-  it('persists DUCO history and builds a local answer from assigned tasks', async () => {
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+  it('persists KUCO history and builds a local answer from assigned tasks', async () => {
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Organiza mis tareas pendientes',
     })
 
@@ -545,22 +545,22 @@ END:VCALENDAR\r
       'Preparar entrega Capstone',
     )
 
-    const history = await studentAgent.get('/api/v1/duco/messages')
+    const history = await studentAgent.get('/api/v1/kuco/messages')
     expect(history.status).toBe(200)
     expect(history.body.openTaskCount).toBe(2)
     expect(
       history.body.messages.map((message: { role: string }) => message.role),
     ).toEqual(['user', 'assistant'])
 
-    const cleared = await studentAgent.delete('/api/v1/duco/messages')
+    const cleared = await studentAgent.delete('/api/v1/kuco/messages')
     expect(cleared.body).toEqual({ deletedCount: 2 })
-    const emptyHistory = await studentAgent.get('/api/v1/duco/messages')
+    const emptyHistory = await studentAgent.get('/api/v1/kuco/messages')
     expect(emptyHistory.body.messages).toEqual([])
     expect(emptyHistory.body.openTaskCount).toBe(2)
   })
 
-  it('lets DUCO suggest and create an editable academic pending item once', async () => {
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+  it('lets KUCO suggest and create an editable academic pending item once', async () => {
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content:
         'Tengo que realizar una guía de algoritmos matemáticos para la asignatura Fundamentos de Matemáticas.',
     })
@@ -585,7 +585,7 @@ END:VCALENDAR\r
     )
 
     const draftId = reply.body.assistantMessage.action.draftId
-    const savedDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    const savedDrafts = await studentAgent.get('/api/v1/kuco/drafts')
     expect(savedDrafts.status).toBe(200)
     expect(savedDrafts.body.drafts).toEqual([
       expect.objectContaining({
@@ -598,7 +598,7 @@ END:VCALENDAR\r
       }),
     ])
 
-    const creation = await studentAgent.post('/api/v1/duco/tasks').send({
+    const creation = await studentAgent.post('/api/v1/kuco/tasks').send({
       draftId,
       title: 'Guía de algoritmos matemáticos',
       description: 'Resolver y revisar la guía antes de la próxima clase.',
@@ -619,7 +619,7 @@ END:VCALENDAR\r
       task: { id: creation.body.task.id },
     })
 
-    const duplicate = await studentAgent.post('/api/v1/duco/tasks').send({
+    const duplicate = await studentAgent.post('/api/v1/kuco/tasks').send({
       draftId,
       title: 'No debe duplicarse',
       description: '',
@@ -628,7 +628,7 @@ END:VCALENDAR\r
       priority: 'low',
     })
     expect(duplicate.status).toBe(409)
-    expect(duplicate.body.error.code).toBe('DUCO_TASK_ALREADY_CREATED')
+    expect(duplicate.body.error.code).toBe('KUCO_TASK_ALREADY_CREATED')
 
     const dashboard = await studentAgent.get('/api/v1/academic')
     expect(dashboard.body.tasks).toEqual(
@@ -640,14 +640,14 @@ END:VCALENDAR\r
       ]),
     )
 
-    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    const noActiveDrafts = await studentAgent.get('/api/v1/kuco/drafts')
     expect(noActiveDrafts.body.drafts).toEqual([])
 
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
   })
 
   it('treats an explicit request to schedule a new task as creation', async () => {
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Lo sé, pero me gustaría agendar una nueva tarea.',
     })
 
@@ -670,7 +670,7 @@ END:VCALENDAR\r
 
     const draftId = reply.body.assistantMessage.action.draftId
     const cancellation = await studentAgent.delete(
-      `/api/v1/duco/drafts/${draftId}`,
+      `/api/v1/kuco/drafts/${draftId}`,
     )
     expect(cancellation.status).toBe(200)
     expect(cancellation.body.draft).toMatchObject({
@@ -678,23 +678,23 @@ END:VCALENDAR\r
       status: 'cancelled',
     })
 
-    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    const noActiveDrafts = await studentAgent.get('/api/v1/kuco/drafts')
     expect(noActiveDrafts.body.drafts).toEqual([])
 
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
   })
 
-  it('keeps one DUCO task draft after clearing history and confirms it only once', async () => {
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+  it('keeps one KUCO task draft after clearing history and confirms it only once', async () => {
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
     const requestedAt = new Date()
-    const firstReply = await studentAgent.post('/api/v1/duco/messages').send({
+    const firstReply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Tengo un examen en 4 días.',
     })
     expect(firstReply.status).toBe(201)
     expect(firstReply.body.assistantMessage.action).toBeNull()
 
-    const secondReply = await studentAgent.post('/api/v1/duco/messages').send({
+    const secondReply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Es de Inglés y tengo que estudiar el verbo to be.',
     })
     expect(secondReply.status).toBe(201)
@@ -715,7 +715,7 @@ END:VCALENDAR\r
     )
 
     const draftId = secondReply.body.assistantMessage.action.draftId
-    const finalReply = await studentAgent.post('/api/v1/duco/messages').send({
+    const finalReply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Sí por favor, me gustaría guardarlo como tarea.',
     })
     expect(finalReply.status).toBe(201)
@@ -743,7 +743,7 @@ END:VCALENDAR\r
       'todavía no se ha creado',
     )
 
-    const beforeClear = await studentAgent.get('/api/v1/duco/drafts')
+    const beforeClear = await studentAgent.get('/api/v1/kuco/drafts')
     expect(beforeClear.status).toBe(200)
     expect(beforeClear.body.drafts).toEqual([
       expect.objectContaining({
@@ -754,13 +754,13 @@ END:VCALENDAR\r
       }),
     ])
 
-    const cleared = await studentAgent.delete('/api/v1/duco/messages')
+    const cleared = await studentAgent.delete('/api/v1/kuco/messages')
     expect(cleared.status).toBe(200)
     expect(cleared.body.deletedCount).toBe(6)
-    const emptyHistory = await studentAgent.get('/api/v1/duco/messages')
+    const emptyHistory = await studentAgent.get('/api/v1/kuco/messages')
     expect(emptyHistory.body.messages).toEqual([])
 
-    const afterClear = await studentAgent.get('/api/v1/duco/drafts')
+    const afterClear = await studentAgent.get('/api/v1/kuco/drafts')
     expect(afterClear.status).toBe(200)
     expect(afterClear.body.drafts).toEqual([
       expect.objectContaining({
@@ -770,7 +770,7 @@ END:VCALENDAR\r
       }),
     ])
 
-    const creation = await studentAgent.post('/api/v1/duco/tasks').send({
+    const creation = await studentAgent.post('/api/v1/kuco/tasks').send({
       draftId,
       title: 'Estudiar verbo to be para examen de Inglés',
       description: 'Repasar el verbo to be antes del examen.',
@@ -790,7 +790,7 @@ END:VCALENDAR\r
       task: { id: creation.body.task.id },
     })
 
-    const duplicate = await studentAgent.post('/api/v1/duco/tasks').send({
+    const duplicate = await studentAgent.post('/api/v1/kuco/tasks').send({
       draftId,
       title: 'No debe duplicarse',
       description: null,
@@ -799,7 +799,7 @@ END:VCALENDAR\r
       priority: 'low',
     })
     expect(duplicate.status).toBe(409)
-    expect(duplicate.body.error.code).toBe('DUCO_TASK_ALREADY_CREATED')
+    expect(duplicate.body.error.code).toBe('KUCO_TASK_ALREADY_CREATED')
 
     const dashboard = await studentAgent.get('/api/v1/academic')
     expect(
@@ -809,12 +809,12 @@ END:VCALENDAR\r
       ),
     ).toHaveLength(1)
 
-    const noActiveDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    const noActiveDrafts = await studentAgent.get('/api/v1/kuco/drafts')
     expect(noActiveDrafts.body.drafts).toEqual([])
   })
 
   it('recovers a reviewable task draft from legacy user facts when no active draft exists', async () => {
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
     const baseTime = Date.now() - 10_000
     await db.insert(assistantMessages).values([
@@ -847,11 +847,11 @@ END:VCALENDAR\r
       },
     ])
 
-    const noDraftsBeforeReview = await studentAgent.get('/api/v1/duco/drafts')
+    const noDraftsBeforeReview = await studentAgent.get('/api/v1/kuco/drafts')
     expect(noDraftsBeforeReview.status).toBe(200)
     expect(noDraftsBeforeReview.body.drafts).toEqual([])
 
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'bien, me gustaría revisar el borrador',
     })
 
@@ -879,7 +879,7 @@ END:VCALENDAR\r
     expect(JSON.stringify(action.draft)).toContain('verbo to be')
     expect(JSON.stringify(action.draft)).not.toContain('Historia')
 
-    const savedDrafts = await studentAgent.get('/api/v1/duco/drafts')
+    const savedDrafts = await studentAgent.get('/api/v1/kuco/drafts')
     expect(savedDrafts.status).toBe(200)
     expect(savedDrafts.body.drafts).toEqual([
       expect.objectContaining({
@@ -890,7 +890,7 @@ END:VCALENDAR\r
       }),
     ])
 
-    const history = await studentAgent.get('/api/v1/duco/messages')
+    const history = await studentAgent.get('/api/v1/kuco/messages')
     expect(history.status).toBe(200)
     expect(history.body.messages.at(-1)).toMatchObject({
       role: 'assistant',
@@ -903,13 +903,13 @@ END:VCALENDAR\r
   })
 
   it('builds a concise draft for a different course and relative deadline', async () => {
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
     const content =
       'Tengo que preparar una presentación sobre seguridad informática para la asignatura Ciberseguridad en 2 días.'
     const requestedAt = new Date()
     const reply = await studentAgent
-      .post('/api/v1/duco/messages')
+      .post('/api/v1/kuco/messages')
       .send({ content })
 
     expect(reply.status).toBe(201)
@@ -937,7 +937,7 @@ END:VCALENDAR\r
   })
 
   it('accepts a simple affirmation only when user messages contain task facts', async () => {
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
     const baseTime = Date.now() - 10_000
     await db.insert(assistantMessages).values([
@@ -957,7 +957,7 @@ END:VCALENDAR\r
       },
     ])
 
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'SI',
     })
 
@@ -978,8 +978,8 @@ END:VCALENDAR\r
     ).not.toContain('Química')
 
     const draftId = reply.body.assistantMessage.action.draftId
-    await studentAgent.delete(`/api/v1/duco/drafts/${draftId}`).expect(200)
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete(`/api/v1/kuco/drafts/${draftId}`).expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
     await db.insert(assistantMessages).values({
       userId: studentId,
@@ -990,19 +990,19 @@ END:VCALENDAR\r
     })
 
     const assistantOnlyReply = await studentAgent
-      .post('/api/v1/duco/messages')
+      .post('/api/v1/kuco/messages')
       .send({ content: 'SI' })
 
     expect(assistantOnlyReply.status).toBe(201)
     expect(assistantOnlyReply.body.assistantMessage.action).toBeNull()
     const noAssistantInventedDraft = await studentAgent.get(
-      '/api/v1/duco/drafts',
+      '/api/v1/kuco/drafts',
     )
     expect(noAssistantInventedDraft.body.drafts).toEqual([])
   })
 
   it('does not confuse academic help with listing existing tasks', async () => {
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Perfecto, muchas gracias. ¿Me ayudas con mi tarea?',
     })
 
@@ -1015,12 +1015,12 @@ END:VCALENDAR\r
       'No tienes tareas pendientes',
     )
 
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
   })
 
-  it('lets DUCO prepare an editable request and only sends it after confirmation', async () => {
+  it('lets KUCO prepare an editable request and only sends it after confirmation', async () => {
     const incompleteReply = await studentAgent
-      .post('/api/v1/duco/messages')
+      .post('/api/v1/kuco/messages')
       .send({
         content:
           'Necesito solicitar un cambio de sección porque mi horario se superpone.',
@@ -1035,7 +1035,7 @@ END:VCALENDAR\r
       'la asignatura',
     )
 
-    const reply = await studentAgent.post('/api/v1/duco/messages').send({
+    const reply = await studentAgent.post('/api/v1/kuco/messages').send({
       content:
         'La asignatura es Capstone, mi sección actual es 001D y el motivo es que se superpone con otra clase.',
     })
@@ -1053,7 +1053,7 @@ END:VCALENDAR\r
     expect(reply.body.aiProvider).toBe('local')
 
     const sourceMessageId = reply.body.assistantMessage.id
-    const creation = await studentAgent.post('/api/v1/duco/requests').send({
+    const creation = await studentAgent.post('/api/v1/kuco/requests').send({
       sourceMessageId,
       category: 'section_change',
       subject: 'Cambio de sección para Capstone',
@@ -1081,7 +1081,7 @@ END:VCALENDAR\r
     })
     const supportRequestId = creation.body.request.id
 
-    const duplicate = await studentAgent.post('/api/v1/duco/requests').send({
+    const duplicate = await studentAgent.post('/api/v1/kuco/requests').send({
       sourceMessageId,
       category: 'section_change',
       subject: 'Intento duplicado',
@@ -1090,9 +1090,9 @@ END:VCALENDAR\r
       urgency: 'low',
     })
     expect(duplicate.status).toBe(409)
-    expect(duplicate.body.error.code).toBe('DUCO_REQUEST_ALREADY_SENT')
+    expect(duplicate.body.error.code).toBe('KUCO_REQUEST_ALREADY_SENT')
 
-    const history = await studentAgent.get('/api/v1/duco/messages')
+    const history = await studentAgent.get('/api/v1/kuco/messages')
     const linkedMessage = history.body.messages.find(
       (message: { id: string }) => message.id === sourceMessageId,
     )
@@ -1101,7 +1101,7 @@ END:VCALENDAR\r
       status: 'pending',
     })
 
-    const moderatorList = await moderatorAgent.get('/api/v1/duco/requests/all')
+    const moderatorList = await moderatorAgent.get('/api/v1/kuco/requests/all')
     expect(moderatorList.status).toBe(200)
     expect(
       moderatorList.body.requests.map((item: { id: string }) => item.id),
@@ -1112,14 +1112,14 @@ END:VCALENDAR\r
       ).timeline,
     ).toHaveLength(1)
 
-    await studentAgent.get('/api/v1/duco/requests/all').expect(403)
+    await studentAgent.get('/api/v1/kuco/requests/all').expect(403)
     await studentAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'reviewing' })
       .expect(403)
 
     const updated = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'reviewing' })
     expect(updated.status).toBe(200)
     expect(updated.body.request).toMatchObject({
@@ -1136,17 +1136,17 @@ END:VCALENDAR\r
     })
 
     const closeWithoutResponse = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'resolved' })
     expect(closeWithoutResponse.status).toBe(400)
     expect(closeWithoutResponse.body.error.code).toBe(
-      'DUCO_REQUEST_RESPONSE_REQUIRED',
+      'KUCO_REQUEST_RESPONSE_REQUIRED',
     )
 
     const resolutionNote =
       'Revisamos tu caso. Secretaría confirmó una sección disponible y te contactará hoy.'
     const resolved = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'resolved', note: resolutionNote })
     expect(resolved.status).toBe(200)
     expect(resolved.body.request).toMatchObject({ status: 'resolved' })
@@ -1159,22 +1159,22 @@ END:VCALENDAR\r
     })
 
     const invalidTransition = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'rejected', note: 'Intento de cierre contradictorio.' })
     expect(invalidTransition.status).toBe(409)
     expect(invalidTransition.body.error.code).toBe(
-      'DUCO_REQUEST_INVALID_TRANSITION',
+      'KUCO_REQUEST_INVALID_TRANSITION',
     )
 
     const reopened = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ status: 'reviewing' })
     expect(reopened.status).toBe(200)
 
     const followUpNote =
       'Actualización: el cambio quedó ingresado y estamos esperando la confirmación final.'
     const followUp = await moderatorAgent
-      .patch(`/api/v1/duco/requests/${supportRequestId}`)
+      .patch(`/api/v1/kuco/requests/${supportRequestId}`)
       .send({ note: followUpNote })
     expect(followUp.status).toBe(200)
     expect(followUp.body.request.timeline.at(-1)).toMatchObject({
@@ -1225,8 +1225,8 @@ END:VCALENDAR\r
       toStatus: 'pending',
     })
 
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
-    const ownRequests = await studentAgent.get('/api/v1/duco/requests')
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
+    const ownRequests = await studentAgent.get('/api/v1/kuco/requests')
     expect(ownRequests.status).toBe(200)
     expect(
       ownRequests.body.requests.find(
@@ -1246,7 +1246,7 @@ END:VCALENDAR\r
   })
 
   it('asks about immediate safety before offering a wellbeing request', async () => {
-    const initial = await studentAgent.post('/api/v1/duco/messages').send({
+    const initial = await studentAgent.post('/api/v1/kuco/messages').send({
       content:
         'En mi clase me están hostigando y tengo pensamientos suicidas y de atentar contra la institución.',
     })
@@ -1258,7 +1258,7 @@ END:VCALENDAR\r
       'no ha contactado automáticamente a nadie',
     )
 
-    const followUp = await studentAgent.post('/api/v1/duco/messages').send({
+    const followUp = await studentAgent.post('/api/v1/kuco/messages').send({
       content:
         'No estoy en peligro inmediato y no tengo un plan. Los insultos ocurrieron hoy dentro de mi clase.',
     })
@@ -1274,16 +1274,16 @@ END:VCALENDAR\r
       followUp.body.assistantMessage.action.draft.description,
     ).not.toContain('Antes de preparar una solicitud')
 
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
 
-    const selfHarmOnly = await studentAgent.post('/api/v1/duco/messages').send({
+    const selfHarmOnly = await studentAgent.post('/api/v1/kuco/messages').send({
       content: 'Últimamente he tenido pensamientos suicidas.',
     })
     expect(selfHarmOnly.body.assistantMessage.action).toBeNull()
     expect(selfHarmOnly.body.assistantMessage.content).toContain(
       'peligro inmediato',
     )
-    await studentAgent.delete('/api/v1/duco/messages').expect(200)
+    await studentAgent.delete('/api/v1/kuco/messages').expect(200)
   })
 
   it('isolates a request draft and serializes simultaneous confirmations', async () => {
@@ -1307,21 +1307,21 @@ END:VCALENDAR\r
     const payload = { sourceMessageId: sourceMessage!.id, ...draft }
 
     const foreignAttempt = await moderatorAgent
-      .post('/api/v1/duco/requests')
+      .post('/api/v1/kuco/requests')
       .send(payload)
     expect(foreignAttempt.status).toBe(404)
-    expect(foreignAttempt.body.error.code).toBe('DUCO_REQUEST_DRAFT_NOT_FOUND')
+    expect(foreignAttempt.body.error.code).toBe('KUCO_REQUEST_DRAFT_NOT_FOUND')
 
     const confirmations = await Promise.all([
-      studentAgent.post('/api/v1/duco/requests').send(payload),
-      studentAgent.post('/api/v1/duco/requests').send(payload),
+      studentAgent.post('/api/v1/kuco/requests').send(payload),
+      studentAgent.post('/api/v1/kuco/requests').send(payload),
     ])
     expect(confirmations.map((result) => result.status).sort()).toEqual([
       201, 409,
     ])
     expect(
       confirmations.find((result) => result.status === 409)?.body.error.code,
-    ).toBe('DUCO_REQUEST_ALREADY_SENT')
+    ).toBe('KUCO_REQUEST_ALREADY_SENT')
   })
 
   it('accepts user reports and restricts review state to moderators', async () => {

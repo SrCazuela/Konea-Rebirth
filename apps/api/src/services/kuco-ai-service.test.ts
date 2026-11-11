@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { env } from '../config/env.js'
-import { buildDucoAiReply } from './duco-ai-service.js'
+import { buildKucoAiReply } from './kuco-ai-service.js'
 
-const originalProvider = env.DUCO_AI_PROVIDER
+const originalProvider = env.KUCO_AI_PROVIDER
 const originalApiKey = env.OPENAI_API_KEY
 
 function stubOpenAiOutput(modelOutput: Record<string, unknown>) {
@@ -46,19 +46,19 @@ function semanticText(value: string) {
 }
 
 afterEach(() => {
-  env.DUCO_AI_PROVIDER = originalProvider
+  env.KUCO_AI_PROVIDER = originalProvider
   env.OPENAI_API_KEY = originalApiKey
   vi.unstubAllGlobals()
 })
 
-describe('DUCO AI action invariants', () => {
+describe('KUCO AI action invariants', () => {
   it('prioritizes verified Chilean crisis resources before any form', async () => {
-    env.DUCO_AI_PROVIDER = 'openai'
+    env.KUCO_AI_PROVIDER = 'openai'
     env.OPENAI_API_KEY = 'test-key'
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'Tengo pensamientos suicidas y temo hacerme daño.',
       localReply: 'Cuéntame qué necesitas.',
       conversation: [],
@@ -71,13 +71,13 @@ describe('DUCO AI action invariants', () => {
     expect(result.reply).toContain('*4141')
     expect(result.reply).toContain('131')
     expect(result.reply).toContain('133')
-    expect(result.reply).toContain('DUCO no ha contactado')
+    expect(result.reply).toContain('KUCO no ha contactado')
   })
 
   it('treats a confirmed immediate danger as an emergency', async () => {
-    env.DUCO_AI_PROVIDER = 'local'
+    env.KUCO_AI_PROVIDER = 'local'
     const initialPrompt = 'Estoy pensando en quitarme la vida.'
-    const initial = await buildDucoAiReply({
+    const initial = await buildKucoAiReply({
       prompt: initialPrompt,
       localReply: 'Cuéntame qué necesitas.',
       conversation: [],
@@ -85,7 +85,7 @@ describe('DUCO AI action invariants', () => {
       activeTaskDraft: null,
     })
 
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'Sí, estoy en peligro y tengo un plan.',
       localReply: 'Cuéntame qué necesitas.',
       conversation: [
@@ -105,9 +105,9 @@ describe('DUCO AI action invariants', () => {
   })
 
   it('keeps a non-immediate safety answer distinct from an emergency', async () => {
-    env.DUCO_AI_PROVIDER = 'local'
+    env.KUCO_AI_PROVIDER = 'local'
     const initialPrompt = 'He pensado en hacerme daño.'
-    const initial = await buildDucoAiReply({
+    const initial = await buildKucoAiReply({
       prompt: initialPrompt,
       localReply: 'Cuéntame qué necesitas.',
       conversation: [],
@@ -115,7 +115,7 @@ describe('DUCO AI action invariants', () => {
       activeTaskDraft: null,
     })
 
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'No estoy en peligro, no tengo un plan y estoy a salvo.',
       localReply: 'Cuéntame qué necesitas.',
       conversation: [
@@ -135,10 +135,10 @@ describe('DUCO AI action invariants', () => {
   })
 
   it('keeps the newest request details when prior context exceeds the draft limit', async () => {
-    env.DUCO_AI_PROVIDER = 'local'
+    env.KUCO_AI_PROVIDER = 'local'
     const latestDetails =
       'Para la solicitud de cambio de sección, la asignatura es Capstone, mi sección actual es 001D y el motivo es que se superpone con otra clase.'
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: latestDetails,
       localReply: 'Puedo ayudarte con la solicitud.',
       conversation: [
@@ -163,13 +163,13 @@ describe('DUCO AI action invariants', () => {
       draft: { category: 'section_change' },
     })
     if (result.action?.type !== 'manage_request')
-      throw new Error('DUCO did not return a request draft')
+      throw new Error('KUCO did not return a request draft')
     expect(result.action.draft.description).toContain(latestDetails)
     expect(Array.from(result.action.draft.description)).toHaveLength(2_000)
   })
 
   it('does not expose an OpenAI claim that a draft was saved when action is null', async () => {
-    env.DUCO_AI_PROVIDER = 'openai'
+    env.KUCO_AI_PROVIDER = 'openai'
     env.OPENAI_API_KEY = 'test-key'
     const modelOutput = JSON.stringify({
       reply: 'Guardé un borrador para que lo revises.',
@@ -197,7 +197,7 @@ describe('DUCO AI action invariants', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'Hola',
       localReply: 'Hola, ¿en qué puedo ayudarte?',
       conversation: [],
@@ -213,7 +213,7 @@ describe('DUCO AI action invariants', () => {
   })
 
   it('polishes a weak Luna task draft with facts and a relative deadline from the user', async () => {
-    env.DUCO_AI_PROVIDER = 'openai'
+    env.KUCO_AI_PROVIDER = 'openai'
     env.OPENAI_API_KEY = 'test-key'
     const rawDescription = [
       'Tengo un examen en 4 días.',
@@ -235,7 +235,7 @@ describe('DUCO AI action invariants', () => {
     })
 
     const requestedAt = new Date()
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'Sí, me gustaría guardarlo como tarea.',
       localReply: 'Puedo ayudarte a organizarla.',
       conversation: [
@@ -263,7 +263,7 @@ describe('DUCO AI action invariants', () => {
       },
     })
     if (result.action?.type !== 'create_task')
-      throw new Error('DUCO did not return a task draft')
+      throw new Error('KUCO did not return a task draft')
     expect(result.action.draft.description).toMatch(
       /^Estudiar el verbo to be para el examen de Inglés\.$/u,
     )
@@ -273,7 +273,7 @@ describe('DUCO AI action invariants', () => {
   })
 
   it('preserves a natural factual description returned by Luna', async () => {
-    env.DUCO_AI_PROVIDER = 'openai'
+    env.KUCO_AI_PROVIDER = 'openai'
     env.OPENAI_API_KEY = 'test-key'
     const modelDescription = 'Estudiar para el examen de Matemáticas.'
     stubOpenAiOutput({
@@ -291,7 +291,7 @@ describe('DUCO AI action invariants', () => {
       taskPriority: 'medium',
     })
 
-    const result = await buildDucoAiReply({
+    const result = await buildKucoAiReply({
       prompt: 'Tengo que estudiar para un examen de Matemáticas.',
       localReply: 'Puedo ayudarte a organizarla.',
       conversation: [],
@@ -301,7 +301,7 @@ describe('DUCO AI action invariants', () => {
 
     expect(result.action?.type).toBe('create_task')
     if (result.action?.type !== 'create_task')
-      throw new Error('DUCO did not return a task draft')
+      throw new Error('KUCO did not return a task draft')
     expect(semanticText(result.action.draft.description)).toBe(
       semanticText(modelDescription),
     )

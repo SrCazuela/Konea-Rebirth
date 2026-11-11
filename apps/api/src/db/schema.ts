@@ -180,12 +180,12 @@ export const supportRequestEventType = pgEnum('support_request_event_type', [
   'response',
 ])
 
-export const ducoDraftKind = pgEnum('duco_draft_kind', [
+export const kucoDraftKind = pgEnum('kuco_draft_kind', [
   'task',
   'support_request',
 ])
 
-export const ducoDraftStatus = pgEnum('duco_draft_status', [
+export const kucoDraftStatus = pgEnum('kuco_draft_status', [
   'collecting_information',
   'ready_for_review',
   'confirmed',
@@ -193,8 +193,8 @@ export const ducoDraftStatus = pgEnum('duco_draft_status', [
   'expired',
 ])
 
-export type DucoDraftKind = (typeof ducoDraftKind.enumValues)[number]
-export type DucoDraftStatus = (typeof ducoDraftStatus.enumValues)[number]
+export type KucoDraftKind = (typeof kucoDraftKind.enumValues)[number]
+export type KucoDraftStatus = (typeof kucoDraftStatus.enumValues)[number]
 
 export type ProfileEducation = {
   id: string
@@ -225,7 +225,7 @@ export type ProfileAchievement = {
   imageUrl: string | null
 }
 
-export type DucoRequestDraft = {
+export type KucoRequestDraft = {
   category:
     | 'section_change'
     | 'missing_course'
@@ -242,7 +242,7 @@ export type DucoRequestDraft = {
   urgency: 'low' | 'medium' | 'high'
 }
 
-export type DucoTaskDraft = {
+export type KucoTaskDraft = {
   title: string
   description: string
   courseName: string | null
@@ -254,14 +254,14 @@ export type AssistantMessageAction =
   | {
       type: 'manage_request'
       label: 'Gestionar solicitud'
-      draft: DucoRequestDraft
+      draft: KucoRequestDraft
     }
   | {
       type: 'create_task'
       label: string
-      draft: DucoTaskDraft
+      draft: KucoTaskDraft
       draftId?: string | null
-      draftStatus?: DucoDraftStatus
+      draftStatus?: KucoDraftStatus
       task?: { id: string } | null
     }
 
@@ -1043,19 +1043,19 @@ export const assistantMessages = pgTable(
   ],
 )
 
-export const ducoDrafts = pgTable(
-  'duco_drafts',
+export const kucoDrafts = pgTable(
+  'kuco_drafts',
   {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    kind: ducoDraftKind('kind').notNull(),
-    status: ducoDraftStatus('status')
+    kind: kucoDraftKind('kind').notNull(),
+    status: kucoDraftStatus('status')
       .default('collecting_information')
       .notNull(),
     payload: jsonb('payload')
-      .$type<DucoTaskDraft | DucoRequestDraft>()
+      .$type<KucoTaskDraft | KucoRequestDraft>()
       .notNull(),
     sourceMessageId: uuid('source_message_id').references(
       () => assistantMessages.id,
@@ -1073,15 +1073,15 @@ export const ducoDrafts = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex('duco_drafts_source_message_unique')
+    uniqueIndex('kuco_drafts_source_message_unique')
       .on(table.sourceMessageId)
       .where(sql`${table.sourceMessageId} is not null`),
-    index('duco_drafts_user_status_updated_at_index').on(
+    index('kuco_drafts_user_status_updated_at_index').on(
       table.userId,
       table.status,
       table.updatedAt,
     ),
-    index('duco_drafts_expires_at_index').on(table.expiresAt),
+    index('kuco_drafts_expires_at_index').on(table.expiresAt),
   ],
 )
 

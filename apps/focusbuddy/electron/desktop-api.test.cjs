@@ -47,7 +47,10 @@ describe('FocusBuddy desktop API client', () => {
       data: { user: { id: 'user-1', username: 'ana' } },
     })
     assert.equal(calls[0][0], `${API_BASE_URL}/auth/login`)
-    assert.deepEqual(calls[0][1], {
+    const { signal, ...options } = calls[0][1]
+    assert.equal(signal instanceof AbortSignal, true)
+    assert.equal(signal.aborted, false)
+    assert.deepEqual(options, {
       method: 'POST',
       credentials: 'include',
       redirect: 'error',
@@ -257,5 +260,129 @@ describe('FocusBuddy desktop API client', () => {
         message: 'Konea devolvió una respuesta no válida.',
       },
     })
+  })
+
+  it('bounds stalled fetch and body decoding without retrying writes', async () => {
+    let calls = 0
+    let signal
+    const client = createDesktopApiClient({
+      apiBaseUrl: API_BASE_URL,
+      timeoutMs: 5,
+      fetchImpl: (_url, options) => {
+        calls += 1
+        signal = options.signal
+        return new Promise(() => {})
+      },
+    })
+    const failure = await client.invoke('auth.password.change', {
+      currentPassword: 'current-password',
+      newPassword: 'new-password-safe',
+    })
+    assert.equal(failure.ok, false)
+    assert.equal(failure.error.code, 'REQUEST_TIMEOUT')
+    assert.equal(signal.aborted, true)
+    assert.equal(calls, 1)
+    const bodyClient = createDesktopApiClient({
+      apiBaseUrl: API_BASE_URL,
+      timeoutMs: 5,
+      fetchImpl: async () => ({
+        status: 200,
+        ok: true,
+        json: () => new Promise(() => {}),
+      }),
+    })
+    assert.equal(
+      (await bodyClient.invoke('auth.me')).error.code,
+      'REQUEST_TIMEOUT',
+    )
+  })
+
+  it('validates account changes with named operations and no arbitrary fields', async () => {
+    const calls = []
+    const client = clientWith(async (...args) => {
+      calls.push(args)
+      return jsonResponse({ user: { id: 'user-1' } })
+    })
+    assert.equal(
+      (
+        await client.invoke('auth.account.update', {
+          displayName: 'Ana Perez',
+          username: ' ANA.P ',
+          email: ' ANA@EXAMPLE.TEST ',
+          currentPassword: 'password-current',
+        })
+      ).ok,
+      true,
+    )
+    assert.equal(calls[0][0], `${API_BASE_URL}/auth/account`)
+    assert.equal(calls[0][1].method, 'PATCH')
+    assert.deepEqual(JSON.parse(calls[0][1].body), {
+      displayName: 'Ana Perez',
+      username: 'ana.p',
+      email: 'ana@example.test',
+      currentPassword: 'password-current',
+    })
+    assert.equal(
+      (
+        await client.invoke('auth.account.update', {
+          displayName: 'Ana',
+          username: 'ana',
+          email: 'ana@example.test',
+          currentPassword: 'password',
+          role: 'admin',
+        })
+      ).ok,
+      false,
+    )
+    assert.equal(
+      (
+        await client.invoke('auth.password.change', {
+          currentPassword: 'password',
+          newPassword: 'short',
+        })
+      ).ok,
+      false,
+    )
+    assert.equal(calls.length, 1)
+  })
+
+  it('updates only an owned task status through a bounded named operation', async () => {
+    const calls = []
+    const client = clientWith(async (...args) => {
+      calls.push(args)
+      return jsonResponse({ task: { id: COURSE_ID, status: 'completed' } })
+    })
+    assert.equal(
+      (
+        await client.invoke('academic.tasks.updateStatus', {
+          taskId: COURSE_ID,
+          status: 'completed',
+        })
+      ).ok,
+      true,
+    )
+    assert.equal(calls[0][0], `${API_BASE_URL}/academic/tasks/${COURSE_ID}`)
+    assert.equal(calls[0][1].method, 'PATCH')
+    assert.equal(calls[0][1].body, '{"status":"completed"}')
+    assert.equal(
+      (
+        await client.invoke('academic.tasks.updateStatus', {
+          taskId: COURSE_ID,
+          status: 'deleted',
+        })
+      ).ok,
+      false,
+    )
+    assert.equal(
+      (
+        await client.invoke('academic.tasks.updateStatus', {
+          taskId: COURSE_ID,
+          status: 'completed',
+          userId: 'other',
+        })
+      ).ok,
+      false,
+    )
+    assert.equal(calls.length, 1)
   })
 })

@@ -9,6 +9,7 @@ import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import type { AuthMode } from './AuthDialog'
 import { ChibiSprite } from './ChibiSprite'
+import { KoneaLogo } from './KoneaLogo'
 import './LandingPage.css'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -275,10 +276,10 @@ function CampusPreview({ motionEnabled }: { motionEnabled: boolean }) {
                     <small>Inglés · A tu ritmo</small>
                   </div>
                 </div>
-                <div className="landing-day__duco">
+                <div className="landing-day__kuco">
                   <Icon name="spark" />
                   <p>
-                    <strong>DUCO te acompaña.</strong> Organiza tus pendientes y
+                    <strong>KUCO te acompaña.</strong> Organiza tus pendientes y
                     prepara solicitudes contigo.
                   </p>
                 </div>
@@ -447,7 +448,7 @@ export default function LandingPage({
       </a>
       <header className="landing-header">
         <a className="landing-brand" href="#top" aria-label="Konea, inicio">
-          <img src="/konea-logo.svg" alt="Konea" width="128" height="46" />
+          <KoneaLogo width={128} />
         </a>
         <nav aria-label="Navegación principal">
           <a href="#tu-espacio">Tu espacio</a>
@@ -599,14 +600,14 @@ export default function LandingPage({
               </div>
             </article>
             <article
-              className="landing-feature landing-feature--duco"
+              className="landing-feature landing-feature--kuco"
               data-reveal
             >
               <div className="landing-feature__top">
                 <span className="landing-feature__icon">
                   <Icon name="spark" />
                 </span>
-                <span>02 / DUCO</span>
+                <span>02 / KUCO</span>
               </div>
               <h3>
                 Mil pendientes.
@@ -617,7 +618,7 @@ export default function LandingPage({
                 Tu asistente para organizar tareas y preparar solicitudes. Tú
                 revisas y confirmas cada acción.
               </p>
-              <div className="landing-duco-art" aria-hidden="true">
+              <div className="landing-kuco-art" aria-hidden="true">
                 <span>Necesito organizar mi semana.</span>
                 <div>
                   <Icon name="spark" />
@@ -625,7 +626,7 @@ export default function LandingPage({
                     Vamos paso a paso.<strong>¿Por dónde empezamos?</strong>
                   </p>
                 </div>
-                <span className="landing-duco-art__draft">
+                <span className="landing-kuco-art__draft">
                   <Icon name="check" />
                   Borrador listo para revisar
                   <Icon name="arrow" />
@@ -815,7 +816,7 @@ export default function LandingPage({
           href="#top"
           aria-label="Konea, volver al inicio"
         >
-          <img src="/konea-logo.svg" alt="Konea" width="106" height="38" />
+          <KoneaLogo width={106} />
         </a>
         <p>
           Un campus conectado empieza contigo.

@@ -2,9 +2,9 @@ import { z } from 'zod'
 import { env } from '../config/env.js'
 import type {
   AssistantMessageAction,
-  DucoDraftStatus,
-  DucoRequestDraft,
-  DucoTaskDraft,
+  KucoDraftStatus,
+  KucoRequestDraft,
+  KucoTaskDraft,
 } from '../db/schema.js'
 
 const requestCategories = [
@@ -21,7 +21,7 @@ const requestCategories = [
 const urgencyLevels = ['low', 'medium', 'high'] as const
 const taskPriorities = ['low', 'medium', 'high'] as const
 
-const ducoAiOutputSchema = z.strictObject({
+const kucoAiOutputSchema = z.strictObject({
   reply: z.string().trim().min(1).max(1_200),
   action: z.enum(['none', 'manage_request', 'create_task']),
   category: z.enum(requestCategories),
@@ -36,7 +36,7 @@ const ducoAiOutputSchema = z.strictObject({
   taskPriority: z.enum(taskPriorities),
 })
 
-const ducoOutputJsonSchema = {
+const kucoOutputJsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -72,21 +72,21 @@ const ducoOutputJsonSchema = {
   ],
 } as const
 
-const systemInstructions = `Eres DUCO, el asistente de organización académica de una plataforma universitaria chilena.
+const systemInstructions = `Eres KUCO, el asistente de organización académica de una plataforma universitaria chilena.
 Responde en español claro, empático y breve. Puedes explicar conceptos, proponer un plan de estudio y orientar al estudiante, pero no debes hacer una evaluación o entrega completa por él.
 Las acciones visibles son sugerencias: nunca afirmes que una tarea fue creada, una solicitud fue enviada o una persona fue contactada. El estudiante siempre revisa y confirma.
 Usa create_task cuando el estudiante mencione una tarea, guía, informe, proyecto, evaluación, examen u otra actividad que quiera organizar, guardar o revisar como pendiente. Interpreta continuaciones como “guardarlo”, “anótalo”, “sí, esa tarea” o “déjalo para el viernes” usando el contexto reciente y el borrador activo. Prepara solo datos expresamente aportados; lo desconocido queda vacío.
 Usa manage_request únicamente si una gestión institucional ya contiene información suficiente. Si faltan datos, action=none y pregunta uno o dos datos concretos antes de ofrecer el formulario.
-Ante acoso, autolesión, amenazas o daño a terceros, prioriza la seguridad, no diagnostiques ni acuses y no inventes hechos. Aclara que DUCO no contactó automáticamente a nadie. Ante posible riesgo suicida en Chile, indica que *4141 ofrece apoyo gratuito desde celulares las 24 horas; ante peligro inmediato, prioriza SAMU 131, Carabineros 133 o un servicio de urgencia.
-En cualquier acción, los hechos del borrador deben provenir exclusivamente de mensajes del estudiante o del borrador activo validado, nunca de una respuesta anterior de DUCO.
+Ante acoso, autolesión, amenazas o daño a terceros, prioriza la seguridad, no diagnostiques ni acuses y no inventes hechos. Aclara que KUCO no contactó automáticamente a nadie. Ante posible riesgo suicida en Chile, indica que *4141 ofrece apoyo gratuito desde celulares las 24 horas; ante peligro inmediato, prioriza SAMU 131, Carabineros 133 o un servicio de urgencia.
+En cualquier acción, los hechos del borrador deben provenir exclusivamente de mensajes del estudiante o del borrador activo validado, nunca de una respuesta anterior de KUCO.
 Tu texto debe coincidir con action: si action=none no digas que preparaste, guardaste o dejaste listo un borrador. Si action=create_task, aclara que el borrador quedó guardado para revisión y que la tarea todavía no fue creada.`
 
-export type DucoConversationMessage = {
+export type KucoConversationMessage = {
   role: 'user' | 'assistant'
   content: string
 }
 
-export type DucoTaskContext = {
+export type KucoTaskContext = {
   title: string
   description: string | null
   dueDate: string | null
@@ -94,32 +94,32 @@ export type DucoTaskContext = {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
-export type DucoAiResult = {
+export type KucoAiResult = {
   reply: string
   action: AssistantMessageAction | null
   provider: 'local' | 'ollama' | 'openai'
 }
 
-export type DucoActiveTaskDraft = {
+export type KucoActiveTaskDraft = {
   id: string
   status: Extract<
-    DucoDraftStatus,
+    KucoDraftStatus,
     'collecting_information' | 'ready_for_review'
   >
-  draft: DucoTaskDraft
+  draft: KucoTaskDraft
   expiresAt?: string | null
 }
 
-type BuildDucoReplyInput = {
+type BuildKucoReplyInput = {
   prompt: string
   localReply: string
-  conversation: DucoConversationMessage[]
-  pendingTasks: DucoTaskContext[]
-  activeTaskDraft?: DucoActiveTaskDraft | null
+  conversation: KucoConversationMessage[]
+  pendingTasks: KucoTaskContext[]
+  activeTaskDraft?: KucoActiveTaskDraft | null
 }
 
 type RequestReadiness = {
-  category: DucoRequestDraft['category']
+  category: KucoRequestDraft['category']
   missing: string[]
 }
 
@@ -139,7 +139,7 @@ function normalizeText(value: string) {
     .trim()
 }
 
-function userMessages(input: BuildDucoReplyInput) {
+function userMessages(input: BuildKucoReplyInput) {
   return [
     ...input.conversation
       .filter((message) => message.role === 'user')
@@ -155,11 +155,11 @@ function truncateRecentText(value: string, maximum: number) {
     : characters.slice(-maximum).join('')
 }
 
-function recentUserFacts(input: BuildDucoReplyInput, maximum: number) {
+function recentUserFacts(input: BuildKucoReplyInput, maximum: number) {
   return truncateRecentText(userMessages(input).join('\n'), maximum)
 }
 
-function lastAssistantMessage(input: BuildDucoReplyInput) {
+function lastAssistantMessage(input: BuildKucoReplyInput) {
   return [...input.conversation]
     .reverse()
     .find((message) => message.role === 'assistant')?.content
@@ -209,7 +209,7 @@ function hasImmediateSafetyAnswer(value: string) {
   return safetyAnswer(value) !== 'unknown'
 }
 
-function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
+function safetyDecision(input: BuildKucoReplyInput): KucoAiResult | null {
   const currentRisk = hasSafetyRisk(input.prompt)
   const continuingSafety = normalizeText(
     lastAssistantMessage(input) ?? '',
@@ -222,7 +222,7 @@ function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   const answer = safetyAnswer(input.prompt)
   if (answer === 'unknown') {
     return {
-      reply: `${safetyQuestionMarker}: ¿estás en peligro inmediato o tienes un plan o intención de hacerte daño o dañar a alguien ahora? No necesitas dar nombres ni aportar pruebas. ${crisisResources} Aléjate de cualquier medio de daño y quédate con una persona de confianza si puedes. DUCO no ha contactado automáticamente a nadie.`,
+      reply: `${safetyQuestionMarker}: ¿estás en peligro inmediato o tienes un plan o intención de hacerte daño o dañar a alguien ahora? No necesitas dar nombres ni aportar pruebas. ${crisisResources} Aléjate de cualquier medio de daño y quédate con una persona de confianza si puedes. KUCO no ha contactado automáticamente a nadie.`,
       action: null,
       provider: 'local',
     }
@@ -232,7 +232,7 @@ function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
     reply:
       answer === 'immediate'
         ? `Esto puede ser una emergencia: no esperes una respuesta de Konea. ${crisisResources} Aléjate de cualquier medio de daño y quédate con una persona de confianza si puedes. También preparé una solicitud urgente para revisión humana, pero aún no se ha enviado y no reemplaza la ayuda inmediata.`
-        : `Gracias por aclararlo. Preparé una solicitud urgente de bienestar y seguridad para revisión humana; aún no se ha enviado y podrás revisarla antes de confirmar. Si el riesgo aumenta, ${crisisResources.charAt(0).toLowerCase()}${crisisResources.slice(1)} DUCO no ha contactado automáticamente a nadie.`,
+        : `Gracias por aclararlo. Preparé una solicitud urgente de bienestar y seguridad para revisión humana; aún no se ha enviado y podrás revisarla antes de confirmar. Si el riesgo aumenta, ${crisisResources.charAt(0).toLowerCase()}${crisisResources.slice(1)} KUCO no ha contactado automáticamente a nadie.`,
     action: {
       type: 'manage_request',
       label: 'Gestionar solicitud',
@@ -249,7 +249,7 @@ function safetyDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   }
 }
 
-function inferCategory(value: string): DucoRequestDraft['category'] {
+function inferCategory(value: string): KucoRequestDraft['category'] {
   const normalized = normalizeText(value)
   const risk = hasSafetyRisk(value)
   if (risk.selfHarm || risk.harmToOthers) return 'wellbeing'
@@ -383,8 +383,8 @@ function analyzeRequest(value: string): RequestReadiness {
   return { category, missing }
 }
 
-function categorySubject(category: DucoRequestDraft['category']) {
-  const subjects: Record<DucoRequestDraft['category'], string> = {
+function categorySubject(category: KucoRequestDraft['category']) {
+  const subjects: Record<KucoRequestDraft['category'], string> = {
     section_change: 'Solicitud de cambio de sección',
     missing_course: 'Asignatura faltante en mi carga académica',
     enrollment: 'Solicitud relacionada con inscripción de asignaturas',
@@ -398,8 +398,8 @@ function categorySubject(category: DucoRequestDraft['category']) {
   return subjects[category]
 }
 
-function categoryOutcome(category: DucoRequestDraft['category']) {
-  const outcomes: Record<DucoRequestDraft['category'], string> = {
+function categoryOutcome(category: KucoRequestDraft['category']) {
+  const outcomes: Record<KucoRequestDraft['category'], string> = {
     section_change: 'Solicito revisar las alternativas de sección disponibles.',
     missing_course: 'Solicito revisar y regularizar mi carga académica.',
     enrollment: 'Solicito orientación y apoyo para completar la inscripción.',
@@ -418,7 +418,7 @@ function categoryOutcome(category: DucoRequestDraft['category']) {
   return outcomes[category]
 }
 
-function requestDecision(input: BuildDucoReplyInput): DucoAiResult | null {
+function requestDecision(input: BuildKucoReplyInput): KucoAiResult | null {
   const lastAssistant = lastAssistantMessage(input) ?? ''
   const continuingRequest = normalizeText(lastAssistant).includes(
     normalizeText(requestQuestionMarker),
@@ -558,7 +558,7 @@ function isSupportingTaskFact(value: string) {
   )
 }
 
-function recoverableTaskContext(input: BuildDucoReplyInput) {
+function recoverableTaskContext(input: BuildKucoReplyInput) {
   const userConversation = input.conversation
     .filter((message) => message.role === 'user')
     .map((message) => message.content)
@@ -576,7 +576,7 @@ function recoverableTaskContext(input: BuildDucoReplyInput) {
   }
 }
 
-function wantsRecoveredTaskDraft(input: BuildDucoReplyInput) {
+function wantsRecoveredTaskDraft(input: BuildKucoReplyInput) {
   return (
     referencesActiveTaskDraft(input.prompt) ||
     (isSimpleDraftAffirmation(input.prompt) &&
@@ -584,7 +584,7 @@ function wantsRecoveredTaskDraft(input: BuildDucoReplyInput) {
   )
 }
 
-function taskSourceText(input: BuildDucoReplyInput) {
+function taskSourceText(input: BuildKucoReplyInput) {
   const candidates = [
     ...input.conversation
       .filter((message) => message.role === 'user')
@@ -823,7 +823,7 @@ function naturalTaskDescription(
 type PolishTaskDraftOptions = {
   currentPrompt?: string
   fallbackTitle?: string
-  previousDraft?: DucoTaskDraft | null
+  previousDraft?: KucoTaskDraft | null
 }
 
 function preferFallbackTaskTitle(candidate: string, fallback: string) {
@@ -845,10 +845,10 @@ function preferFallbackTaskTitle(candidate: string, fallback: string) {
 }
 
 function polishTaskDraft(
-  draft: DucoTaskDraft,
+  draft: KucoTaskDraft,
   facts: string,
   options: PolishTaskDraftOptions = {},
-): DucoTaskDraft {
+): KucoTaskDraft {
   const inferredTitle = options.fallbackTitle || taskTitle(facts)
   const titleSource =
     !draft.title || preferFallbackTaskTitle(draft.title, inferredTitle)
@@ -898,7 +898,7 @@ function polishTaskDraft(
   }
 }
 
-function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
+function taskDecision(input: BuildKucoReplyInput): KucoAiResult | null {
   const activeDraft = input.activeTaskDraft
   if (
     activeDraft &&
@@ -989,16 +989,16 @@ function taskDecision(input: BuildDucoReplyInput): DucoAiResult | null {
   }
 }
 
-function deterministicWorkflow(input: BuildDucoReplyInput) {
+function deterministicWorkflow(input: BuildKucoReplyInput) {
   return safetyDecision(input) ?? requestDecision(input)
 }
 
-function buildModelInput(input: BuildDucoReplyInput) {
+function buildModelInput(input: BuildKucoReplyInput) {
   const conversation = input.conversation
     .slice(-10)
     .map(
       (message) =>
-        `${message.role === 'user' ? 'Estudiante' : 'DUCO'}: ${message.content}`,
+        `${message.role === 'user' ? 'Estudiante' : 'KUCO'}: ${message.content}`,
     )
     .join('\n')
   const tasks = input.pendingTasks
@@ -1024,20 +1024,20 @@ function buildModelInput(input: BuildDucoReplyInput) {
 }
 
 function parseModelOutput(value: unknown, provider: 'ollama' | 'openai') {
-  if (typeof value !== 'string') throw new Error('DUCO AI returned no text')
-  const output = ducoAiOutputSchema.parse(JSON.parse(value))
+  if (typeof value !== 'string') throw new Error('KUCO AI returned no text')
+  const output = kucoAiOutputSchema.parse(JSON.parse(value))
 
   if (output.action === 'none') {
     return {
       reply: output.reply,
       action: null,
       provider,
-    } satisfies DucoAiResult
+    } satisfies KucoAiResult
   }
 
   if (output.action === 'create_task') {
     if (output.taskTitle.length < 2)
-      throw new Error('DUCO AI returned an incomplete task draft')
+      throw new Error('KUCO AI returned an incomplete task draft')
     const parsedDueAt = output.taskDueAt ? new Date(output.taskDueAt) : null
     return {
       reply: output.reply,
@@ -1059,11 +1059,11 @@ function parseModelOutput(value: unknown, provider: 'ollama' | 'openai') {
         task: null,
       },
       provider,
-    } satisfies DucoAiResult
+    } satisfies KucoAiResult
   }
 
   if (output.subject.length < 3 || output.description.length < 10) {
-    throw new Error('DUCO AI returned an incomplete request draft')
+    throw new Error('KUCO AI returned an incomplete request draft')
   }
   return {
     reply: output.reply,
@@ -1079,16 +1079,16 @@ function parseModelOutput(value: unknown, provider: 'ollama' | 'openai') {
       },
     },
     provider,
-  } satisfies DucoAiResult
+  } satisfies KucoAiResult
 }
 
-async function queryOllama(input: BuildDucoReplyInput) {
+async function queryOllama(input: BuildKucoReplyInput) {
   const response = await fetch(
     `${env.OLLAMA_BASE_URL.replace(/\/$/, '')}/api/chat`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(env.DUCO_AI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(env.KUCO_AI_TIMEOUT_MS),
       body: JSON.stringify({
         model: env.OLLAMA_MODEL,
         stream: false,
@@ -1098,7 +1098,7 @@ async function queryOllama(input: BuildDucoReplyInput) {
           { role: 'system', content: systemInstructions },
           { role: 'user', content: buildModelInput(input) },
         ],
-        format: ducoOutputJsonSchema,
+        format: kucoOutputJsonSchema,
         options: { temperature: 0, num_ctx: 4_096, num_predict: 600 },
       }),
     },
@@ -1115,7 +1115,7 @@ async function queryOllama(input: BuildDucoReplyInput) {
   return parseModelOutput(body.message?.content, 'ollama')
 }
 
-async function queryOpenAi(input: BuildDucoReplyInput) {
+async function queryOpenAi(input: BuildKucoReplyInput) {
   if (!env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured')
 
   const response = await fetch(
@@ -1137,9 +1137,9 @@ async function queryOpenAi(input: BuildDucoReplyInput) {
         text: {
           format: {
             type: 'json_schema',
-            name: 'duco_action_decision',
+            name: 'kuco_action_decision',
             strict: true,
-            schema: ducoOutputJsonSchema,
+            schema: kucoOutputJsonSchema,
           },
         },
       }),
@@ -1171,7 +1171,7 @@ function falselyClaimsDraft(reply: string) {
   return mutationBeforeResource || resourceBeforeMutation
 }
 
-function safeReplyWithoutAction(result: DucoAiResult) {
+function safeReplyWithoutAction(result: KucoAiResult) {
   return falselyClaimsDraft(result.reply)
     ? {
         ...result,
@@ -1183,10 +1183,10 @@ function safeReplyWithoutAction(result: DucoAiResult) {
 }
 
 function mergeTaskDraft(
-  current: DucoTaskDraft,
-  proposed: DucoTaskDraft,
+  current: KucoTaskDraft,
+  proposed: KucoTaskDraft,
   prompt: string,
-): DucoTaskDraft {
+): KucoTaskDraft {
   const normalized = normalizeText(prompt)
   const changesCourse =
     hasCourseDetails(prompt) ||
@@ -1219,7 +1219,7 @@ function mergeTaskDraft(
   }
 }
 
-function validatesTaskAction(input: BuildDucoReplyInput) {
+function validatesTaskAction(input: BuildKucoReplyInput) {
   return (
     isTaskIntent(input.prompt) ||
     Boolean(
@@ -1231,9 +1231,9 @@ function validatesTaskAction(input: BuildDucoReplyInput) {
 }
 
 function validateModelResult(
-  input: BuildDucoReplyInput,
-  result: DucoAiResult,
-): DucoAiResult {
+  input: BuildKucoReplyInput,
+  result: KucoAiResult,
+): KucoAiResult {
   if (result.action?.type === 'create_task' && validatesTaskAction(input)) {
     const continuesActiveDraft = Boolean(
       input.activeTaskDraft &&
@@ -1284,17 +1284,17 @@ function validateModelResult(
     : safeReplyWithoutAction(result)
 }
 
-function enforceActionReplyInvariant(result: DucoAiResult) {
+function enforceActionReplyInvariant(result: KucoAiResult) {
   return result.action ? result : safeReplyWithoutAction(result)
 }
 
-export async function buildDucoAiReply(
-  input: BuildDucoReplyInput,
-): Promise<DucoAiResult> {
+export async function buildKucoAiReply(
+  input: BuildKucoReplyInput,
+): Promise<KucoAiResult> {
   const workflow = deterministicWorkflow(input)
   if (workflow) return enforceActionReplyInvariant(workflow)
 
-  if (env.DUCO_AI_PROVIDER === 'local') {
+  if (env.KUCO_AI_PROVIDER === 'local') {
     return enforceActionReplyInvariant(
       taskDecision(input) ?? {
         reply: input.localReply,
@@ -1306,14 +1306,14 @@ export async function buildDucoAiReply(
 
   try {
     const result =
-      env.DUCO_AI_PROVIDER === 'openai'
+      env.KUCO_AI_PROVIDER === 'openai'
         ? await queryOpenAi(input)
         : await queryOllama(input)
     return enforceActionReplyInvariant(validateModelResult(input, result))
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error'
     console.warn(
-      `[DUCO] ${env.DUCO_AI_PROVIDER} unavailable; using local fallback: ${reason}`,
+      `[KUCO] ${env.KUCO_AI_PROVIDER} unavailable; using local fallback: ${reason}`,
     )
     return enforceActionReplyInvariant(
       taskDecision(input) ?? {

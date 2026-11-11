@@ -14,11 +14,12 @@ jobs:
     runs-on: windows-latest
     env:
       FOCUSBUDDY_API_URL: ${{ vars.FOCUSBUDDY_API_URL }}
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -26,7 +27,7 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Validate the public Konea API URL
+      - name: Validate the production tag and public Konea API URL
         shell: pwsh
         run: |
           $package = Get-Content -LiteralPath 'apps/focusbuddy/package.json' -Raw | ConvertFrom-Json
@@ -46,6 +47,10 @@ jobs:
           }
           if ($parsed.Scheme -ne 'https' -or [string]::IsNullOrWhiteSpace($parsed.Host)) {
             throw 'FOCUSBUDDY_API_URL must use HTTPS and include a host.'
+          }
+          $hostName = $parsed.DnsSafeHost.TrimEnd('.').ToLowerInvariant()
+          if ($parsed.IsLoopback -or $hostName -eq '0.0.0.0' -or $hostName -eq '::' -or $hostName.EndsWith('.localhost') -or $hostName.EndsWith('.local')) {
+            throw 'A production FocusBuddy release must not target a local API.'
           }
           if (-not [string]::IsNullOrEmpty($parsed.UserInfo)) {
             throw 'FOCUSBUDDY_API_URL must not contain embedded credentials.'
@@ -67,25 +72,26 @@ jobs:
       - name: Validate FocusBuddy sources
         run: npm run build --workspace @konea/focusbuddy
 
-      - name: Build and verify the NSIS installer
-        run: npm run dist:focusbuddy
+      - name: Build and verify the production NSIS installer
+        run: npm run dist:production --workspace @konea/focusbuddy
+
+      - name: Verify the packaged production channel and installer
+        run: npm run verify:release --workspace @konea/focusbuddy -- --channel=production --require-installer
 
       - name: Prepare stable release assets
         id: assets
         shell: pwsh
         run: |
-          $releaseDirectory = Join-Path $PWD 'apps/focusbuddy/release'
-          $sourceInstaller = Get-ChildItem -LiteralPath $releaseDirectory -File -Filter 'Konea-FocusBuddy-*-x64.exe' |
-            Where-Object { $_.Name -ne 'Konea-FocusBuddy-Windows-x64.exe' } |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
-          if ($null -eq $sourceInstaller) {
-            throw 'electron-builder did not produce the expected Windows x64 installer.'
+          $package = Get-Content -LiteralPath 'apps/focusbuddy/package.json' -Raw | ConvertFrom-Json
+          $releaseDirectory = Join-Path $PWD 'apps/focusbuddy/release/production'
+          $sourceInstaller = Join-Path $releaseDirectory "Konea-FocusBuddy-$($package.version)-x64.exe"
+          if (-not (Test-Path -LiteralPath $sourceInstaller -PathType Leaf)) {
+            throw 'electron-builder did not produce the expected production Windows x64 installer.'
           }
 
           $stableInstaller = Join-Path $releaseDirectory 'Konea-FocusBuddy-Windows-x64.exe'
           $checksumFile = "$stableInstaller.sha256"
-          Copy-Item -LiteralPath $sourceInstaller.FullName -Destination $stableInstaller -Force
+          Copy-Item -LiteralPath $sourceInstaller -Destination $stableInstaller -Force
           $checksum = (Get-FileHash -LiteralPath $stableInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath $checksumFile -Value "$checksum  Konea-FocusBuddy-Windows-x64.exe" -Encoding ascii
 
@@ -93,6 +99,8 @@ jobs:
           "checksum=$checksumFile" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME

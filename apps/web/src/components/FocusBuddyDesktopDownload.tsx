@@ -1,5 +1,7 @@
 import {
   focusBuddyDownloadUrl,
+  getFocusBuddyDesktopChannel,
+  getFocusBuddyLaunchUrl,
   isFocusBuddyDesktopRuntime,
 } from '../config/focusbuddy-download'
 import './FocusBuddyDesktopDownload.css'
@@ -8,6 +10,9 @@ export function FocusBuddyDesktopDownload() {
   const desktopBridge = (window as Window & { focusBuddyDesktop?: unknown })
     .focusBuddyDesktop
   if (isFocusBuddyDesktopRuntime(desktopBridge)) return null
+  const isLocal =
+    getFocusBuddyDesktopChannel(window.location.hostname) === 'local'
+  const launchUrl = getFocusBuddyLaunchUrl(window.location.hostname)
 
   return (
     <aside
@@ -21,29 +26,48 @@ export function FocusBuddyDesktopDownload() {
         </svg>
       </div>
       <div className="focus-desktop-download__copy">
-        <span>Aplicación de escritorio</span>
-        <h2 id="focus-desktop-download-title">Lleva FocusBuddy a Windows</h2>
+        <span>Aplicación de escritorio · {isLocal ? 'local' : 'oficial'}</span>
+        <h2 id="focus-desktop-download-title">
+          {isLocal
+            ? 'FocusBuddy para tu entorno local'
+            : 'Lleva FocusBuddy a Windows'}
+        </h2>
         <p>
-          Usa el temporizador, el panel y la mascota flotante desde una
-          aplicación instalada, con tu misma cuenta de Konea.
+          {isLocal
+            ? 'La aplicación local comparte tus tareas, sesiones y progreso con este Konea al usar la misma cuenta. Los datos de la versión publicada son independientes.'
+            : 'Usa el temporizador, el panel y la mascota flotante desde Windows. La versión oficial comparte tus tareas, sesiones y progreso con esta página al usar tu cuenta de Konea publicada.'}
         </p>
-        <small>Windows x64 · instalador sin firma digital por ahora</small>
+        <small>
+          {isLocal
+            ? 'Requiere mantener el proyecto local en ejecución.'
+            : 'Windows x64 · instalador sin firma digital por ahora'}
+        </small>
       </div>
-      {focusBuddyDownloadUrl ? (
-        <a
-          className="focus-desktop-download__action"
-          href={focusBuddyDownloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Descargar Konea FocusBuddy para Windows x64"
-        >
-          Descargar instalador
+      <div className="focus-desktop-download__actions">
+        <a className="focus-desktop-download__action" href={launchUrl}>
+          {isLocal ? 'Abrir FocusBuddy local' : 'Abrir FocusBuddy'}
         </a>
-      ) : (
-        <span className="focus-desktop-download__unavailable" role="status">
-          Versión pública aún no publicada
-        </span>
-      )}
+        <small>
+          {isLocal
+            ? 'También puedes usar iniciar-focusbuddy.bat. Inicia sesión en el programa.'
+            : 'Requiere la versión oficial instalada. Inicia sesión en el programa.'}
+        </small>
+        {!isLocal && focusBuddyDownloadUrl ? (
+          <a
+            className="focus-desktop-download__action"
+            href={focusBuddyDownloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Descargar Konea FocusBuddy para Windows x64"
+          >
+            Descargar versión oficial
+          </a>
+        ) : !isLocal ? (
+          <span className="focus-desktop-download__unavailable" role="status">
+            Versión oficial aún no publicada
+          </span>
+        ) : null}
+      </div>
     </aside>
   )
 }

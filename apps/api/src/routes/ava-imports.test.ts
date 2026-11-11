@@ -342,6 +342,278 @@ describe.sequential('AVA DOM import API', () => {
     })
   })
 
+  it('previews metadata changes and updates only selected active AVA courses idempotently', async () => {
+    const payload = capture('metadata-update')
+    // Isolate course-update idempotence: an unselected new activity would
+    // correctly make the capture actionable again on the next preview.
+    payload.activities = []
+    const firstPreview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    await studentAgent
+      .post(
+        `/api/v1/ava-imports/previews/${firstPreview.body.import.id}/confirm`,
+      )
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    const [before] = await db
+      .select()
+      .from(academicCourses)
+      .where(
+        and(
+          eq(academicCourses.userId, userId),
+          eq(
+            academicCourses.normalizedName,
+            payload.courses[0]!.name.toLowerCase(),
+          ),
+        ),
+      )
+
+    const changed = structuredClone(payload)
+    Object.assign(changed.courses[0]!, {
+      code: 'ASY9999',
+      section: '003D',
+      term: 'Primer semestre 2031',
+    })
+    const preview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(changed)
+      .expect(201)
+    expect(preview.body.courses[0]).toMatchObject({
+      existing: false,
+      reactivatable: false,
+      updatable: true,
+      state: 'updatable',
+      changes: [
+        { field: 'code', from: 'ASY4131', to: 'ASY9999' },
+        { field: 'section', from: '001D', to: '003D' },
+        {
+          field: 'term',
+          from: 'Primer semestre 2030',
+          to: 'Primer semestre 2031',
+        },
+      ],
+    })
+    const endpoint = `/api/v1/ava-imports/previews/${preview.body.import.id}/confirm`
+    const selection = {
+      courseClientIds: [changed.courses[0]!.clientId],
+      activityClientIds: [],
+    }
+    const confirmations = await Promise.all([
+      studentAgent.post(endpoint).send(selection),
+      studentAgent.post(endpoint).send(selection),
+    ])
+    for (const confirmation of confirmations) {
+      expect(confirmation.status).toBe(200)
+      expect(confirmation.body.result).toEqual({
+        importedCourses: 0,
+        reactivatedCourses: 0,
+        updatedCourses: 1,
+        importedTasks: 0,
+        existingCourses: 0,
+        existingTasks: 0,
+      })
+    }
+    const matching = await db
+      .select()
+      .from(academicCourses)
+      .where(
+        and(
+          eq(academicCourses.userId, userId),
+          eq(
+            academicCourses.normalizedName,
+            payload.courses[0]!.name.toLowerCase(),
+          ),
+        ),
+      )
+    expect(matching).toHaveLength(1)
+    expect(matching[0]).toMatchObject({
+      id: before!.id,
+      source: 'ava_extension',
+      active: true,
+      code: 'ASY9999',
+      section: '003D',
+      term: 'Primer semestre 2031',
+    })
+    const repeat = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(changed)
+      .expect(200)
+    expect(repeat.body.import.status).toBe('confirmed')
+    expect(repeat.body.courses[0]).toMatchObject({
+      existing: true,
+      updatable: false,
+      changes: [],
+    })
+  })
+
+  it('reopens a capture when an activity was intentionally left unselected', async () => {
+    const payload = capture('partial-selection')
+    const preview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    await studentAgent
+      .post(`/api/v1/ava-imports/previews/${preview.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    const repeated = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(200)
+    expect(repeated.body.import.status).toBe('draft')
+    expect(repeated.body.courses[0]).toMatchObject({
+      existing: true,
+      updatable: false,
+      changes: [],
+    })
+    expect(repeated.body.activities[0].existing).toBe(false)
+    const remaining = await studentAgent
+      .post(`/api/v1/ava-imports/previews/${repeated.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [],
+        activityClientIds: [payload.activities[0]!.clientId],
+      })
+      .expect(200)
+    expect(remaining.body.result).toMatchObject({
+      importedCourses: 0,
+      importedTasks: 1,
+    })
+    const complete = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(200)
+    expect(complete.body.import.status).toBe('confirmed')
+    expect(complete.body.activities[0].existing).toBe(true)
+  })
+
+  it('preserves useful metadata when AVA omits fields and leaves unselected changes untouched', async () => {
+    const payload = capture('metadata-omitted')
+    const first = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    await studentAgent
+      .post(`/api/v1/ava-imports/previews/${first.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    const changed = structuredClone(payload)
+    Object.assign(changed.courses[0]!, {
+      code: null,
+      section: '004D',
+      term: null,
+    })
+    const preview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(changed)
+      .expect(201)
+    expect(preview.body.courses[0].changes).toEqual([
+      { field: 'section', from: '001D', to: '004D' },
+    ])
+    await studentAgent
+      .post(`/api/v1/ava-imports/previews/${preview.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [],
+        activityClientIds: [changed.activities[0]!.clientId],
+      })
+      .expect(200)
+    const [unchanged] = await db
+      .select()
+      .from(academicCourses)
+      .where(
+        and(
+          eq(academicCourses.userId, userId),
+          eq(
+            academicCourses.normalizedName,
+            payload.courses[0]!.name.toLowerCase(),
+          ),
+        ),
+      )
+    expect(unchanged).toMatchObject({
+      code: 'ASY4131',
+      section: '001D',
+      term: 'Primer semestre 2030',
+    })
+    const secondPreview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(changed)
+      .expect(200)
+    expect(secondPreview.body.import.status).toBe('draft')
+    await studentAgent
+      .post(
+        `/api/v1/ava-imports/previews/${secondPreview.body.import.id}/confirm`,
+      )
+      .send({
+        courseClientIds: [changed.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    const [updated] = await db
+      .select()
+      .from(academicCourses)
+      .where(eq(academicCourses.id, unchanged!.id))
+    expect(updated).toMatchObject({
+      code: 'ASY4131',
+      section: '004D',
+      term: 'Primer semestre 2030',
+    })
+  })
+
+  it('never overwrites an active manual course with metadata from AVA', async () => {
+    const payload = capture('active-manual-conflict')
+    const [manual] = await db
+      .insert(academicCourses)
+      .values({
+        userId,
+        name: payload.courses[0]!.name,
+        normalizedName: payload.courses[0]!.name.toLowerCase(),
+        code: 'MANUAL',
+        section: '009D',
+        term: 'Manual term',
+        source: 'manual',
+        active: true,
+      })
+      .returning()
+    const preview = await studentAgent
+      .post('/api/v1/ava-imports/previews')
+      .send(payload)
+      .expect(201)
+    expect(preview.body.courses[0]).toMatchObject({
+      existing: true,
+      updatable: false,
+      changes: [],
+    })
+    const confirmed = await studentAgent
+      .post(`/api/v1/ava-imports/previews/${preview.body.import.id}/confirm`)
+      .send({
+        courseClientIds: [payload.courses[0]!.clientId],
+        activityClientIds: [],
+      })
+      .expect(200)
+    expect(confirmed.body.result.updatedCourses ?? 0).toBe(0)
+    const [unchanged] = await db
+      .select()
+      .from(academicCourses)
+      .where(eq(academicCourses.id, manual!.id))
+    expect(unchanged).toMatchObject({
+      source: 'manual',
+      active: true,
+      code: 'MANUAL',
+      section: '009D',
+      term: 'Manual term',
+    })
+  })
+
   it('never deactivates courses missing from a later capture', async () => {
     const secondPayload = capture('two')
     const preview = await studentAgent

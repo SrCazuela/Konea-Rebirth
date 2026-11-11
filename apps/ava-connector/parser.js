@@ -116,11 +116,20 @@
     if (!text) return null
     if (/^\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/u.test(text)) {
       const isoDate = new Date(text)
-      if (!Number.isNaN(isoDate.getTime())) return isoDate.toISOString()
+      const [year, month, day] = text.slice(0, 10).split('-').map(Number)
+      const calendarDate = new Date(Date.UTC(year, month - 1, day))
+      if (
+        !Number.isNaN(isoDate.getTime()) &&
+        calendarDate.getUTCFullYear() === year &&
+        calendarDate.getUTCMonth() === month - 1 &&
+        calendarDate.getUTCDate() === day
+      )
+        return isoDate.toISOString()
+      return null
     }
 
     const spanishMonthMatch = text.match(
-      /\b(\d{1,2})\s+de\s+([a-záéíóúüñ.]+)\s+(?:de\s+)?(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/iu,
+      /\b(\d{1,2})\s+de\s+([a-záéíóúüñ.]+)\s+(?:de\s+)?(\d{4})(?:,?\s+(?:a\s+las\s+)?(\d{1,2}):(\d{2}))?/iu,
     )
     if (spanishMonthMatch) {
       const months = new Map([
@@ -167,6 +176,8 @@
           Number(minute),
         )
         if (
+          Number(hour) <= 23 &&
+          Number(minute) <= 59 &&
           parsed.getFullYear() === Number(year) &&
           parsed.getMonth() === month &&
           parsed.getDate() === Number(day)
@@ -177,7 +188,7 @@
     }
 
     const localMatch = text.match(
-      /\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/u,
+      /\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:,?\s+(?:a\s+las\s+)?(\d{1,2}):(\d{2}))?/iu,
     )
     if (!localMatch) return null
     const [, day, month, year, hour = '23', minute = '59'] = localMatch
@@ -189,6 +200,8 @@
       Number(minute),
     )
     if (
+      Number(hour) > 23 ||
+      Number(minute) > 59 ||
       parsed.getFullYear() !== Number(year) ||
       parsed.getMonth() !== Number(month) - 1 ||
       parsed.getDate() !== Number(day)
@@ -393,9 +406,10 @@
   }
 
   function activityDate(container) {
-    const attributeDate =
-      container.getAttribute?.('data-due-date') ||
-      container.getAttribute?.('data-date')
+    const dueDate = explicitDueDate(container)
+    if (dueDate) return dueDate
+    if (hasDueDateLabel(container.textContent)) return null
+    const attributeDate = container.getAttribute?.('data-date')
     const parsedAttribute = parseDate(attributeDate)
     if (parsedAttribute) return parsedAttribute
 
@@ -414,6 +428,31 @@
     return parseDate(container.textContent)
   }
 
+  const dueDateLabelPattern =
+    /\b(?:vence(?:rá)?|vencimiento|fecha\s+(?:de\s+entrega|l[ií]mite)|entregar\s+(?:antes(?:\s+del?)?|hasta)|due(?!\s+to\b)(?:\s+(?:date|on))?|deadline)\b\s*[:–-]?\s*/giu
+
+  function hasDueDateLabel(value) {
+    return new RegExp(dueDateLabelPattern.source, 'iu').test(
+      String(value || ''),
+    )
+  }
+
+  function labeledDueDate(value) {
+    const text = cleanText(value, 1_000)
+    for (const label of text.matchAll(dueDateLabelPattern)) {
+      const afterLabel = text.slice(label.index + label[0].length)
+      // A date must immediately follow its due label. Looking through the
+      // entire entry could pick a publication/update date or an unrelated
+      // date after a label such as "Vence: no disponible".
+      const dateText = afterLabel.match(
+        /^(?:el\s+)?(?:(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)[,\s]+)?((?:\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?|\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}\s+de\s+[a-záéíóúüñ.]+\s+(?:de\s+)?\d{4})(?:,?\s+(?:a\s+las\s+)?\d{1,2}:\d{2})?)/iu,
+      )?.[1]
+      const parsed = parseDate(dateText)
+      if (parsed) return parsed
+    }
+    return null
+  }
+
   function explicitDueDate(container) {
     const attributeDate = container.getAttribute?.('data-due-date')
     const parsedAttribute = parseDate(attributeDate)
@@ -426,23 +465,18 @@
       '[class*="dueDate" i]',
       '[class*="fecha-entrega" i]',
     ])) {
-      const parsed = parseDate(
+      const attribute =
         element.getAttribute?.('data-due-date') ||
-          element.getAttribute?.('datetime') ||
-          element.textContent,
-      )
+        element.getAttribute?.('datetime')
+      const parsed = attribute
+        ? parseDate(attribute)
+        : hasDueDateLabel(element.textContent)
+          ? labeledDueDate(element.textContent)
+          : parseDate(element.textContent)
       if (parsed) return parsed
     }
 
-    const text = cleanText(container.textContent, 1_000)
-    if (
-      !/(?:vence|vencimiento|fecha\s+de\s+entrega|entregar\s+(?:antes|hasta))/iu.test(
-        text,
-      )
-    ) {
-      return null
-    }
-    return parseDate(text)
+    return labeledDueDate(container.textContent)
   }
 
   function visibleLines(element) {

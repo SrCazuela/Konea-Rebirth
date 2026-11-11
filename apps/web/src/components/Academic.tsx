@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -99,39 +100,54 @@ export function Academic() {
   const [agendaView, setAgendaView] = useState<'open' | 'completed'>('open')
   const [courseDraft, setCourseDraft] = useState<CourseDraft>(emptyCourseDraft)
   const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft)
+  const requestVersion = useRef(0)
+  const requestInFlight = useRef(false)
+  const busyRef = useRef(false)
+  useEffect(() => {
+    busyRef.current = busyId !== null
+    if (busyId !== null) {
+      requestVersion.current += 1
+      requestInFlight.current = false
+    }
+  }, [busyId])
 
-  const load = useCallback(async () => {
-    setRefreshing(true)
+  const load = useCallback(async (silent = false) => {
+    if (silent && (busyRef.current || requestInFlight.current)) return
+    const version = ++requestVersion.current
+    requestInFlight.current = true
+    if (!silent) setRefreshing(true)
     try {
-      setError('')
-      setDashboard(await getAcademicDashboard())
+      if (!silent) setError('')
+      const result = await getAcademicDashboard()
+      if (version === requestVersion.current) setDashboard(result)
     } catch (loadError) {
-      setError(readableError(loadError))
+      if (version === requestVersion.current) setError(readableError(loadError))
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (version === requestVersion.current) {
+        requestInFlight.current = false
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    getAcademicDashboard()
-      .then((result) => {
-        if (!cancelled) {
-          setDashboard(result)
-          setError('')
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled) setError(readableError(loadError))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+    const initial = window.setTimeout(() => void load(), 0)
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void load(true)
     }
-  }, [])
+    const timer = window.setInterval(refresh, 10_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      requestVersion.current += 1
+      requestInFlight.current = false
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [load])
 
   const openAgenda = useMemo(() => {
     if (!dashboard) return []

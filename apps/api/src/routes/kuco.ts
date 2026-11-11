@@ -22,14 +22,14 @@ import {
   academicCourses,
   academicTasks,
   chatParticipants,
-  ducoDrafts,
+  kucoDrafts,
   profiles,
   supportRequestEvents,
   supportRequests,
   tasks,
   users,
 } from '../db/schema.js'
-import type { AssistantMessageAction, DucoTaskDraft } from '../db/schema.js'
+import type { AssistantMessageAction, KucoTaskDraft } from '../db/schema.js'
 import { cleanCourseName, normalizeCourseName } from '../domain/academic.js'
 import { ApiError } from '../errors/api-error.js'
 import { parseBody, parseId } from '../http/validation.js'
@@ -38,7 +38,7 @@ import {
   requireAuthentication,
   requireModerator,
 } from '../middleware/authentication.js'
-import { buildDucoAiReply } from '../services/duco-ai-service.js'
+import { buildKucoAiReply } from '../services/kuco-ai-service.js'
 import { calendarDateFloorInTimeZone } from '../services/ics-calendar-service.js'
 import { createNotification } from '../services/notification-service.js'
 import { normalizeText } from '../utils/text.js'
@@ -62,9 +62,9 @@ const requestStatuses = [
   'rejected',
 ] as const
 
-const MAX_CONCURRENT_DUCO_REQUESTS = 4
-let activeDucoRequests = 0
-const usersWithActiveDucoRequest = new Set<string>()
+const MAX_CONCURRENT_KUCO_REQUESTS = 4
+let activeKucoRequests = 0
+const usersWithActiveKucoRequest = new Set<string>()
 
 function authenticatedUserKey(request: Request) {
   const userId: unknown = request.res?.locals.currentUser?.id
@@ -73,20 +73,20 @@ function authenticatedUserKey(request: Request) {
     : `ip:${ipKeyGenerator(request.ip ?? 'unknown')}`
 }
 
-const ducoIpLimiter = rateLimit({
+const kucoIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1_000,
   limit: 120,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: {
     error: {
-      code: 'TOO_MANY_DUCO_REQUESTS',
-      message: 'Hay demasiadas consultas a DUCO. Intenta nuevamente mas tarde.',
+      code: 'TOO_MANY_KUCO_REQUESTS',
+      message: 'Hay demasiadas consultas a KUCO. Intenta nuevamente mas tarde.',
     },
   },
 })
 
-const ducoUserLimiter = rateLimit({
+const kucoUserLimiter = rateLimit({
   windowMs: 15 * 60 * 1_000,
   limit: 30,
   keyGenerator: authenticatedUserKey,
@@ -94,33 +94,33 @@ const ducoUserLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     error: {
-      code: 'TOO_MANY_DUCO_REQUESTS',
-      message: 'Alcanzaste el limite temporal de consultas a DUCO.',
+      code: 'TOO_MANY_KUCO_REQUESTS',
+      message: 'Alcanzaste el limite temporal de consultas a KUCO.',
     },
   },
 })
 
-function acquireDucoRequest(userId: string) {
+function acquireKucoRequest(userId: string) {
   if (
-    usersWithActiveDucoRequest.has(userId) ||
-    activeDucoRequests >= MAX_CONCURRENT_DUCO_REQUESTS
+    usersWithActiveKucoRequest.has(userId) ||
+    activeKucoRequests >= MAX_CONCURRENT_KUCO_REQUESTS
   ) {
     throw new ApiError(
       429,
-      'DUCO_BUSY',
-      'DUCO esta procesando otras consultas. Intenta nuevamente en un momento.',
+      'KUCO_BUSY',
+      'KUCO esta procesando otras consultas. Intenta nuevamente en un momento.',
     )
   }
 
-  usersWithActiveDucoRequest.add(userId)
-  activeDucoRequests += 1
+  usersWithActiveKucoRequest.add(userId)
+  activeKucoRequests += 1
   let released = false
 
   return () => {
     if (released) return
     released = true
-    usersWithActiveDucoRequest.delete(userId)
-    activeDucoRequests = Math.max(0, activeDucoRequests - 1)
+    usersWithActiveKucoRequest.delete(userId)
+    activeKucoRequests = Math.max(0, activeKucoRequests - 1)
   }
 }
 
@@ -163,7 +163,7 @@ const createAcademicTaskSchema = z
     priority: z.enum(['low', 'medium', 'high']).default('medium'),
   })
   .refine((input) => input.draftId || input.sourceMessageId, {
-    message: 'Se requiere un borrador de DUCO.',
+    message: 'Se requiere un borrador de KUCO.',
     path: ['draftId'],
   })
 const updateSupportRequestSchema = z
@@ -343,7 +343,7 @@ function createLocalReply(
   if (asksForAcademicHelp)
     return 'Claro. Puedo ayudarte a entender los contenidos y dividir la tarea en pasos, sin hacer una entrega completa por ti. Dime la asignatura, en qué consiste y cuándo vence.'
   if (greets)
-    return `¡Hola, ${displayName}! Soy DUCO. Puedo ayudarte a organizar tus tareas, estudiar contenidos o preparar una solicitud institucional.`
+    return `¡Hola, ${displayName}! Soy KUCO. Puedo ayudarte a organizar tus tareas, estudiar contenidos o preparar una solicitud institucional.`
   return [
     'Puedo ayudarte a organizar tus tareas, estudiar contenidos y preparar solicitudes para el equipo institucional.',
     'Cuéntame qué necesitas y, si corresponde, prepararé un formulario editable.',
@@ -481,31 +481,31 @@ async function loadRecentConversation(userId: string) {
 async function loadActiveTaskDraft(userId: string) {
   const [draft] = await db
     .select({
-      id: ducoDrafts.id,
-      status: ducoDrafts.status,
-      payload: ducoDrafts.payload,
-      expiresAt: ducoDrafts.expiresAt,
+      id: kucoDrafts.id,
+      status: kucoDrafts.status,
+      payload: kucoDrafts.payload,
+      expiresAt: kucoDrafts.expiresAt,
     })
-    .from(ducoDrafts)
+    .from(kucoDrafts)
     .where(
       and(
-        eq(ducoDrafts.userId, userId),
-        eq(ducoDrafts.kind, 'task'),
-        inArray(ducoDrafts.status, [
+        eq(kucoDrafts.userId, userId),
+        eq(kucoDrafts.kind, 'task'),
+        inArray(kucoDrafts.status, [
           'collecting_information',
           'ready_for_review',
         ]),
-        gt(ducoDrafts.expiresAt, new Date()),
+        gt(kucoDrafts.expiresAt, new Date()),
       ),
     )
-    .orderBy(desc(ducoDrafts.updatedAt))
+    .orderBy(desc(kucoDrafts.updatedAt))
     .limit(1)
 
   if (!draft) return null
   return {
     id: draft.id,
     status: draft.status as 'collecting_information' | 'ready_for_review',
-    draft: draft.payload as DucoTaskDraft,
+    draft: draft.payload as KucoTaskDraft,
     expiresAt: draft.expiresAt.toISOString(),
   }
 }
@@ -549,10 +549,10 @@ async function loadMessages(userId: string) {
   }))
 }
 
-export const ducoRouter = Router()
-ducoRouter.use(requireAuthentication)
+export const kucoRouter = Router()
+kucoRouter.use(requireAuthentication)
 
-ducoRouter.get('/messages', async (_request, response) => {
+kucoRouter.get('/messages', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const [messages, pendingTasks] = await Promise.all([
     loadMessages(currentUser.id),
@@ -561,18 +561,18 @@ ducoRouter.get('/messages', async (_request, response) => {
   response.json({
     messages,
     openTaskCount: pendingTasks.length,
-    aiProvider: env.DUCO_AI_PROVIDER,
+    aiProvider: env.KUCO_AI_PROVIDER,
   })
 })
 
-ducoRouter.post(
+kucoRouter.post(
   '/messages',
-  ducoIpLimiter,
-  ducoUserLimiter,
+  kucoIpLimiter,
+  kucoUserLimiter,
   async (request, response) => {
     const currentUser = getAuthenticatedUser(response)
     const content = parseBody(sendMessageSchema, request.body)
-    const releaseDucoRequest = acquireDucoRequest(currentUser.id)
+    const releaseKucoRequest = acquireKucoRequest(currentUser.id)
 
     try {
       const [pendingTasks, conversation, activeTaskDraft] = await Promise.all([
@@ -580,7 +580,7 @@ ducoRouter.post(
         loadRecentConversation(currentUser.id),
         loadActiveTaskDraft(currentUser.id),
       ])
-      const aiReply = await buildDucoAiReply({
+      const aiReply = await buildKucoAiReply({
         prompt: content,
         localReply: createLocalReply(
           content,
@@ -627,7 +627,7 @@ ducoRouter.post(
             createdAt: assistantMessages.createdAt,
           })
         if (!userMessage || !insertedAssistantMessage)
-          throw new Error('Database did not return the DUCO messages')
+          throw new Error('Database did not return the KUCO messages')
 
         let assistantMessage = insertedAssistantMessage
         if (aiReply.action?.type === 'create_task') {
@@ -641,7 +641,7 @@ ducoRouter.post(
               sql`select pg_advisory_xact_lock(hashtext(${activeTaskDraft.id}))`,
             )
             const [updatedDraft] = await transaction
-              .update(ducoDrafts)
+              .update(kucoDrafts)
               .set({
                 status: 'ready_for_review',
                 payload: aiReply.action.draft,
@@ -651,28 +651,28 @@ ducoRouter.post(
               })
               .where(
                 and(
-                  eq(ducoDrafts.id, activeTaskDraft.id),
-                  eq(ducoDrafts.userId, currentUser.id),
-                  eq(ducoDrafts.kind, 'task'),
-                  inArray(ducoDrafts.status, [
+                  eq(kucoDrafts.id, activeTaskDraft.id),
+                  eq(kucoDrafts.userId, currentUser.id),
+                  eq(kucoDrafts.kind, 'task'),
+                  inArray(kucoDrafts.status, [
                     'collecting_information',
                     'ready_for_review',
                   ]),
-                  gt(ducoDrafts.expiresAt, new Date()),
+                  gt(kucoDrafts.expiresAt, new Date()),
                 ),
               )
-              .returning({ id: ducoDrafts.id })
+              .returning({ id: kucoDrafts.id })
             if (!updatedDraft) {
               throw new ApiError(
                 409,
-                'DUCO_TASK_DRAFT_CHANGED',
-                'El borrador cambió o expiró mientras DUCO respondía. Inténtalo nuevamente.',
+                'KUCO_TASK_DRAFT_CHANGED',
+                'El borrador cambió o expiró mientras KUCO respondía. Inténtalo nuevamente.',
               )
             }
             draftId = updatedDraft.id
           } else {
             const [createdDraft] = await transaction
-              .insert(ducoDrafts)
+              .insert(kucoDrafts)
               .values({
                 userId: currentUser.id,
                 kind: 'task',
@@ -680,9 +680,9 @@ ducoRouter.post(
                 payload: aiReply.action.draft,
                 sourceMessageId: insertedAssistantMessage.id,
               })
-              .returning({ id: ducoDrafts.id })
+              .returning({ id: kucoDrafts.id })
             if (!createdDraft)
-              throw new Error('Database did not return the DUCO task draft')
+              throw new Error('Database did not return the KUCO task draft')
             draftId = createdDraft.id
           }
 
@@ -704,7 +704,7 @@ ducoRouter.post(
               createdAt: assistantMessages.createdAt,
             })
           if (!updatedAssistantMessage)
-            throw new Error('Database did not return the updated DUCO message')
+            throw new Error('Database did not return the updated KUCO message')
           assistantMessage = updatedAssistantMessage
         }
 
@@ -720,12 +720,12 @@ ducoRouter.post(
         aiProvider: aiReply.provider,
       })
     } finally {
-      releaseDucoRequest()
+      releaseKucoRequest()
     }
   },
 )
 
-ducoRouter.delete('/messages', async (_request, response) => {
+kucoRouter.delete('/messages', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const deleted = await db
     .delete(assistantMessages)
@@ -734,40 +734,40 @@ ducoRouter.delete('/messages', async (_request, response) => {
   response.json({ deletedCount: deleted.length })
 })
 
-ducoRouter.get('/drafts', async (_request, response) => {
+kucoRouter.get('/drafts', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const drafts = await db
     .select({
-      id: ducoDrafts.id,
-      kind: ducoDrafts.kind,
-      status: ducoDrafts.status,
-      payload: ducoDrafts.payload,
-      sourceMessageId: ducoDrafts.sourceMessageId,
-      completedResourceId: ducoDrafts.completedResourceId,
-      expiresAt: ducoDrafts.expiresAt,
-      createdAt: ducoDrafts.createdAt,
-      updatedAt: ducoDrafts.updatedAt,
+      id: kucoDrafts.id,
+      kind: kucoDrafts.kind,
+      status: kucoDrafts.status,
+      payload: kucoDrafts.payload,
+      sourceMessageId: kucoDrafts.sourceMessageId,
+      completedResourceId: kucoDrafts.completedResourceId,
+      expiresAt: kucoDrafts.expiresAt,
+      createdAt: kucoDrafts.createdAt,
+      updatedAt: kucoDrafts.updatedAt,
     })
-    .from(ducoDrafts)
+    .from(kucoDrafts)
     .where(
       and(
-        eq(ducoDrafts.userId, currentUser.id),
-        inArray(ducoDrafts.status, [
+        eq(kucoDrafts.userId, currentUser.id),
+        inArray(kucoDrafts.status, [
           'collecting_information',
           'ready_for_review',
         ]),
-        gt(ducoDrafts.expiresAt, new Date()),
+        gt(kucoDrafts.expiresAt, new Date()),
       ),
     )
-    .orderBy(desc(ducoDrafts.updatedAt))
+    .orderBy(desc(kucoDrafts.updatedAt))
   response.json({ drafts })
 })
 
-ducoRouter.delete('/drafts/:draftId', async (request, response) => {
+kucoRouter.delete('/drafts/:draftId', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const draftId = parseId(
     request.params.draftId,
-    'El borrador de DUCO no es valido.',
+    'El borrador de KUCO no es valido.',
   )
 
   const result = await db.transaction(async (transaction) => {
@@ -776,22 +776,22 @@ ducoRouter.delete('/drafts/:draftId', async (request, response) => {
     )
     const [draft] = await transaction
       .select()
-      .from(ducoDrafts)
+      .from(kucoDrafts)
       .where(
-        and(eq(ducoDrafts.id, draftId), eq(ducoDrafts.userId, currentUser.id)),
+        and(eq(kucoDrafts.id, draftId), eq(kucoDrafts.userId, currentUser.id)),
       )
       .limit(1)
     if (!draft) {
       throw new ApiError(
         404,
-        'DUCO_DRAFT_NOT_FOUND',
-        'El borrador de DUCO no existe.',
+        'KUCO_DRAFT_NOT_FOUND',
+        'El borrador de KUCO no existe.',
       )
     }
     if (draft.status === 'confirmed') {
       throw new ApiError(
         409,
-        'DUCO_DRAFT_ALREADY_CONFIRMED',
+        'KUCO_DRAFT_ALREADY_CONFIRMED',
         'Este borrador ya fue confirmado.',
       )
     }
@@ -801,18 +801,18 @@ ducoRouter.delete('/drafts/:draftId', async (request, response) => {
         ? draft
         : (
             await transaction
-              .update(ducoDrafts)
+              .update(kucoDrafts)
               .set({ status: 'cancelled', updatedAt: new Date() })
               .where(
                 and(
-                  eq(ducoDrafts.id, draft.id),
-                  eq(ducoDrafts.userId, currentUser.id),
+                  eq(kucoDrafts.id, draft.id),
+                  eq(kucoDrafts.userId, currentUser.id),
                 ),
               )
               .returning()
           )[0]
     if (!cancelledDraft)
-      throw new Error('Database did not return the cancelled DUCO draft')
+      throw new Error('Database did not return the cancelled KUCO draft')
 
     if (draft.sourceMessageId) {
       const [sourceMessage] = await transaction
@@ -846,7 +846,7 @@ ducoRouter.delete('/drafts/:draftId', async (request, response) => {
   response.json({ draft: result })
 })
 
-ducoRouter.post('/tasks', async (request, response) => {
+kucoRouter.post('/tasks', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(createAcademicTaskSchema, request.body)
 
@@ -878,8 +878,8 @@ ducoRouter.post('/tasks', async (request, response) => {
       if (!sourceMessage || sourceMessage.action?.type !== 'create_task') {
         throw new ApiError(
           404,
-          'DUCO_TASK_DRAFT_NOT_FOUND',
-          'El borrador de pendiente de DUCO no existe.',
+          'KUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de KUCO no existe.',
         )
       }
       draftId = sourceMessage.action.draftId ?? undefined
@@ -905,64 +905,64 @@ ducoRouter.post('/tasks', async (request, response) => {
         sql`select pg_advisory_xact_lock(hashtext(${draftId}))`,
       )
       await transaction.execute(
-        sql`select 1 from ${ducoDrafts} where ${ducoDrafts.id} = ${draftId} for update`,
+        sql`select 1 from ${kucoDrafts} where ${kucoDrafts.id} = ${draftId} for update`,
       )
       const [draft] = await transaction
         .select({
-          id: ducoDrafts.id,
-          kind: ducoDrafts.kind,
-          status: ducoDrafts.status,
-          sourceMessageId: ducoDrafts.sourceMessageId,
-          completedResourceId: ducoDrafts.completedResourceId,
-          expiresAt: ducoDrafts.expiresAt,
+          id: kucoDrafts.id,
+          kind: kucoDrafts.kind,
+          status: kucoDrafts.status,
+          sourceMessageId: kucoDrafts.sourceMessageId,
+          completedResourceId: kucoDrafts.completedResourceId,
+          expiresAt: kucoDrafts.expiresAt,
         })
-        .from(ducoDrafts)
+        .from(kucoDrafts)
         .where(
           and(
-            eq(ducoDrafts.id, draftId),
-            eq(ducoDrafts.userId, currentUser.id),
+            eq(kucoDrafts.id, draftId),
+            eq(kucoDrafts.userId, currentUser.id),
           ),
         )
         .limit(1)
       if (!draft) {
         throw new ApiError(
           404,
-          'DUCO_TASK_DRAFT_NOT_FOUND',
-          'El borrador de pendiente de DUCO no existe.',
+          'KUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de KUCO no existe.',
         )
       }
       if (draft.kind !== 'task') {
         throw new ApiError(
           409,
-          'DUCO_TASK_DRAFT_INVALID_KIND',
+          'KUCO_TASK_DRAFT_INVALID_KIND',
           'Este borrador no corresponde a un pendiente académico.',
         )
       }
       if (draft.status === 'confirmed' || draft.completedResourceId) {
         throw new ApiError(
           409,
-          'DUCO_TASK_ALREADY_CREATED',
+          'KUCO_TASK_ALREADY_CREATED',
           'Este pendiente ya fue creado.',
         )
       }
       if (draft.expiresAt <= new Date() || draft.status === 'expired') {
         throw new ApiError(
           409,
-          'DUCO_TASK_DRAFT_EXPIRED',
+          'KUCO_TASK_DRAFT_EXPIRED',
           'El borrador de pendiente expiró.',
         )
       }
       if (draft.status === 'cancelled') {
         throw new ApiError(
           409,
-          'DUCO_TASK_DRAFT_CANCELLED',
+          'KUCO_TASK_DRAFT_CANCELLED',
           'El borrador de pendiente fue descartado.',
         )
       }
       if (draft.status !== 'ready_for_review') {
         throw new ApiError(
           409,
-          'DUCO_TASK_DRAFT_NOT_READY',
+          'KUCO_TASK_DRAFT_NOT_READY',
           'El borrador todavía requiere información.',
         )
       }
@@ -991,14 +991,14 @@ ducoRouter.post('/tasks', async (request, response) => {
       if (!sourceMessage || sourceMessage.action?.type !== 'create_task') {
         throw new ApiError(
           404,
-          'DUCO_TASK_DRAFT_NOT_FOUND',
-          'El borrador de pendiente de DUCO no existe.',
+          'KUCO_TASK_DRAFT_NOT_FOUND',
+          'El borrador de pendiente de KUCO no existe.',
         )
       }
       if (sourceMessage.action.task?.id) {
         throw new ApiError(
           409,
-          'DUCO_TASK_ALREADY_CREATED',
+          'KUCO_TASK_ALREADY_CREATED',
           'Este pendiente ya fue creado.',
         )
       }
@@ -1052,9 +1052,9 @@ ducoRouter.post('/tasks', async (request, response) => {
       })
       .returning()
     if (!createdTask)
-      throw new Error('Database did not return the DUCO academic task')
+      throw new Error('Database did not return the KUCO academic task')
 
-    const finalDraft: DucoTaskDraft = {
+    const finalDraft: KucoTaskDraft = {
       title: input.title,
       description: input.description ?? '',
       courseName: input.courseName ?? null,
@@ -1065,7 +1065,7 @@ ducoRouter.post('/tasks', async (request, response) => {
 
     if (persistentDraft) {
       const [confirmedDraft] = await transaction
-        .update(ducoDrafts)
+        .update(kucoDrafts)
         .set({
           status: 'confirmed',
           payload: finalDraft,
@@ -1074,14 +1074,14 @@ ducoRouter.post('/tasks', async (request, response) => {
         })
         .where(
           and(
-            eq(ducoDrafts.id, persistentDraft.id),
-            eq(ducoDrafts.userId, currentUser.id),
-            eq(ducoDrafts.status, 'ready_for_review'),
+            eq(kucoDrafts.id, persistentDraft.id),
+            eq(kucoDrafts.userId, currentUser.id),
+            eq(kucoDrafts.status, 'ready_for_review'),
           ),
         )
-        .returning({ id: ducoDrafts.id })
+        .returning({ id: kucoDrafts.id })
       if (!confirmedDraft)
-        throw new Error('Database did not confirm the DUCO task draft')
+        throw new Error('Database did not confirm the KUCO task draft')
 
       action =
         sourceMessage?.action?.type === 'create_task'
@@ -1102,7 +1102,7 @@ ducoRouter.post('/tasks', async (request, response) => {
             }
     } else {
       if (!sourceMessage || sourceMessage.action?.type !== 'create_task')
-        throw new Error('The legacy DUCO task message was not loaded')
+        throw new Error('The legacy KUCO task message was not loaded')
       action = {
         ...sourceMessage.action,
         task: { id: createdTask.id },
@@ -1127,7 +1127,7 @@ ducoRouter.post('/tasks', async (request, response) => {
   response.status(201).json(result)
 })
 
-ducoRouter.get('/requests', async (_request, response) => {
+kucoRouter.get('/requests', async (_request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const requests = await db
     .select()
@@ -1137,7 +1137,7 @@ ducoRouter.get('/requests', async (_request, response) => {
   response.json({ requests: await addSupportRequestTimelines(requests) })
 })
 
-ducoRouter.post('/requests', async (request, response) => {
+kucoRouter.post('/requests', async (request, response) => {
   const currentUser = getAuthenticatedUser(response)
   const input = parseBody(createSupportRequestSchema, request.body)
 
@@ -1164,8 +1164,8 @@ ducoRouter.post('/requests', async (request, response) => {
       if (!sourceMessage || sourceMessage.action?.type !== 'manage_request') {
         throw new ApiError(
           404,
-          'DUCO_REQUEST_DRAFT_NOT_FOUND',
-          'El borrador de solicitud de DUCO no existe.',
+          'KUCO_REQUEST_DRAFT_NOT_FOUND',
+          'El borrador de solicitud de KUCO no existe.',
         )
       }
       const [existingRequest] = await transaction
@@ -1176,7 +1176,7 @@ ducoRouter.post('/requests', async (request, response) => {
       if (existingRequest) {
         throw new ApiError(
           409,
-          'DUCO_REQUEST_ALREADY_SENT',
+          'KUCO_REQUEST_ALREADY_SENT',
           'Esta solicitud ya fue enviada.',
         )
       }
@@ -1194,7 +1194,7 @@ ducoRouter.post('/requests', async (request, response) => {
         })
         .returning()
       if (!insertedRequest)
-        throw new Error('Database did not return the DUCO support request')
+        throw new Error('Database did not return the KUCO support request')
 
       await transaction.insert(supportRequestEvents).values({
         requestId: insertedRequest.id,
@@ -1208,7 +1208,7 @@ ducoRouter.post('/requests', async (request, response) => {
     if (isUniqueViolation(error)) {
       throw new ApiError(
         409,
-        'DUCO_REQUEST_ALREADY_SENT',
+        'KUCO_REQUEST_ALREADY_SENT',
         'Esta solicitud ya fue enviada.',
       )
     }
@@ -1227,7 +1227,7 @@ ducoRouter.post('/requests', async (request, response) => {
         type: 'support_request',
         title: 'Nueva solicitud estudiantil',
         body: `${currentUser.displayName}: ${createdRequest.subject}`,
-        href: `duco-request:${createdRequest.id}`,
+        href: `kuco-request:${createdRequest.id}`,
         resourceId: createdRequest.id,
       }),
     ),
@@ -1238,7 +1238,7 @@ ducoRouter.post('/requests', async (request, response) => {
   response.status(201).json({ request: requestWithTimeline })
 })
 
-ducoRouter.get(
+kucoRouter.get(
   '/requests/all',
   requireModerator,
   async (_request, response) => {
@@ -1282,7 +1282,7 @@ ducoRouter.get(
   },
 )
 
-ducoRouter.patch(
+kucoRouter.patch(
   '/requests/:requestId',
   requireModerator,
   async (request, response) => {
@@ -1301,7 +1301,7 @@ ducoRouter.patch(
       if (!currentRequest)
         throw new ApiError(
           404,
-          'DUCO_REQUEST_NOT_FOUND',
+          'KUCO_REQUEST_NOT_FOUND',
           'La solicitud no existe.',
         )
 
@@ -1316,7 +1316,7 @@ ducoRouter.patch(
       ) {
         throw new ApiError(
           409,
-          'DUCO_REQUEST_INVALID_TRANSITION',
+          'KUCO_REQUEST_INVALID_TRANSITION',
           `No se puede cambiar una solicitud ${currentRequest.status} a ${targetStatus}.`,
         )
       }
@@ -1327,7 +1327,7 @@ ducoRouter.patch(
       ) {
         throw new ApiError(
           400,
-          'DUCO_REQUEST_RESPONSE_REQUIRED',
+          'KUCO_REQUEST_RESPONSE_REQUIRED',
           'Escribe una respuesta breve para cerrar la solicitud.',
           { fields: { note: ['La respuesta es obligatoria para cerrar.'] } },
         )
@@ -1335,7 +1335,7 @@ ducoRouter.patch(
       if (!changesStatus && !input.note) {
         throw new ApiError(
           400,
-          'DUCO_REQUEST_NO_CHANGES',
+          'KUCO_REQUEST_NO_CHANGES',
           'La solicitud ya tiene ese estado. Agrega una respuesta para actualizarla.',
         )
       }
@@ -1363,7 +1363,7 @@ ducoRouter.patch(
       if (!updated) {
         throw new ApiError(
           409,
-          'DUCO_REQUEST_CHANGED',
+          'KUCO_REQUEST_CHANGED',
           'La solicitud cambió mientras la revisabas. Vuelve a cargarla.',
         )
       }
@@ -1397,7 +1397,7 @@ ducoRouter.patch(
       body: input.status
         ? `Tu solicitud ahora está ${translatedStatus}.${noteSummary}`
         : `El equipo respondió tu solicitud.${noteSummary}`,
-      href: `duco-request:${updatedRequest.id}`,
+      href: `kuco-request:${updatedRequest.id}`,
       resourceId: updatedRequest.id,
     })
     const [requestWithTimeline] = await addSupportRequestTimelines([

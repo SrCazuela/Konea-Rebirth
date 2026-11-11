@@ -6,6 +6,8 @@ dist/
 coverage/
 apps/focusbuddy/release/
 apps/focusbuddy/build/focusbuddy.config.json
+apps/focusbuddy/build/*/focusbuddy.config.json
+apps/focusbuddy/build/*/electron-builder.config.json
 *.tsbuildinfo
 
 # Local configuration and secrets

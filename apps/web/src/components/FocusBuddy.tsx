@@ -20,6 +20,7 @@ import {
   type AcademicCourse,
   type AcademicTask,
 } from '../api/academic'
+import { ApiClientError } from '../api/base'
 import { FocusAvatar, type AvatarMood } from './FocusAvatar'
 import { FocusBuddyDesktopDownload } from './FocusBuddyDesktopDownload'
 import './FocusBuddy.css'
@@ -169,6 +170,8 @@ export function FocusBuddy() {
   const loadRequestRef = useRef(0)
   const mutationInFlightRef = useRef(false)
   const heartbeatResponseVersionRef = useRef(0)
+  const loadInFlightRef = useRef<number | null>(null)
+  const heartbeatInFlightRef = useRef(false)
 
   const timeZone = useMemo(
     () =>
@@ -177,23 +180,34 @@ export function FocusBuddy() {
   )
 
   const load = useCallback(
-    async (allowDuringMutation = false) => {
+    async (allowDuringMutation = false, silent = false) => {
       if (mutationInFlightRef.current && !allowDuringMutation) return
+      if (
+        !allowDuringMutation &&
+        (loadInFlightRef.current !== null || heartbeatInFlightRef.current)
+      )
+        return
       const requestId = ++loadRequestRef.current
-      setLoading(true)
-      setLoadError('')
-      setOverviewLoadState('loading')
+      loadInFlightRef.current = requestId
+      if (!silent) {
+        setLoading(true)
+        setLoadError('')
+        setOverviewLoadState('loading')
+      }
       const [studyResult, academicResult] = await Promise.allSettled([
         getStudyOverview(timeZone),
         getAcademicDashboard(),
       ])
+      if (loadInFlightRef.current === requestId) loadInFlightRef.current = null
       if (!mountedRef.current || requestId !== loadRequestRef.current) return
 
       const failures: string[] = []
       if (studyResult.status === 'fulfilled') {
         setOverview(studyResult.value)
         setSessionSnapshotAt(Date.now())
+        setNow(Date.now())
         setOverviewLoadState('ready')
+        setActionError('')
       } else {
         setOverviewLoadState('error')
         failures.push(
@@ -209,12 +223,15 @@ export function FocusBuddy() {
           activeCourses.map((course) => course.id),
         )
         setCourses(activeCourses)
-        setTasks(
-          academicResult.value.tasks.filter(
-            (task) =>
-              task.status !== 'completed' &&
-              (!task.courseId || activeCourseIds.has(task.courseId)),
-          ),
+        const pendingTasks = academicResult.value.tasks.filter(
+          (task) =>
+            task.status !== 'completed' &&
+            (!task.courseId || activeCourseIds.has(task.courseId)),
+        )
+        setTasks(pendingTasks)
+        setCourseId((current) => (activeCourseIds.has(current) ? current : ''))
+        setTaskId((current) =>
+          pendingTasks.some((task) => task.id === current) ? current : '',
         )
       } else {
         failures.push(
@@ -224,6 +241,7 @@ export function FocusBuddy() {
 
       setLoadError(failures.join(' '))
       setLoading(false)
+      return studyResult.status === 'fulfilled'
     },
     [timeZone],
   )
@@ -232,14 +250,19 @@ export function FocusBuddy() {
     mountedRef.current = true
     const initialLoad = window.setTimeout(() => void load(), 0)
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void load()
+      if (document.visibilityState === 'visible') void load(false, true)
     }
+    const syncTimer = window.setInterval(handleVisibility, 10_000)
     document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleVisibility)
     return () => {
       window.clearTimeout(initialLoad)
+      window.clearInterval(syncTimer)
       mountedRef.current = false
       loadRequestRef.current += 1
+      loadInFlightRef.current = null
       document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleVisibility)
     }
   }, [load])
 
@@ -261,9 +284,29 @@ export function FocusBuddy() {
     if (activeSession?.status !== 'active') return
     const sessionId = activeSession.id
     let stopped = false
+    let queuedHeartbeat = 0
 
     const heartbeat = async () => {
-      if (mutationInFlightRef.current) return
+      if (
+        stopped ||
+        mutationInFlightRef.current ||
+        heartbeatInFlightRef.current
+      )
+        return
+      // A slow recurring read must not starve the session's liveness signal.
+      // Queue one retry rather than overlapping requests or dropping every tick.
+      if (loadInFlightRef.current !== null) {
+        if (!queuedHeartbeat) {
+          queuedHeartbeat = window.setTimeout(() => {
+            queuedHeartbeat = 0
+            void heartbeat()
+          }, 1_000)
+        }
+        return
+      }
+      window.clearTimeout(queuedHeartbeat)
+      queuedHeartbeat = 0
+      heartbeatInFlightRef.current = true
       const responseVersion = heartbeatResponseVersionRef.current
       try {
         const updated = await updateStudySession(sessionId, 'heartbeat')
@@ -297,18 +340,29 @@ export function FocusBuddy() {
           mountedRef.current &&
           responseVersion === heartbeatResponseVersionRef.current
         ) {
-          setActionError(readableError(heartbeatError))
-          setOverviewLoadState('error')
+          if (
+            heartbeatError instanceof ApiClientError &&
+            heartbeatError.status === 409
+          ) {
+            if (await load(true, true))
+              setNotice('La sesión se actualizó desde otro dispositivo.')
+          } else {
+            setActionError(readableError(heartbeatError))
+            setOverviewLoadState('error')
+          }
         }
+      } finally {
+        heartbeatInFlightRef.current = false
       }
     }
 
     const timer = window.setInterval(() => void heartbeat(), 30_000)
     return () => {
       stopped = true
+      window.clearTimeout(queuedHeartbeat)
       window.clearInterval(timer)
     }
-  }, [activeSession?.id, activeSession?.status])
+  }, [activeSession?.id, activeSession?.status, load])
 
   const elapsedSeconds = useMemo(() => {
     if (!activeSession) return 0
@@ -444,7 +498,14 @@ export function FocusBuddy() {
       setOverviewLoadState('ready')
       setNotice('Sesión iniciada. Tu avance quedará sincronizado en Konea.')
     } catch (startError) {
-      if (mountedRef.current) setActionError(readableError(startError))
+      if (mountedRef.current) {
+        if (startError instanceof ApiClientError && startError.status === 409) {
+          if (await load(true, true))
+            setNotice('Recuperamos la sesión iniciada desde otro dispositivo.')
+        } else {
+          setActionError(readableError(startError))
+        }
+      }
     } finally {
       mutationInFlightRef.current = false
       if (mountedRef.current) setBusyAction(null)
@@ -510,7 +571,19 @@ export function FocusBuddy() {
         setNotice(action === 'pause' ? 'Sesión pausada.' : 'Sesión reanudada.')
       }
     } catch (actionError) {
-      if (mountedRef.current) setActionError(readableError(actionError))
+      if (mountedRef.current) {
+        if (
+          actionError instanceof ApiClientError &&
+          actionError.status === 409
+        ) {
+          if (await load(true, true))
+            setNotice(
+              'La sesión cambió en otro dispositivo. Ya mostramos su estado actual.',
+            )
+        } else {
+          setActionError(readableError(actionError))
+        }
+      }
     } finally {
       mutationInFlightRef.current = false
       if (mountedRef.current) setBusyAction(null)

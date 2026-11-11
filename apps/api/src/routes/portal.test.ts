@@ -134,9 +134,8 @@ describe.sequential('authenticated portal API', () => {
     })
     expect(emptyProfileUpdate.status).toBe(200)
 
-    const updatedUsername = `updated_${firstUserId.slice(0, 8)}`
     const response = await firstAgent.patch('/api/v1/profile').send({
-      username: updatedUsername,
+      username: firstAccount.username,
       displayName: 'Estudiante Uno',
       bio: 'Me interesa colaborar en proyectos tecnológicos.',
       institution: 'Duoc UC',
@@ -151,7 +150,7 @@ describe.sequential('authenticated portal API', () => {
     expect(response.status).toBe(200)
     expect(response.body.user).toMatchObject({
       id: firstUserId,
-      username: updatedUsername,
+      username: firstAccount.username,
       displayName: 'Estudiante Uno',
       institution: 'Duoc UC',
       campus: 'Sede San Joaquín',
@@ -161,10 +160,10 @@ describe.sequential('authenticated portal API', () => {
     })
 
     const conflict = await secondAgent.patch('/api/v1/profile').send({
-      username: updatedUsername,
+      username: firstAccount.username,
     })
     expect(conflict.status).toBe(409)
-    expect(conflict.body.error.code).toBe('USERNAME_ALREADY_EXISTS')
+    expect(conflict.body.error.code).toBe('ACCOUNT_SETTINGS_REQUIRED')
   })
 
   it('creates a post and supports likes, comments and ownership checks', async () => {

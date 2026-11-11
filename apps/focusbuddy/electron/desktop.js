@@ -91,7 +91,13 @@ const state = {
   justCompletedUntil: 0,
   pendingStart: null,
   actionBusy: false,
+  taskBusy: false,
   heartbeatBusy: false,
+  heartbeatRetryTimer: null,
+  syncInFlight: 0,
+  lastSyncAt: 0,
+  accountBusy: false,
+  accountFormDirty: false,
   preferenceBusy: false,
   loadVersion: 0,
   sessionMutationVersion: 0,
@@ -123,6 +129,9 @@ const elements = {
   customBreak: byId('custom-break'),
   courseSelect: byId('course-select'),
   taskSelect: byId('task-select'),
+  taskAction: byId('task-action'),
+  taskActionLabel: byId('task-action-label'),
+  taskCompleteButton: byId('task-complete-button'),
   previewFocus: byId('preview-focus'),
   previewBreak: byId('preview-break'),
   startButton: byId('start-button'),
@@ -181,6 +190,19 @@ const elements = {
   accountEmail: byId('account-email'),
   accountRole: byId('account-role'),
   accountSync: byId('account-sync'),
+  accountForm: byId('account-form'),
+  accountDisplayName: byId('account-display-name'),
+  accountUsername: byId('account-username'),
+  accountEmailInput: byId('account-email-input'),
+  accountCurrentPassword: byId('account-current-password'),
+  accountSave: byId('account-save'),
+  accountFeedback: byId('account-feedback'),
+  passwordForm: byId('password-form'),
+  passwordCurrent: byId('password-current'),
+  passwordNew: byId('password-new'),
+  passwordConfirmation: byId('password-confirmation'),
+  passwordSave: byId('password-save'),
+  passwordFeedback: byId('password-feedback'),
   accountCharacter: byId('account-character'),
   accountChibi: byId('account-chibi'),
   avatarPreview: byId('avatar-preview'),
@@ -494,6 +516,7 @@ function markOffline(message) {
 }
 
 function clearSensitiveSession(options = {}) {
+  clearHeartbeatRetry()
   state.user = null
   state.overview = null
   state.overviewReady = false
@@ -505,6 +528,17 @@ function clearSensitiveSession(options = {}) {
   state.justCompletedUntil = 0
   state.loadVersion += 1
   state.sessionMutationVersion += 1
+  state.accountFormDirty = false
+  for (const input of [
+    elements.accountCurrentPassword,
+    elements.passwordCurrent,
+    elements.passwordNew,
+    elements.passwordConfirmation,
+  ]) {
+    if (input) input.value = ''
+  }
+  text(elements.accountFeedback, '')
+  text(elements.passwordFeedback, '')
   renderAccount()
   renderAcademicOptions()
   renderSession()
@@ -598,6 +632,20 @@ function renderAccount() {
   text(elements.accountHandle, username)
   text(elements.accountEmail, user.email || 'No disponible')
   text(elements.accountRole, roleLabel(user.role))
+  if (!state.accountFormDirty) {
+    if (elements.accountDisplayName)
+      elements.accountDisplayName.value = user.displayName || ''
+    if (elements.accountUsername)
+      elements.accountUsername.value = user.username || ''
+    if (elements.accountEmailInput)
+      elements.accountEmailInput.value = user.email || ''
+  }
+  for (const form of [elements.accountForm, elements.passwordForm]) {
+    if (!form) continue
+    for (const input of form.querySelectorAll('input, button'))
+      input.disabled = state.accountBusy || state.actionBusy
+  }
+  elements.logoutButton.disabled = state.accountBusy || state.actionBusy
 }
 
 function roleLabel(role) {
@@ -694,6 +742,7 @@ function renderMethodPreview() {
 
 function renderSession() {
   const session = currentSession()
+  renderTaskAction()
   elements.sessionSetup.hidden = Boolean(session)
   elements.sessionActive.hidden = !session
 
@@ -703,7 +752,8 @@ function renderSession() {
       Boolean(state.user) &&
       state.overviewReady &&
       state.connectionState !== 'offline' &&
-      !state.actionBusy
+      !state.actionBusy &&
+      !state.accountBusy
     elements.startButton.disabled = !canStart
     text(
       elements.startButtonLabel,
@@ -773,7 +823,7 @@ function renderSession() {
   elements.resumeButton.hidden = !paused
 
   const disableControls =
-    state.actionBusy || state.connectionState === 'offline'
+    state.actionBusy || state.accountBusy || state.connectionState === 'offline'
   for (const control of [
     elements.pauseButton,
     elements.resumeButton,
@@ -1236,53 +1286,85 @@ async function loadConnectionInfo() {
 }
 
 async function loadAuthenticatedData(options = {}) {
-  if (!state.user) return
+  if (!state.user || (state.syncInFlight > 0 && !options.force)) return
   const requestVersion = ++state.loadVersion
+  const mutationVersion = state.sessionMutationVersion
+  const userId = state.user.id
+  state.syncInFlight += 1
   elements.refreshButton.disabled = true
   elements.progressRefresh.disabled = true
   if (!options.silent) setConnection('checking', 'Sincronizando progreso…')
-
-  const timeZone =
-    Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Santiago'
-  const [overviewResult, academicResult] = await Promise.allSettled([
-    callApi('getOverview', timeZone),
-    callApi('getAcademic'),
-  ])
-  if (requestVersion !== state.loadVersion) return
-
-  if (overviewResult.status === 'fulfilled') {
-    const overview = unwrap(overviewResult.value, 'overview')
-    if (overview && typeof overview === 'object') {
-      state.overview = overview
-      state.overviewReady = true
-      state.sessionSnapshotAt = Date.now()
-      state.now = Date.now()
-      if (currentSession()) state.pendingStart = null
-      setConnection('online', 'Progreso sincronizado')
-    } else {
-      handleApiFailure(
-        new Error('Konea devolvió un resumen vacío.'),
-        'overview',
-      )
+  try {
+    const timeZone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Santiago'
+    const [overviewResult, academicResult, accountResult] =
+      await Promise.allSettled([
+        callApi('getOverview', timeZone),
+        callApi('getAcademic'),
+        options.checkAccount
+          ? callApi('getCurrentUser')
+          : Promise.resolve({ user: state.user }),
+      ])
+    if (
+      requestVersion !== state.loadVersion ||
+      mutationVersion !== state.sessionMutationVersion ||
+      state.user?.id !== userId
+    )
+      return
+    const authFailure = [overviewResult, academicResult, accountResult].find(
+      (result) => result.status === 'rejected' && isUnauthorized(result.reason),
+    )
+    if (authFailure) {
+      expireSession()
+      return
     }
-  } else {
-    handleApiFailure(overviewResult.reason, 'overview')
-  }
+    if (accountResult.status === 'fulfilled') {
+      const user = unwrap(accountResult.value, 'user')
+      if (!user || typeof user !== 'object' || user.id !== userId) {
+        expireSession()
+        return
+      }
+      state.user = user
+    }
 
-  if (academicResult.status === 'fulfilled') {
-    const academic =
-      unwrap(academicResult.value, 'academic') || academicResult.value || {}
-    state.courses = asArray(academic.courses)
-    state.tasks = asArray(academic.tasks)
-  } else if (isUnauthorized(academicResult.reason)) {
-    expireSession()
-  } else if (state.connectionState !== 'offline') {
-    handleApiFailure(academicResult.reason, 'academic')
-  }
+    if (overviewResult.status === 'fulfilled') {
+      const overview = unwrap(overviewResult.value, 'overview')
+      if (overview && typeof overview === 'object') {
+        state.overview = overview
+        state.overviewReady = true
+        state.sessionSnapshotAt = Date.now()
+        state.now = Date.now()
+        if (currentSession()) state.pendingStart = null
+        setConnection('online', 'Progreso sincronizado')
+      } else {
+        handleApiFailure(
+          new Error('Konea devolvió un resumen vacío.'),
+          'overview',
+        )
+      }
+    } else {
+      handleApiFailure(overviewResult.reason, 'overview')
+    }
 
-  elements.refreshButton.disabled = false
-  elements.progressRefresh.disabled = false
-  renderAll()
+    if (academicResult.status === 'fulfilled') {
+      const academic =
+        unwrap(academicResult.value, 'academic') || academicResult.value || {}
+      state.courses = asArray(academic.courses)
+      state.tasks = asArray(academic.tasks)
+    } else if (state.connectionState !== 'offline') {
+      handleApiFailure(academicResult.reason, 'academic')
+    }
+    if (
+      accountResult.status === 'rejected' &&
+      state.connectionState !== 'offline'
+    )
+      handleApiFailure(accountResult.reason, 'account')
+    renderAll()
+  } finally {
+    state.syncInFlight -= 1
+    elements.refreshButton.disabled = false
+    elements.progressRefresh.disabled = false
+  }
 }
 
 async function refreshEverything(options = {}) {
@@ -1290,9 +1372,16 @@ async function refreshEverything(options = {}) {
     selectTab('account', { allowUnauthenticated: true })
     return
   }
+  if (
+    state.actionBusy ||
+    state.accountBusy ||
+    state.heartbeatBusy ||
+    state.syncInFlight > 0
+  )
+    return
+  state.lastSyncAt = Date.now()
   try {
-    await callApi('health')
-    await loadAuthenticatedData(options)
+    await loadAuthenticatedData({ ...options, checkAccount: true })
   } catch (error) {
     handleApiFailure(error, 'health')
   } finally {
@@ -1300,6 +1389,16 @@ async function refreshEverything(options = {}) {
     elements.progressRefresh.disabled = false
     renderAll()
   }
+}
+
+function refreshIfDue() {
+  if (!state.user) return
+  const visible = document.visibilityState === 'visible'
+  const companionNeedsUpdate =
+    state.preferences.companionEnabled &&
+    Date.now() - state.lastSyncAt >= 30_000
+  if (visible || companionNeedsUpdate)
+    return refreshEverything({ silent: true })
 }
 
 function startFingerprint(input) {
@@ -1347,7 +1446,7 @@ function validateStartInput() {
 
 async function startSession(event) {
   event.preventDefault()
-  if (state.actionBusy || currentSession()) return
+  if (state.actionBusy || state.accountBusy || currentSession()) return
   if (!state.user || !state.overviewReady) {
     showFeedback(
       'Primero debemos comprobar tu sesión actual con Konea.',
@@ -1401,7 +1500,7 @@ async function startSession(event) {
     if (isUnauthorized(error)) {
       expireSession()
     } else if (errorStatus(error) === 409) {
-      await loadAuthenticatedData({ silent: true })
+      await loadAuthenticatedData({ silent: true, force: true })
       if (currentSession()) {
         state.pendingStart = null
         showFeedback('Recuperamos la sesión que ya estaba activa.', 'success', {
@@ -1430,7 +1529,7 @@ async function startSession(event) {
 
 async function transitionSession(action) {
   const session = currentSession()
-  if (!session || state.actionBusy) return
+  if (!session || state.actionBusy || state.accountBusy) return
   if (
     action === 'cancel' &&
     !window.confirm(
@@ -1464,7 +1563,7 @@ async function transitionSession(action) {
       )
       renderAll()
       sendDesktopSnapshot(action === 'complete' ? 'completed' : 'idle', true)
-      void loadAuthenticatedData({ silent: true })
+      void loadAuthenticatedData({ silent: true, force: true })
     } else {
       showFeedback(
         action === 'pause' ? 'Sesión pausada.' : 'Sesión reanudada.',
@@ -1476,7 +1575,19 @@ async function transitionSession(action) {
     }
   } catch (error) {
     if (isUnauthorized(error)) expireSession()
-    else if (isConnectionError(error)) markOffline(readableError(error))
+    else if (errorStatus(error) === 409) {
+      await loadAuthenticatedData({
+        silent: true,
+        checkAccount: true,
+        force: true,
+      })
+      if (state.user && state.overviewReady)
+        showFeedback(
+          'El bloque cambió desde Konea. Ya recuperamos su estado actual.',
+          'info',
+          { temporary: true },
+        )
+    } else if (isConnectionError(error)) markOffline(readableError(error))
     else showFeedback(readableError(error), 'error')
   } finally {
     state.actionBusy = false
@@ -1484,15 +1595,39 @@ async function transitionSession(action) {
   }
 }
 
+function clearHeartbeatRetry() {
+  if (state.heartbeatRetryTimer !== null) {
+    window.clearTimeout(state.heartbeatRetryTimer)
+    state.heartbeatRetryTimer = null
+  }
+}
+
+function queueHeartbeatRetry() {
+  if (state.heartbeatRetryTimer !== null) return
+  state.heartbeatRetryTimer = window.setTimeout(() => {
+    state.heartbeatRetryTimer = null
+    void heartbeat()
+  }, 1000)
+}
+
 async function heartbeat() {
   const session = currentSession()
   if (
+    !state.user ||
     !session ||
     session.status !== 'active' ||
-    state.actionBusy ||
     state.heartbeatBusy
-  )
+  ) {
+    clearHeartbeatRetry()
     return
+  }
+  if (state.actionBusy || state.accountBusy || state.syncInFlight > 0) {
+    // A slow summary must defer the heartbeat, not discard every 30 s tick.
+    // Recheck the canonical session when the single queued retry fires.
+    queueHeartbeatRetry()
+    return
+  }
+  clearHeartbeatRetry()
   const version = state.sessionMutationVersion
   const sessionId = session.id
   state.heartbeatBusy = true
@@ -1517,8 +1652,15 @@ async function heartbeat() {
   } catch (error) {
     if (version !== state.sessionMutationVersion) return
     if (isUnauthorized(error)) expireSession()
-    else
+    else if (errorStatus(error) === 409) {
+      await loadAuthenticatedData({
+        silent: true,
+        checkAccount: true,
+        force: true,
+      })
+    } else if (isConnectionError(error))
       markOffline(`No pudimos sincronizar el bloque: ${readableError(error)}`)
+    else showFeedback(readableError(error), 'warning')
   } finally {
     state.heartbeatBusy = false
   }
@@ -1567,7 +1709,7 @@ async function login(event) {
 }
 
 async function logout() {
-  if (state.actionBusy) return
+  if (state.actionBusy || state.accountBusy) return
   state.actionBusy = true
   clearSensitiveSession({ selectAccount: true })
   showFeedback('Cerrando tu sesión de Konea…', 'info')
@@ -1590,6 +1732,150 @@ async function logout() {
     }
   } finally {
     state.actionBusy = false
+  }
+}
+
+function accountErrorMessage(error) {
+  const detail =
+    error?.fields && typeof error.fields === 'object'
+      ? Object.values(error.fields)
+          .flat()
+          .find((value) => typeof value === 'string')
+      : null
+  return detail || readableError(error)
+}
+
+async function saveAccount(event) {
+  event.preventDefault()
+  if (!state.user || state.accountBusy || state.actionBusy) return
+  state.accountBusy = true
+  state.loadVersion += 1
+  state.sessionMutationVersion += 1
+  renderAccount()
+  text(elements.accountFeedback, 'Guardando datos en Konea…')
+  elements.accountFeedback.dataset.tone = 'info'
+  try {
+    const result = await callApi('updateAccount', {
+      displayName: elements.accountDisplayName.value,
+      username: elements.accountUsername.value,
+      email: elements.accountEmailInput.value,
+      currentPassword: elements.accountCurrentPassword.value,
+    })
+    const user = unwrap(result, 'user')
+    if (!user || typeof user !== 'object' || user.id !== state.user?.id)
+      throw new Error('No pudimos comprobar la cuenta actualizada.')
+    state.user = user
+    state.accountFormDirty = false
+    text(
+      elements.accountFeedback,
+      'Datos guardados en Konea. Se cerraron las otras sesiones; esta permanece activa.',
+    )
+    elements.accountFeedback.dataset.tone = 'success'
+  } catch (error) {
+    if (isUnauthorized(error)) expireSession()
+    text(elements.accountFeedback, accountErrorMessage(error))
+    elements.accountFeedback.dataset.tone = 'error'
+  } finally {
+    elements.accountCurrentPassword.value = ''
+    state.accountBusy = false
+    renderAccount()
+  }
+}
+
+async function savePassword(event) {
+  event.preventDefault()
+  if (!state.user || state.accountBusy || state.actionBusy) return
+  elements.passwordFeedback.dataset.tone = 'error'
+  if (elements.passwordNew.value !== elements.passwordConfirmation.value) {
+    text(elements.passwordFeedback, 'Las contraseñas nuevas no coinciden.')
+    elements.passwordConfirmation.focus()
+    return
+  }
+  state.accountBusy = true
+  state.loadVersion += 1
+  state.sessionMutationVersion += 1
+  renderAccount()
+  text(elements.passwordFeedback, 'Actualizando contraseña…')
+  elements.passwordFeedback.dataset.tone = 'info'
+  try {
+    await callApi('changePassword', {
+      currentPassword: elements.passwordCurrent.value,
+      newPassword: elements.passwordNew.value,
+    })
+    elements.passwordNew.value = ''
+    elements.passwordConfirmation.value = ''
+    text(
+      elements.passwordFeedback,
+      'Contraseña actualizada. Se cerraron las otras sesiones; esta permanece activa.',
+    )
+    elements.passwordFeedback.dataset.tone = 'success'
+  } catch (error) {
+    if (isUnauthorized(error)) expireSession()
+    text(elements.passwordFeedback, accountErrorMessage(error))
+    elements.passwordFeedback.dataset.tone = 'error'
+  } finally {
+    elements.passwordCurrent.value = ''
+    state.accountBusy = false
+    renderAccount()
+  }
+}
+
+function taskForCompletion() {
+  const session = currentSession()
+  const taskId = session?.task?.id || session?.taskId || state.taskId
+  return (
+    state.tasks.find(
+      (task) => task.id === taskId && task.status !== 'completed',
+    ) || null
+  )
+}
+
+function renderTaskAction() {
+  const task = taskForCompletion()
+  elements.taskAction.hidden = !state.user || !task
+  text(elements.taskActionLabel, task ? `Pendiente: ${task.title}` : '')
+  elements.taskCompleteButton.disabled =
+    state.actionBusy || state.accountBusy || state.connectionState === 'offline'
+  text(
+    elements.taskCompleteButton,
+    state.taskBusy ? 'Guardando…' : 'Marcar como completada',
+  )
+}
+
+async function completeSelectedTask() {
+  const task = taskForCompletion()
+  if (!state.user || !task || state.actionBusy || state.accountBusy) return
+  if (
+    !window.confirm(
+      `¿Marcar como completada la tarea «${task.title}»? Se actualizará también en Konea.`,
+    )
+  )
+    return
+  state.actionBusy = true
+  state.taskBusy = true
+  state.sessionMutationVersion += 1
+  state.loadVersion += 1
+  renderAll()
+  try {
+    await callApi('updateTaskStatus', task.id, 'completed')
+    await loadAuthenticatedData({
+      silent: true,
+      force: true,
+      checkAccount: true,
+    })
+    if (state.user)
+      showFeedback(
+        'Pendiente completado en Konea. Finalizar una sesión de estudio no completa tareas automáticamente.',
+        'success',
+        { temporary: true },
+      )
+  } catch (error) {
+    if (isUnauthorized(error)) expireSession()
+    else showFeedback(readableError(error), 'error')
+  } finally {
+    state.actionBusy = false
+    state.taskBusy = false
+    renderAll()
   }
 }
 
@@ -1694,6 +1980,10 @@ function installEvents() {
   })
 
   elements.sessionForm.addEventListener('submit', startSession)
+  elements.taskCompleteButton.addEventListener(
+    'click',
+    () => void completeSelectedTask(),
+  )
   elements.pauseButton.addEventListener(
     'click',
     () => void transitionSession('pause'),
@@ -1711,6 +2001,17 @@ function installEvents() {
     () => void transitionSession('cancel'),
   )
   elements.loginForm.addEventListener('submit', login)
+  elements.accountForm.addEventListener(
+    'submit',
+    (event) => void saveAccount(event),
+  )
+  elements.passwordForm.addEventListener(
+    'submit',
+    (event) => void savePassword(event),
+  )
+  elements.accountForm.addEventListener('input', () => {
+    state.accountFormDirty = true
+  })
   elements.logoutButton.addEventListener('click', () => void logout())
   elements.refreshButton.addEventListener(
     'click',
@@ -1730,7 +2031,11 @@ function installEvents() {
       void refreshEverything({ silent: true })
     syncAvatarAnimations()
   })
+  window.addEventListener('focus', () => {
+    if (state.user) void refreshEverything({ silent: true })
+  })
   window.addEventListener('pagehide', () => {
+    clearHeartbeatRetry()
     disposeAvatarAnimations()
     sendDesktopSnapshot('idle', true)
     if (state.unsubscribePreferences) state.unsubscribePreferences()
@@ -1808,5 +2113,9 @@ window.setInterval(() => {
 window.setInterval(() => {
   void heartbeat()
 }, 30000)
+
+window.setInterval(() => {
+  void refreshIfDue()
+}, 10000)
 
 void initialize()
