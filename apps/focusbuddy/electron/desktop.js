@@ -48,6 +48,7 @@ const DEFAULT_PREFERENCES = {
   closeToTray: true,
   launchAtLogin: false,
   notificationsEnabled: false,
+  motionPreference: 'system',
   reducedMotion: false,
   companionPosition: null,
 }
@@ -173,6 +174,7 @@ const elements = {
   historyList: byId('history-list'),
   progressUnavailable: byId('progress-unavailable'),
   settingsStatus: byId('settings-status'),
+  motionPreferenceHint: byId('motion-preference-hint'),
   connectionServer: byId('connection-server'),
   connectionEnvironment: byId('connection-environment'),
   connectionVersion: byId('connection-version'),
@@ -923,7 +925,10 @@ function applyCharacterFrame(
 function renderAvatar() {
   ensureAvatarAnimations()
   const mood = avatarMood()
-  const reduced = state.preferences.reducedMotion || avatarMotionQuery.matches
+  const reduced = window.FocusBuddyMotion.resolveMotionPolicy(
+    state.preferences,
+    avatarMotionQuery.matches,
+  )
   const character = selectedCharacter()
   const scene = currentAvatarScene()
   const visible = document.visibilityState !== 'hidden'
@@ -1184,6 +1189,9 @@ function normalizePreferences(value) {
   ]) {
     if (typeof source[key] === 'boolean') normalized[key] = source[key]
   }
+  normalized.motionPreference =
+    window.FocusBuddyMotion.resolveMotionPreference(source)
+  normalized.reducedMotion = normalized.motionPreference === 'reduced'
   if (['small', 'medium', 'large'].includes(source.companionScale)) {
     normalized.companionScale = source.companionScale
   }
@@ -1208,9 +1216,21 @@ function renderPreferences() {
     else control.value = String(state.preferences[key])
     control.disabled = state.preferenceBusy
   }
-  document.body.classList.toggle(
-    'reduce-motion',
-    state.preferences.reducedMotion,
+  document.body.dataset.motionPreference = state.preferences.motionPreference
+  const reduced = window.FocusBuddyMotion.resolveMotionPolicy(
+    state.preferences,
+    avatarMotionQuery.matches,
+  )
+  document.body.classList.toggle('reduce-motion', reduced)
+  text(
+    elements.motionPreferenceHint,
+    state.preferences.motionPreference === 'full'
+      ? 'Flotación y parpadeo activados solo en FocusBuddy.'
+      : state.preferences.motionPreference === 'reduced'
+        ? 'Flotación y parpadeo desactivados en FocusBuddy.'
+        : avatarMotionQuery.matches
+          ? 'Windows reduce las animaciones. Elige Activadas para ver la flotación y el parpadeo en FocusBuddy.'
+          : 'La flotación y el parpadeo siguen la preferencia de Windows.',
   )
 
   const info = state.connectionInfo || {}
@@ -1936,7 +1956,10 @@ function installPreferenceSubscription() {
 
 function installEvents() {
   elements.avatarPreviewScene.addEventListener('change', syncAvatarAnimations)
-  avatarMotionQuery.addEventListener('change', syncAvatarAnimations)
+  avatarMotionQuery.addEventListener('change', () => {
+    renderPreferences()
+    syncAvatarAnimations()
+  })
   for (const tab of document.querySelectorAll('[data-tab]')) {
     tab.addEventListener('click', () => selectTab(tab.dataset.tab))
     tab.addEventListener('keydown', (event) => {

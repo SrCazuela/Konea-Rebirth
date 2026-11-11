@@ -256,7 +256,7 @@ button {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(3px);
+    transform: translateY(-8px);
   }
 }
 
@@ -300,9 +300,10 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not([data-motion-preference='full']),
+  html:not([data-motion-preference='full']) *,
+  html:not([data-motion-preference='full']) *::before,
+  html:not([data-motion-preference='full']) *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

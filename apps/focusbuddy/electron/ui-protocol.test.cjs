@@ -86,6 +86,7 @@ describe('FocusBuddy bundled UI protocol', () => {
       ['desktop.css', 'text/css; charset=utf-8'],
       ['desktop.js', 'text/javascript; charset=utf-8'],
       ['avatar-animation.js', 'text/javascript; charset=utf-8'],
+      ['motion-policy.js', 'text/javascript; charset=utf-8'],
       ['assets/branding/konea-mark.svg', 'image/svg+xml'],
       ...manifest.files.map((asset) => [
         `assets/avatar-hq/${asset.local}`,

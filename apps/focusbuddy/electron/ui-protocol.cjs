@@ -26,6 +26,7 @@ const resourceTypes = new Map([
   ['companion.js', 'text/javascript; charset=utf-8'],
   ['avatar-animation.js', 'text/javascript; charset=utf-8'],
   ['avatar-library.js', 'text/javascript; charset=utf-8'],
+  ['motion-policy.js', 'text/javascript; charset=utf-8'],
   ['assets/branding/konea-logo.svg', 'image/svg+xml'],
   ['assets/branding/konea-mark.svg', 'image/svg+xml'],
   ['owl-shimeji-provisional.png', 'image/png'],

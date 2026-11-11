@@ -49,6 +49,7 @@ function verifyRuntimeArchive(archivePath) {
     'electron/owl-shimeji-provisional.png',
     'electron/avatar-library.js',
     'electron/avatar-animation.js',
+    'electron/motion-policy.js',
     'electron/companion.html',
     'electron/companion.css',
     'electron/companion.js',

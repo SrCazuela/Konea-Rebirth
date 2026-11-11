@@ -713,13 +713,21 @@
                 <input type="checkbox" data-preference="notificationsEnabled" />
                 <i aria-hidden="true"></i>
               </label>
-              <label class="switch-row">
+              <label class="select-row">
                 <span
-                  ><strong>Reducir animaciones</strong
-                  ><small>Usa una presentación más tranquila.</small></span
+                  ><strong>Animaciones</strong
+                  ><small id="motion-preference-hint" aria-live="polite"
+                    >Sigue la preferencia de Windows.</small
+                  ></span
                 >
-                <input type="checkbox" data-preference="reducedMotion" />
-                <i aria-hidden="true"></i>
+                <select
+                  data-preference="motionPreference"
+                  aria-describedby="motion-preference-hint"
+                >
+                  <option value="system">Según Windows</option>
+                  <option value="full">Activadas</option>
+                  <option value="reduced">Reducidas</option>
+                </select>
               </label>
             </article>
 
@@ -1012,6 +1020,7 @@
 
     <script src="./avatar-library.js"></script>
     <script src="./avatar-animation.js"></script>
+    <script src="./motion-policy.js"></script>
     <script src="./desktop.js"></script>
   </body>
 </html>

@@ -1,3 +1,8 @@
+const {
+  resolveMotionPreference,
+  resolveMotionPolicy,
+} = require('./motion-policy.js')
+
 const COMPANION_SCALES = new Set(['small', 'medium', 'large'])
 const COMPANION_CHARACTERS = new Set(['kuco', 'chibi'])
 const COMPANION_CHARACTER_VERSION = 1
@@ -12,6 +17,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
   closeToTray: true,
   launchAtLogin: false,
   notificationsEnabled: false,
+  motionPreference: 'system',
   reducedMotion: false,
   companionPosition: null,
 })
@@ -30,6 +36,9 @@ function normalizePosition(value) {
 function normalizePreferences(value) {
   const candidate =
     value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  // Keep an existing accessibility choice when migrating legacy files. Once
+  // a mode exists, it is authoritative over the compatibility boolean.
+  const motionPreference = resolveMotionPreference(candidate)
 
   return {
     companionEnabled:
@@ -67,10 +76,8 @@ function normalizePreferences(value) {
       typeof candidate.notificationsEnabled === 'boolean'
         ? candidate.notificationsEnabled
         : DEFAULT_PREFERENCES.notificationsEnabled,
-    reducedMotion:
-      typeof candidate.reducedMotion === 'boolean'
-        ? candidate.reducedMotion
-        : DEFAULT_PREFERENCES.reducedMotion,
+    motionPreference,
+    reducedMotion: motionPreference === 'reduced',
     companionPosition: normalizePosition(candidate.companionPosition),
   }
 }
@@ -86,6 +93,21 @@ function mergePreferences(current, patch) {
       allowedPatch[key] = safePatch[key]
   }
 
+  if (
+    resolveMotionPreference({
+      motionPreference: allowedPatch.motionPreference,
+    }) !== allowedPatch.motionPreference
+  ) {
+    // Older clients still send only reducedMotion. Treat that as a deliberate
+    // change without allowing unrelated or malformed updates to reset a mode.
+    allowedPatch.motionPreference =
+      typeof allowedPatch.reducedMotion === 'boolean'
+        ? allowedPatch.reducedMotion
+          ? 'reduced'
+          : 'system'
+        : safeCurrent.motionPreference
+  }
+
   return normalizePreferences({ ...safeCurrent, ...allowedPatch })
 }
 
@@ -93,4 +115,5 @@ module.exports = {
   DEFAULT_PREFERENCES,
   mergePreferences,
   normalizePreferences,
+  resolveMotionPolicy,
 }

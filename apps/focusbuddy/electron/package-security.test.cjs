@@ -39,6 +39,7 @@ describe('FocusBuddy package security', () => {
       'electron/desktop.html',
       'electron/desktop.js',
       'electron/main.cjs',
+      'electron/motion-policy.js',
       'electron/owl-shimeji-provisional.png',
       'electron/preload.cjs',
       'electron/preferences.cjs',

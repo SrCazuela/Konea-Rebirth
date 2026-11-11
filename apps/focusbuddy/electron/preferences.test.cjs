@@ -1,9 +1,13 @@
 const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const path = require('node:path')
 const { describe, it } = require('node:test')
+const vm = require('node:vm')
 const {
   DEFAULT_PREFERENCES,
   mergePreferences,
   normalizePreferences,
+  resolveMotionPolicy,
 } = require('./preferences.cjs')
 
 describe('FocusBuddy desktop preferences', () => {
@@ -108,6 +112,132 @@ describe('FocusBuddy desktop preferences', () => {
       mergePreferences(selected, { companionCharacterVersion: null })
         .companionCharacter,
       'kuco',
+    )
+  })
+
+  it('migrates legacy motion choices without discarding reduced motion', () => {
+    for (const [legacy, expected] of [
+      [true, 'reduced'],
+      [false, 'system'],
+      [undefined, 'system'],
+      ['false', 'system'],
+    ]) {
+      const preferences = normalizePreferences({ reducedMotion: legacy })
+      assert.equal(preferences.motionPreference, expected)
+      assert.equal(preferences.reducedMotion, expected === 'reduced')
+      assert.deepEqual(
+        normalizePreferences(JSON.parse(JSON.stringify(preferences))),
+        preferences,
+      )
+    }
+  })
+
+  it('resolves each motion mode against both system preferences', () => {
+    for (const [mode, systemReduced, expected] of [
+      ['system', false, false],
+      ['system', true, true],
+      ['full', false, false],
+      ['full', true, false],
+      ['reduced', false, true],
+      ['reduced', true, true],
+    ]) {
+      assert.equal(
+        resolveMotionPolicy({ motionPreference: mode }, systemReduced),
+        expected,
+        `${mode} with systemReduced=${systemReduced}`,
+      )
+    }
+    assert.equal(resolveMotionPolicy({ reducedMotion: true }, false), true)
+    assert.equal(resolveMotionPolicy(null, true), true)
+    assert.equal(resolveMotionPolicy(null, 'false'), false)
+  })
+
+  it('shares the same policy with browser renderers without requiring Node', () => {
+    const context = vm.createContext({ window: {} })
+    vm.runInContext(
+      readFileSync(path.join(__dirname, 'motion-policy.js'), 'utf8'),
+      context,
+    )
+    const browserPolicy = context.FocusBuddyMotion
+    assert.equal(typeof browserPolicy.resolveMotionPreference, 'function')
+    for (const preferences of [
+      null,
+      { reducedMotion: true },
+      { motionPreference: 'full', reducedMotion: true },
+      { motionPreference: 'reduced', reducedMotion: false },
+      { motionPreference: 'system' },
+      { motionPreference: 'invalid' },
+    ]) {
+      for (const systemReduced of [true, false]) {
+        assert.equal(
+          browserPolicy.resolveMotionPolicy(preferences, systemReduced),
+          resolveMotionPolicy(preferences, systemReduced),
+        )
+      }
+    }
+    assert.equal(
+      browserPolicy.resolveMotionPreference({ reducedMotion: true }),
+      'reduced',
+    )
+  })
+
+  it('keeps an explicit motion mode authoritative over a stale legacy flag', () => {
+    const full = normalizePreferences({
+      motionPreference: 'full',
+      reducedMotion: true,
+    })
+    assert.equal(full.motionPreference, 'full')
+    assert.equal(full.reducedMotion, false)
+    assert.equal(resolveMotionPolicy(full, true), false)
+    const reduced = normalizePreferences({
+      motionPreference: 'reduced',
+      reducedMotion: false,
+    })
+    assert.equal(reduced.reducedMotion, true)
+    assert.equal(resolveMotionPolicy(reduced, false), true)
+  })
+
+  it('updates the mode when a legacy client changes the compatibility flag', () => {
+    const full = normalizePreferences({ motionPreference: 'full' })
+    const reduced = mergePreferences(full, { reducedMotion: true })
+    assert.equal(reduced.motionPreference, 'reduced')
+    assert.equal(reduced.reducedMotion, true)
+    const system = mergePreferences(reduced, { reducedMotion: false })
+    assert.equal(system.motionPreference, 'system')
+    assert.equal(system.reducedMotion, false)
+    assert.equal(resolveMotionPolicy(system, true), true)
+  })
+
+  it('prioritizes an explicit mode when a patch also contains the legacy flag', () => {
+    const full = mergePreferences(DEFAULT_PREFERENCES, {
+      motionPreference: 'full',
+      reducedMotion: true,
+    })
+    assert.equal(full.motionPreference, 'full')
+    assert.equal(full.reducedMotion, false)
+    const reduced = mergePreferences(full, {
+      motionPreference: 'reduced',
+      reducedMotion: false,
+    })
+    assert.equal(reduced.motionPreference, 'reduced')
+    assert.equal(reduced.reducedMotion, true)
+  })
+
+  it('preserves a mode through unrelated or malformed partial updates', () => {
+    const full = normalizePreferences({ motionPreference: 'full' })
+    for (const patch of [
+      { compactMode: true },
+      { motionPreference: 'sometimes' },
+      { motionPreference: null, reducedMotion: 'yes' },
+    ]) {
+      const updated = mergePreferences(full, patch)
+      assert.equal(updated.motionPreference, 'full')
+      assert.equal(updated.reducedMotion, false)
+    }
+    assert.equal(
+      normalizePreferences({ motionPreference: 'invalid', reducedMotion: true })
+        .motionPreference,
+      'reduced',
     )
   })
 })

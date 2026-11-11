@@ -1687,7 +1687,7 @@ select:focus-visible,
     transform: translateY(0);
   }
   50% {
-    transform: translateY(3px);
+    transform: translateY(-8px);
   }
 }
 
@@ -2002,9 +2002,10 @@ select:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  body:not([data-motion-preference='full']),
+  body:not([data-motion-preference='full']) *,
+  body:not([data-motion-preference='full']) *::before,
+  body:not([data-motion-preference='full']) *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
