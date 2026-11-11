@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, resolve, relative, isAbsolute } from 'node:path'
+import { cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -61,6 +61,9 @@ async function run(args, cwd) {
       windowsHide: true,
       env: {
         ...process.env,
+        // The development .env may set NODE_ENV=development. Force the
+        // production transform before Vite loads it for the hosted build.
+        NODE_ENV: 'production',
         VITE_API_URL: '/api/v1',
         VITE_FOCUSBUDDY_DOWNLOAD_URL: downloadUrl,
       },
@@ -92,7 +95,27 @@ if (!index.includes('id="root"') || /localhost:|127\.0\.0\.1:/.test(index)) {
 }
 await mkdir(resolve(destination, 'lib'), { recursive: true })
 await mkdir(resolve(destination, 'app/api/v1/[[...path]]'), { recursive: true })
-await cp(resolve(repository, 'apps/web/dist'), resolve(destination, 'public'), {
+const publicDirectory = resolve(destination, 'public')
+await mkdir(publicDirectory, { recursive: true })
+const resolvedCheckout = await realpath(destination)
+const resolvedPublic = await realpath(publicDirectory)
+const generatedAssets = resolve(resolvedPublic, 'assets')
+const resolvedAssets = await realpath(generatedAssets).catch((error) => {
+  if (error.code === 'ENOENT') return generatedAssets
+  throw error
+})
+// Only replace generated bundles inside this checkout. Resolve existing links
+// before deleting recursively so a redirected public/assets cannot escape it.
+if (
+  relative(resolvedCheckout, resolvedPublic) !== 'public' ||
+  relative(resolvedCheckout, resolvedAssets) !== join('public', 'assets')
+) {
+  throw new Error(
+    'La carpeta de assets debe estar dentro del checkout de Sites.',
+  )
+}
+await rm(generatedAssets, { recursive: true, force: true })
+await cp(resolve(repository, 'apps/web/dist'), publicDirectory, {
   recursive: true,
 })
 // The root HTML is served by a route handler; the original React application
