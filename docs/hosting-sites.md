@@ -2,7 +2,7 @@
 
 Estado verificado el 11 de noviembre de 2026: backend oficial actualizado en
 Render al commit `14399452de89fd2aef1f0c059d3384f92fcf46f3`, con las 14
-migraciones aplicadas en Neon. El frontend publicado en Sites es la versión 2.
+migraciones aplicadas en Neon. El frontend publicado en Sites es la versión 3.
 El dominio canónico es
 `https://konea-campus-connect.danaealvarez0917.chatgpt.site`; el dominio anterior
 redirige a este. Ambos orígenes conocidos están autorizados en Render.
@@ -10,8 +10,13 @@ redirige a este. Ambos orígenes conocidos están autorizados en Render.
 Se comprobó salud HTTP 200 y autenticación, y se conservó un respaldo sin
 compute en Neon: `before-focusbuddy-official-20261111`. La migración se probó
 primero en una rama temporal y conservó usuarios, sesiones y relaciones. No se
-restauró la base local sobre la oficial. La publicación del instalador se
-registra por separado después de verificar el ejecutable y su descarga.
+restauró la base local sobre la oficial. FocusBuddy 0.1.2 se publicó mediante
+GitHub Actions desde `8ec46a87d52095c62f06419e381c53478a512b27`, con un enlace
+de descarga en la portada pública y en el portal autenticado.
+
+El instalador publicado se descargó completo (155489433 bytes) y su SHA-256
+coincide con el checksum del release:
+`077cbb26dc1b27034fd3864493bbd274c722efce753751cd02f97a80d2d596a8`.
 
 Antes de una demostración remota debe registrarse el commit o versión alojada,
 la configuración de API y los flujos comprobados. El hecho de que abra la
@@ -121,10 +126,11 @@ usuarios y KUCO. Probar archivos después de reiniciar Render. Comprobar que una
 petición directa a Render sin el secreto no permite leer datos ni consumir IA.
 
 El repositorio incluye pruebas de restauración, integridad de archivos,
-transacción de copia, protección del destino, proxy y cookies. El estado de
-las pruebas en los proveedores no fue verificado en esta
-revisión local; debe adjuntarse la evidencia remota de la versión que se use
-en la demostración.
+transacción de copia, protección del destino, proxy y cookies. En 0.1.2 se
+comprobó el ejecutable oficial contra la API publicada: login, persistencia,
+logout, consulta de cuenta y sincronización de sesiones y tareas. Una cuenta
+temporal exclusiva permitió probar las escrituras sin modificar datos de los
+estudiantes; se eliminó después junto con todos sus registros asociados.
 
 ## Desarrollo y límites
 

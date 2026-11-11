@@ -375,6 +375,13 @@ descarga oficial verificada; el entorno local solo abre su propio cliente.
 El destino oficial actual es
 `https://konea-campus-connect.danaealvarez0917.chatgpt.site/api/v1`.
 
+El [release oficial 0.1.2](https://github.com/SrCazuela/Konea-Rebirth/releases/tag/focusbuddy-v0.1.2)
+incluye el instalador de Windows x64 y sus checksums. La descarga completa
+coincidió con el SHA-256 publicado. Los ejecutables reales de ambos canales
+cargaron sus 35 sprites; el oficial aprobó login, reinicio conservando sesión,
+logout y sincronización de sesiones y tareas con la API alojada. Las pruebas
+de escritura usaron una cuenta temporal que después se eliminó.
+
 Antes de separar los canales, en la revisión local del 11 de noviembre de 2026
 se generó y verificó
 `apps/focusbuddy/release/Konea-FocusBuddy-0.1.1-x64.exe`, con Electron 44.11.1 y
@@ -424,7 +431,6 @@ La siguiente fase recomendada es:
 3. validar con estudiantes qué dashboards aportan valor (por método, tarea,
    franja horaria u objetivo semanal) antes de acumular gráficos;
 4. materializar sesiones abandonadas con un trabajo programado del servidor;
-5. publicar la API con HTTPS, regenerar el cliente contra ese endpoint, firmar
-   el instalador y definir actualizaciones verificadas;
+5. firmar el instalador y definir actualizaciones verificadas;
 6. ampliar el E2E local aprobado con cierre abrupto y recuperación, caída de
    la API, instalación limpia y el recorrido contra el entorno remoto.
