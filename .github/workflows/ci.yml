@@ -59,10 +59,26 @@ jobs:
         run: npm run db:migrate
 
       - name: Run automated tests
-        run: npm run test
+        shell: bash
+        run: npm run test 2>&1 | tee validation-tests.log
 
       - name: Build
         run: npm run build
 
       - name: Audit runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=moderate --json > audit-runtime.json
+
+      - name: Audit development and build dependencies
+        run: npm audit --audit-level=moderate --json > audit-all.json
+
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-${{ github.sha }}
+          path: |
+            validation-tests.log
+            audit-runtime.json
+            audit-all.json
+          if-no-files-found: ignore
+          retention-days: 30

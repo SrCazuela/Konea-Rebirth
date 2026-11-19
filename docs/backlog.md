@@ -43,9 +43,12 @@ producción institucional.
 con datos ficticios. Konea no debe presentarse como un servicio de emergencias o
 de vigilancia continua.
 
-La historia `PB-16` quedó verificada el 11 de noviembre de 2026: Sites v3 y
-FocusBuddy oficial 0.1.2 con API HTTPS, descarga comprobada y sincronización remota.
-El registro reúne 420 pruebas aprobadas por suites: 107 de escritorio y 52 de web.
+La historia `PB-16` quedó verificada el 11 de noviembre de 2026. El corte
+publicado posterior de ese día es Sites v5 y FocusBuddy oficial 0.1.3, con API
+HTTPS y descarga comprobada. Su revisión acreditó 114 pruebas de escritorio,
+76 de web y 19 de hosting; el recorrido remoto de sincronización de la versión
+0.1.2 se conserva como evidencia histórica separada. La revisión del
+17 de noviembre se registra en [Validación y calidad](./validation-quality-20261117.md).
 
 `PB-17` cuenta con E2E local y pruebas remotas del ejecutable oficial,
 documentados en [FocusBuddy](./focusbuddy.md#estado-de-validación-y-publicación).

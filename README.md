@@ -31,7 +31,7 @@ El repositorio implementa estos dominios:
   que expiran, crean una conexión y abren un chat directo.
 - **Actividad y convivencia:** notificaciones, reportes, reglas locales de
   contenido y cola de aprobación de publicaciones para moderación.
-- **DUCO:** asistente de organización con proveedor configurable (`local`,
+- **KUCO:** asistente de organización con proveedor configurable (`local`,
   Ollama u OpenAI Luna), historial privado, contexto de tareas y borradores
   persistentes que el usuario siempre revisa antes de crear o enviar algo.
 - **Organización académica:** calendario AVA importado mediante un enlace ICS,
@@ -88,12 +88,12 @@ Konea-Rebirth/
 - Node.js 22.12 o superior.
 - npm 11 o superior.
 - Docker Desktop con backend WSL 2 y virtualización habilitada.
-- Ollama con `qwen3.5:4b` si DUCO usa el proveedor local de IA generativa.
+- Ollama con `qwen3.5:4b` si KUCO usa el proveedor local de IA generativa.
 - Git para versionar y colaborar mediante GitHub.
 
 Postman/Insomnia y DBeaver/pgAdmin son útiles, pero no son necesarios para
 ejecutar Konea. Ollama tampoco es obligatorio: si el proveedor elegido no está
-disponible, el iniciador continúa con las reglas locales de DUCO.
+disponible, el iniciador continúa con las reglas locales de KUCO.
 
 ## Instalación local en `D:`
 
@@ -103,7 +103,7 @@ Después de crear `.env` e instalar las dependencias por primera vez, ejecuta
 `iniciar.bat` con doble clic. El iniciador comprueba las herramientas, abre
 Docker Desktop y, cuando corresponde, Ollama si todavía no responden, espera el healthcheck de
 PostgreSQL, aplica todas las migraciones pendientes y levanta la API y la web.
-Cuando `DUCO_AI_PROVIDER=openai`, también valida la clave y el acceso al modelo
+Cuando `KUCO_AI_PROVIDER=openai`, también valida la clave y el acceso al modelo
 configurado mediante el catálogo de modelos, sin generar texto ni consumir
 tokens. Si Konea ya está abierta y ambos servicios responden, el iniciador lo
 reconoce como un estado correcto en vez de fallar por los puertos ocupados.
@@ -176,13 +176,13 @@ Este modo no publica el servidor de desarrollo ni la base personal:
   acceso adicional, cookies seguras y comprobación estricta de origen.
 - El registro público está desactivado. Se utilizan las cuentas facilitadas para
   la presentación; la cuenta local `admin/admin` no se crea en esta base.
-- DUCO usa el proveedor configurado en el `.env` local y limita la generación a
+- KUCO usa el proveedor configurado en el `.env` local y limita la generación a
   20 consultas por conexión cada 15 minutos. La API key nunca se publica; si se
   usa OpenAI, las consultas consumen los créditos del propietario.
 
 El enlace y las contraseñas se guardan en `.local/public-demo/accesos.txt`, fuera
 de Git. Comparte ese acceso únicamente con tus invitados; no subas `.local`,
-sus credenciales ni sus logs como evidencias. Para usar DUCO sin consumo externo:
+sus credenciales ni sus logs como evidencias. Para usar KUCO sin consumo externo:
 
 ```powershell
 .\iniciar-demo.bat --basic-ai
@@ -259,11 +259,11 @@ de Konea ni el comportamiento de la aplicación.
 | `SEED_SOCIAL_DEMO`             | Prepara el contenido social ficticio en local  | `true`                         |
 | `SEED_CAPSTONE_DEMO`           | Prepara el escenario completo de presentación  | `true`                         |
 | `CAPSTONE_DEMO_USERNAME`       | Cuenta estudiantil que recibe el escenario     | selección automática           |
-| `DUCO_AI_PROVIDER`             | Proveedor de DUCO: local, Ollama u OpenAI      | `ollama`                       |
+| `KUCO_AI_PROVIDER`             | Proveedor de KUCO: local, Ollama u OpenAI      | `ollama`                       |
 | `OLLAMA_BASE_URL`              | Dirección del servicio local de Ollama         | `http://127.0.0.1:11434`       |
-| `OLLAMA_MODEL`                 | Modelo local utilizado por DUCO                | `qwen3.5:4b`                   |
+| `OLLAMA_MODEL`                 | Modelo local utilizado por KUCO                | `qwen3.5:4b`                   |
 | `OLLAMA_KEEP_ALIVE`            | Tiempo que Ollama conserva el modelo cargado   | `2m`                           |
-| `DUCO_AI_TIMEOUT_MS`           | Tiempo máximo de respuesta de Ollama           | `120000`                       |
+| `KUCO_AI_TIMEOUT_MS`           | Tiempo máximo de respuesta de Ollama           | `120000`                       |
 | `OPENAI_API_KEY`               | Clave privada; solo cuando se usa OpenAI       | sin valor                      |
 | `OPENAI_MODEL`                 | Modelo utilizado con el proveedor OpenAI       | `gpt-5.6-luna`                 |
 | `OPENAI_BASE_URL`              | Base de la API compatible con OpenAI           | `https://api.openai.com/v1`    |
@@ -287,9 +287,9 @@ incluir autoría y datos que el equipo decida hacer públicos, pero no secretos 
 acceso. La lista de comprobación está en
 [docs/public-repository-checklist.md](docs/public-repository-checklist.md).
 
-## DUCO y borradores revisables
+## KUCO y borradores revisables
 
-`DUCO_AI_PROVIDER` permite elegir entre tres modos sin cambiar la interfaz:
+`KUCO_AI_PROVIDER` permite elegir entre tres modos sin cambiar la interfaz:
 
 - `local`: reglas determinísticas y fallback sin modelo generativo;
 - `ollama`: modelo generativo ejecutado en el equipo mediante Ollama;
@@ -304,7 +304,7 @@ contexto necesario para responder sí se transmite al endpoint configurado.
 
 Los borradores de tareas permanecen en PostgreSQL durante 30 días. El usuario
 puede retomarlos aunque borre el historial, revisar y modificar sus campos,
-confirmarlos para crear el pendiente o descartarlos. DUCO nunca crea una tarea,
+confirmarlos para crear el pendiente o descartarlos. KUCO nunca crea una tarea,
 envía una solicitud institucional ni contacta a otra persona por sí solo.
 
 Las solicitudes confirmadas aparecen en “Mis solicitudes” con su cronología de
@@ -312,7 +312,7 @@ estados y respuestas. Moderadores y administradores disponen de la misma
 trazabilidad en su centro de moderación; resolver o rechazar requiere dejar una
 respuesta visible para el estudiante.
 
-Los límites de DUCO son 30 consultas por usuario y 120 por origen cada 15
+Los límites de KUCO son 30 consultas por usuario y 120 por origen cada 15
 minutos. Una instancia procesa como máximo cuatro respuestas simultáneas y una
 por usuario. Tanto ese control de concurrencia como los contadores de tasa viven
 en memoria del proceso actual; un despliegue con varias réplicas necesitará un
@@ -335,13 +335,13 @@ academia y estudio; el renderer no posee una función HTTP genérica ni accede
 directamente a PostgreSQL. El proceso principal llama a la API con la cookie
 persistida en la sesión aislada de Electron.
 
-Al ejecutar `npm run dist:focusbuddy`, `FOCUSBUDDY_API_URL=https://.../api/v1`
-queda incorporada como configuración pública del instalador. En desarrollo se
-puede usar esa variable o `--api-url=...`; el ejecutable empaquetado ignora
-ambos overrides para reducir redirecciones a servidores no confiables. HTTP
-remoto se rechaza y solo se admite HTTP para loopback. Sin la variable, el build
-queda fijado a `http://localhost:3000/api/v1` y requiere mantener PostgreSQL y la
-API locales activos. No requiere Vite. El cliente deshabilita acceso Node y
+Los canales Local y Oficial se compilan por separado. El canal Local usa
+`http://localhost:3000/api/v1` y requiere la API y PostgreSQL locales; no necesita
+Vite para mostrar su interfaz. El canal Oficial exige
+`FOCUSBUDDY_API_URL=https://.../api/v1` al compilar y rechaza una configuración
+ausente o local. Los ejecutables empaquetados ignoran overrides de URL por
+variables o argumentos. El instalador oficial 0.1.3 se descarga desde la web
+publicada y se conecta a su API HTTPS mediante el proxy de Sites. El cliente deshabilita acceso Node y
 DevTools en el paquete, activa aislamiento de contexto y sandbox y bloquea
 navegación y permisos no necesarios. El launcher local fija
 `FOCUSBUDDY_DATA_DIR=.local/focusbuddy-desktop`, de modo que caché y sesión
@@ -354,10 +354,11 @@ activa, el cliente envía un heartbeat cada 30 segundos. Si deja de recibirlos,
 la API limita el tiempo computable a 90 segundos desde el último heartbeat y
 pausa la sesión al recibir la siguiente consulta o transición. Así, cerrar el
 programa abruptamente no infla las estadísticas indefinidamente. El escritorio
-incluye doce derivados transparentes para reposo, escritura/concentración y
-estudio. Los PNG fuente con fondo opaco y su manifiesto permanecen preservados;
-todavía faltan exportaciones alfa oficiales y estados visuales dedicados para
-pausa y celebración. La web mantiene por ahora su hoja provisional 4×4.
+incluye el chibi oficial como personaje predeterminado en ambos clientes,
+con 35 PNG y 13 escenas. FocusBuddy 0.1.3 permite elegir animaciones Según Windows,
+Activadas o Reducidas. El chibi flota 8 píxeles cada 3,2 segundos y parpadea en
+las poses que disponen de los fotogramas necesarios. Las capas recortadas para
+seguimiento de ojos mediante el puntero se conservan como trabajo posterior.
 
 ## Roles y moderación
 
@@ -421,27 +422,27 @@ referenciados.
 
 ## Comandos
 
-| Comando                   | Propósito                                                |
-| ------------------------- | -------------------------------------------------------- |
-| `npm run dev`             | Inicia API y web con recarga automática                  |
-| `npm run focusbuddy`      | Abre FocusBuddy; requiere la API activa                  |
-| `npm run dist:focusbuddy` | Genera el instalador Windows de Electron                 |
-| `npm run build`           | Compila todos los workspaces                             |
-| `npm run lint`            | Revisa reglas estáticas                                  |
-| `npm run typecheck`       | Comprueba tipos sin emitir archivos                      |
-| `npm run test`            | Ejecuta pruebas de API, web y FocusBuddy                 |
-| `npm run format`          | Aplica Prettier al repositorio                           |
-| `npm run format:check`    | Comprueba formato sin modificar                          |
-| `npm run check`           | Ejecuta lint, tipos, migraciones, tests, build y formato |
-| `npm run db:up`           | Inicia PostgreSQL                                        |
-| `npm run db:down`         | Detiene el Compose conservando datos                     |
-| `npm run db:logs`         | Sigue los logs de PostgreSQL                             |
-| `npm run db:generate`     | Genera SQL desde cambios del esquema                     |
-| `npm run db:check`        | Valida migraciones y snapshots de Drizzle                |
-| `npm run db:migrate`      | Aplica migraciones pendientes                            |
-| `npm run db:seed:social`  | Prepara o actualiza el contenido social de demostración  |
-| `npm run db:seed:demo`    | Prepara chats, solicitudes, tareas y progreso para demo  |
-| `npm run db:studio`       | Abre Drizzle Studio                                      |
+| Comando                   | Propósito                                                              |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`             | Inicia API y web con recarga automática                                |
+| `npm run focusbuddy`      | Abre FocusBuddy; requiere la API activa                                |
+| `npm run dist:focusbuddy` | Genera el instalador Windows de Electron                               |
+| `npm run build`           | Compila todos los workspaces                                           |
+| `npm run lint`            | Revisa reglas estáticas                                                |
+| `npm run typecheck`       | Comprueba tipos sin emitir archivos                                    |
+| `npm run test`            | Ejecuta pruebas de API, web, AVA, FocusBuddy, sincronización y hosting |
+| `npm run format`          | Aplica Prettier al repositorio                                         |
+| `npm run format:check`    | Comprueba formato sin modificar                                        |
+| `npm run check`           | Ejecuta lint, tipos, migraciones, tests, build y formato               |
+| `npm run db:up`           | Inicia PostgreSQL                                                      |
+| `npm run db:down`         | Detiene el Compose conservando datos                                   |
+| `npm run db:logs`         | Sigue los logs de PostgreSQL                                           |
+| `npm run db:generate`     | Genera SQL desde cambios del esquema                                   |
+| `npm run db:check`        | Valida migraciones y snapshots de Drizzle                              |
+| `npm run db:migrate`      | Aplica migraciones pendientes                                          |
+| `npm run db:seed:social`  | Prepara o actualiza el contenido social de demostración                |
+| `npm run db:seed:demo`    | Prepara chats, solicitudes, tareas y progreso para demo                |
+| `npm run db:studio`       | Abre Drizzle Studio                                                    |
 
 Antes de una entrega o push ejecuta:
 
@@ -451,7 +452,7 @@ npm run check
 
 Las pruebas cubren autenticación y sesiones, permisos, perfiles/seguimiento,
 feed y moderación, chat/grupos/mensajes/no leídos, tareas, encuestas, QR,
-archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
+archivos, notificaciones, KUCO, reportes y el ciclo de sesiones de estudio.
 
 ## Seguridad y límites conocidos
 
@@ -460,7 +461,7 @@ archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
 - El cliente recibe una cookie `HttpOnly`, `SameSite=Lax`; PostgreSQL guarda
   solo el hash SHA-256 del token y cerrar sesión lo revoca.
 - Todas las escrituras tienen un límite general configurable; registro, login,
-  DUCO, cargas, sincronización AVA y canje de QR aplican además límites más
+  KUCO, cargas, sincronización AVA y canje de QR aplican además límites más
   estrictos. La carga admite 20 archivos por usuario y 60 por origen cada hora,
   con una cuota acumulada de 100 MB por usuario.
 - Los payloads se validan en la API, CORS usa una lista explícita y los logs
@@ -478,33 +479,38 @@ archivos, notificaciones, DUCO, reportes y el ciclo de sesiones de estudio.
   aislado por institución.
 - No hay recuperación/verificación de correo, segundo factor, antivirus de
   archivos ni panel de administración de cuentas.
-- Las respuestas generativas de DUCO pueden equivocarse y no constituyen
+- Las respuestas generativas de KUCO pueden equivocarse y no constituyen
   asesoría académica o institucional oficial. Las acciones sensibles se
   validan en la API y siempre requieren revisión y confirmación del usuario.
 - FocusBuddy aún no ejecuta ciclos automáticos de descanso ni funciona sin una
-  API accesible. El escritorio usa derivados transparentes del chibi, conserva
-  los PNG fuente y la web mantiene el avatar provisional.
+  API accesible. Ambos clientes usan el chibi oficial; el seguimiento de ojos por
+  el puntero, la cola offline, la firma y las actualizaciones automáticas siguen
+  pendientes.
 
 ## Despliegue de demostración con Sites, Render y Neon
 
-Se preparó un checkout independiente del frontend para ChatGPT Sites, una API
-Docker para Render y almacenamiento privado compatible con S3 para Neon.
-PostgreSQL y Drizzle se conservan. El entorno local sigue funcionando con su
-base y archivos locales; la copia remota no se sincroniza automáticamente.
+La demostración pública usa ChatGPT Sites para la web y su proxy, Express en
+Render y PostgreSQL y objetos privados en Neon. El sitio canónico es
+`https://konea-campus-connect.danaealvarez0917.chatgpt.site`. El corte verificado
+del 11 de noviembre de 2026 corresponde a Sites v5 y FocusBuddy oficial 0.1.3.
+El instalador Windows x64 incorpora la API oficial y conserva un perfil y un
+protocolo independientes del cliente local.
 
-El proyecto de Sites está creado privado. La copia completa de la base y los
-archivos ya se respaldó y se restauró en un entorno temporal de verificación.
-La migración remota y la demo integral aún requieren conectar Neon y Render.
-No se debe presentar esta preparación como un despliegue remoto terminado.
+El entorno local mantiene su base y archivos. Los cambios de código y las
+migraciones se despliegan por entorno; actualizar el proyecto no restaura la
+base local sobre Neon. El instalador nunca contiene el secreto del proxy ni
+credenciales PostgreSQL.
 
-El procedimiento, orden de restauración, secretos y pruebas están en
-[Alojamiento con Sites](docs/hosting-sites.md). La imagen `Dockerfile.api` y
-`render.yaml` no incluyen datos privados ni ejecutan seeders de demostración.
-La base remota debe restaurarse antes del primer arranque de Render.
+El acceso web espera a que la API esté disponible durante un máximo de 90
+segundos en el entorno alojado. Solo repite lecturas de salud; el envío de
+credenciales se realiza una vez. Cerrar el diálogo durante la espera cancela
+la operación. Este control permite gestionar el arranque desde reposo del
+backend sin afirmar disponibilidad continua del plan gratuito.
 
-FocusBuddy conserva su configuración local. El instalador existente todavía
-no está adaptado al backend protegido de esta demo: no debe recibir el secreto
-del proxy ni conectarse directamente a PostgreSQL.
+El procedimiento de despliegue, los checksums y las evidencias históricas están
+en [Alojamiento con Sites](docs/hosting-sites.md). La revisión de calidad del
+17 de noviembre se registra por separado en
+[Validación y calidad](docs/validation-quality-20261117.md).
 
 ## Documentación
 
@@ -517,4 +523,7 @@ del proxy ni conectarse directamente a PostgreSQL.
 - [FocusBuddy web, API, escritorio y sprites](docs/focusbuddy.md)
 - [Conector AVA experimental y permisos MV3](docs/ava-connector.md)
 - [Lista de seguridad para el repositorio público](docs/public-repository-checklist.md)
+- [Validación y calidad del 17 de noviembre](docs/validation-quality-20261117.md)
+- [Prueba de uso con lectores de pantalla](docs/screen-reader-checklist.md)
+- [Seguimiento de entregables del equipo](docs/team-deliverables.md)
 - [Cliente FocusBuddy para escritorio](apps/focusbuddy/README.md)

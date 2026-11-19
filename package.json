@@ -17,7 +17,7 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present && npm run capstone:test",
+    "test": "npm run test --workspaces --if-present && npm run capstone:test && npm run test:hosting",
     "check": "npm run lint && npm run typecheck && npm run db:check && npm run test && npm run build && npm run format:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -37,7 +37,9 @@
     "capstone:watch": "node scripts/capstone/sync.mjs --watch",
     "capstone:status": "node scripts/capstone/sync.mjs --status",
     "capstone:stop": "node scripts/capstone/sync.mjs --stop",
-    "capstone:test": "node --test scripts/capstone/*.test.mjs"
+    "capstone:test": "node --test scripts/capstone/*.test.mjs",
+    "test:hosting": "node --test scripts/hosting/*.test.mjs hosting/sites-adapter/*.test.mjs",
+    "quality:local": "node --no-maglev scripts/quality/validate-local.cjs"
   },
   "engines": {
     "node": ">=22.12.0",
@@ -46,10 +48,14 @@
   "overrides": {
     "ip-address": "10.7.6",
     "proxy-addr": "2.0.8",
-    "shell-quote": "1.12.0"
+    "shell-quote": "1.12.0",
+    "minimatch@>=7.0.0 <11.0.1": "11.0.1",
+    "esbuild@<=0.24.2": "0.25.12"
   },
   "devDependencies": {
     "concurrently": "9.2.1",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "drizzle-kit": "0.31.11",
+    "electron-builder": "26.18.1"
   }
 }

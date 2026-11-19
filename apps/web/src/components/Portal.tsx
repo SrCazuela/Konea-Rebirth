@@ -61,6 +61,10 @@ import {
 import { absoluteUploadUrl, uploadImage, validateImage } from '../api/uploads'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { canonicalizeAssistantHash } from '../config/assistant-navigation'
+import {
+  navigationScrollBehavior,
+  portalScrollBehavior,
+} from '../config/navigation-accessibility'
 import { ImageCropDialog } from './ImageCropDialog'
 import { SafeExternalLink } from './SafeExternalLink'
 import { SearchableSelect } from './SearchableSelect'
@@ -1480,7 +1484,7 @@ function FeedView({
             setActiveType(target.contentType)
             scrollTimer = window.setTimeout(() => {
               document.getElementById(`post-${target.id}`)?.scrollIntoView({
-                behavior: 'smooth',
+                behavior: portalScrollBehavior(),
                 block: 'center',
               })
             }, 80)
@@ -2178,7 +2182,7 @@ function ProfileView({
     window.requestAnimationFrame(() =>
       document
         .getElementById('profile-editor')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        ?.scrollIntoView({ behavior: portalScrollBehavior(), block: 'start' }),
     )
   }
 
@@ -4288,6 +4292,9 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     routeFromHash(window.location.hash, canModerate),
   )
   const [view, setView] = useState<PortalView>(initialRoute.view)
+  const currentView = useRef(view)
+  currentView.current = view
+  const focusDestination = useRef(false)
   const [networkUserId, setNetworkUserId] = useState<string | null>(
     initialRoute.networkUserId,
   )
@@ -4316,6 +4323,16 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     }
   }, [motionEnabled])
 
+  useEffect(() => {
+    if (!focusDestination.current) return
+    focusDestination.current = false
+    const main = document.getElementById('portal-main')
+    const heading = document.getElementById('portal-page-title')
+    // The compact chat layout hides its heading; the main landmark remains visible.
+    const target = heading?.getClientRects().length ? heading : main
+    target?.focus({ preventScroll: true })
+  }, [view])
+
   const applyRoute = useCallback(
     (
       route: PortalRoute,
@@ -4335,12 +4352,20 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
       setInitialChatId(route.chatId)
       setInitialChatUserId(null)
       setActivePostId(route.postId)
+      focusDestination.current =
+        route.view !== currentView.current &&
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.matches(':focus-visible')
       window.scrollTo({
         top: 0,
-        behavior: options.smooth === false ? 'auto' : 'smooth',
+        behavior: navigationScrollBehavior(
+          motionEnabled,
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+          options.smooth !== false,
+        ),
       })
     },
-    [],
+    [motionEnabled],
   )
 
   useEffect(() => {
@@ -4527,8 +4552,18 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
     setInitialChatId(null)
     setInitialChatUserId(userId)
     setActivePostId(null)
+    focusDestination.current =
+      currentView.current !== 'chat' &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.matches(':focus-visible')
     setView('chat')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({
+      top: 0,
+      behavior: navigationScrollBehavior(
+        motionEnabled,
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      ),
+    })
   }
 
   const openChat = (chatId: string) => {
@@ -4699,7 +4734,6 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             className={`portal-account-button${view === 'profile' || view === 'account' ? ' is-active' : ''}`}
             type="button"
             onClick={openProfile}
-            aria-label={`Abrir perfil de ${user.displayName}`}
             aria-current={
               view === 'profile' || view === 'account' ? 'page' : undefined
             }
@@ -4790,7 +4824,9 @@ export function Portal({ user, onUserChange, onLogout }: PortalProps) {
             </span>
             <div>
               <span>{pageDetails[view].eyebrow}</span>
-              <h1>{pageDetails[view].title}</h1>
+              <h1 id="portal-page-title" tabIndex={-1}>
+                {pageDetails[view].title}
+              </h1>
               <p className="portal-page-heading__description">
                 {pagePresentation[view].description}
               </p>

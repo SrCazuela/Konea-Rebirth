@@ -1,5 +1,7 @@
 import {
+  useEffect,
   useId,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -9,6 +11,7 @@ import { ApiClientError, login, register, type KoneaUser } from '../api/auth'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { KoneaLogo } from './KoneaLogo'
 import './AuthDialog.css'
+import { authErrorMessage } from './auth-error-message'
 
 export type AuthMode = 'login' | 'register'
 
@@ -17,13 +20,6 @@ type AuthDialogProps = {
   onModeChange: (mode: AuthMode) => void
   onClose: () => void
   onAuthenticated: (user: KoneaUser) => void
-}
-
-const errorMessages: Record<string, string> = {
-  ACCOUNT_ALREADY_EXISTS: 'Ese correo o nombre de usuario ya está registrado.',
-  INVALID_CREDENTIALS: 'El correo, usuario o contraseña no son correctos.',
-  TOO_MANY_ATTEMPTS: 'Hubo demasiados intentos. Espera unos minutos.',
-  VALIDATION_ERROR: 'Revisa los campos marcados e inténtalo nuevamente.',
 }
 
 const fieldMessages: Record<string, string> = {
@@ -66,16 +62,34 @@ export function AuthDialog({
 }: AuthDialogProps) {
   const id = useId()
   const [submitting, setSubmitting] = useState(false)
+  const [waitingForServer, setWaitingForServer] = useState(false)
+  const [serverIsStarting, setServerIsStarting] = useState(false)
+  const requestController = useRef<AbortController | null>(null)
+  const mounted = useRef(true)
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<
     Record<string, string[] | undefined> | undefined
   >()
 
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      requestController.current?.abort()
+    }
+  }, [])
+
+  function closeDialog() {
+    if (submitting && !waitingForServer) return
+    requestController.current?.abort()
+    onClose()
+  }
+
   const dialogRef = useModalDialog<HTMLElement>({
     open: true,
-    onClose,
-    closeDisabled: submitting,
+    onClose: closeDialog,
+    closeDisabled: submitting && !waitingForServer,
   })
 
   function switchMode(nextMode: AuthMode) {
@@ -104,13 +118,17 @@ export function AuthDialog({
   }
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
-    if (event.target === event.currentTarget && !submitting) onClose()
+    if (event.target === event.currentTarget) closeDialog()
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting) return
+    const controller = new AbortController()
+    requestController.current = controller
     setSubmitting(true)
+    setWaitingForServer(true)
+    setServerIsStarting(false)
     setError(null)
     setFields(undefined)
 
@@ -118,35 +136,53 @@ export function AuthDialog({
 
     try {
       const password = String(data.get('password') ?? '')
+      const options = {
+        signal: controller.signal,
+        onWaiting: () => {
+          if (mounted.current && !controller.signal.aborted)
+            setServerIsStarting(true)
+        },
+        onReady: () => {
+          if (mounted.current && !controller.signal.aborted)
+            setWaitingForServer(false)
+        },
+      }
       const user =
         mode === 'register'
-          ? await register({
-              email: String(data.get('email') ?? ''),
-              password,
-              username: String(data.get('username') ?? ''),
-              displayName: String(data.get('displayName') ?? ''),
-            })
-          : await login({
-              identifier: String(data.get('identifier') ?? ''),
-              password,
-            })
+          ? await register(
+              {
+                email: String(data.get('email') ?? ''),
+                password,
+                username: String(data.get('username') ?? ''),
+                displayName: String(data.get('displayName') ?? ''),
+              },
+              options,
+            )
+          : await login(
+              {
+                identifier: String(data.get('identifier') ?? ''),
+                password,
+              },
+              options,
+            )
 
+      if (!mounted.current || controller.signal.aborted) return
       onAuthenticated(user)
       onClose()
     } catch (requestError) {
+      if (!mounted.current || controller.signal.aborted) return
+      setError(authErrorMessage(requestError))
       if (requestError instanceof ApiClientError) {
-        setError(
-          errorMessages[requestError.code] ??
-            'No pudimos completar la solicitud. Inténtalo nuevamente.',
-        )
         setFields(requestError.fields)
-      } else {
-        setError(
-          'No pudimos conectarnos con Konea. Espera un momento e inténtalo otra vez.',
-        )
       }
     } finally {
-      setSubmitting(false)
+      if (mounted.current && !controller.signal.aborted) {
+        setSubmitting(false)
+        setWaitingForServer(false)
+        setServerIsStarting(false)
+      }
+      if (requestController.current === controller)
+        requestController.current = null
     }
   }
 
@@ -167,8 +203,8 @@ export function AuthDialog({
         <button
           className="dialog-close"
           type="button"
-          onClick={onClose}
-          disabled={submitting}
+          onClick={closeDialog}
+          disabled={submitting && !waitingForServer}
           aria-label="Cerrar"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -325,6 +361,13 @@ export function AuthDialog({
               <div className="form-alert" role="alert">
                 {error}
               </div>
+            ) : null}
+            {submitting && waitingForServer ? (
+              <p className="auth-field__hint" role="status" aria-live="polite">
+                {serverIsStarting
+                  ? 'Esperando que el servidor inicie… Puede tardar alrededor de un minuto. Puedes cerrar esta ventana para cancelar.'
+                  : 'Conectando con Konea…'}
+              </p>
             ) : null}
 
             <form
@@ -491,7 +534,9 @@ export function AuthDialog({
                   ) : null}
                   <span>
                     {submitting
-                      ? 'Un momento…'
+                      ? waitingForServer
+                        ? 'Conectando…'
+                        : 'Un momento…'
                       : isRegistration
                         ? 'Crear mi cuenta'
                         : 'Entrar a Konea'}

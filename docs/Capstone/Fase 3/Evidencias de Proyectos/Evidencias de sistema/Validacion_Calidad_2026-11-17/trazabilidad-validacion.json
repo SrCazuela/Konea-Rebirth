@@ -1,0 +1,203 @@
+{
+  "date": "2026-11-17",
+  "executionDirectory": "Ejecucion_Reproducible/",
+  "baseCommit": "49578d07e8efd04afb4f50ed795cc2f42b5d1ab6",
+  "uncommittedChanges": true,
+  "environment": "win32/x64, Node 24.15.0, PostgreSQL 17 in a disposable container",
+  "automatedTests": {
+    "count": 462,
+    "suites": "API 197, AVA 18, FocusBuddy 114, web 82, sincronización documental 32 y hosting/proxy 19"
+  },
+  "commands": [
+    {
+      "name": "01-migration-consistency",
+      "command": "npm run db:check",
+      "exitCode": 0
+    },
+    {
+      "name": "02-migration-apply",
+      "command": "npm run db:migrate",
+      "exitCode": 0
+    },
+    {
+      "name": "03-migration-idempotency",
+      "command": "npm run db:migrate",
+      "exitCode": 0
+    },
+    {
+      "name": "04-lint",
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "name": "05-types",
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    {
+      "name": "06-tests",
+      "command": "npm run test",
+      "exitCode": 0
+    },
+    {
+      "name": "07-build",
+      "command": "npm run build",
+      "exitCode": 0
+    },
+    {
+      "name": "08-format",
+      "command": "npm run format:check",
+      "exitCode": 0
+    }
+  ],
+  "cleanup": {
+    "processesStopped": true,
+    "containerRemoved": true
+  },
+  "browser": {
+    "passed": true,
+    "cases": [
+      {
+        "caso": "T07",
+        "nombre": "Portada y acceso en resoluciones móviles de 320 a 412 px",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-320.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-320-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-360.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-360-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-390.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-390-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-412.png; Ejecucion_Reproducible/Pruebas_Funcionales/T07-login-412-viewport.png"
+      },
+      {
+        "caso": "T08",
+        "nombre": "Teclado foco Escape retorno y visibilidad de contraseña",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T08-keyboard-dialog.png"
+      },
+      {
+        "caso": "T09",
+        "nombre": "Registro real y sesión con cookie",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T09-account-desktop.png"
+      },
+      {
+        "caso": "T10",
+        "nombre": "Contraseña actual incorrecta y persistencia de cambios de cuenta",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T10-password-error.png; Ejecucion_Reproducible/Pruebas_Funcionales/T10-account-persisted.png"
+      },
+      {
+        "caso": "T11",
+        "nombre": "Cambio de contraseña rechazo de clave anterior y revocación de otra sesión",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T11-password-changed.png"
+      },
+      {
+        "caso": "T12",
+        "nombre": "Configuración de cuenta y guardado en resoluciones móviles",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-320.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-320-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-360.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-360-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-390.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-390-viewport.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-412.png; Ejecucion_Reproducible/Pruebas_Funcionales/T12-account-412-viewport.png"
+      },
+      {
+        "caso": "T13",
+        "nombre": "Zoom real del navegador al 200 por ciento y guardado con redistribución",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T13-real-browser-zoom-200.png; Ejecucion_Reproducible/Pruebas_Funcionales/T13-real-browser-zoom-200-viewport.png"
+      },
+      {
+        "caso": "T14",
+        "nombre": "Navegación mediante teclado y movimiento reducido",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T14-keyboard-navigation.png"
+      },
+      {
+        "caso": "T15",
+        "nombre": "Fallo de salida conserva sesión y cierre correcto revoca acceso",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json; Ejecucion_Reproducible/Pruebas_Funcionales/T15-logout-network-error.png; Ejecucion_Reproducible/Pruebas_Funcionales/T15-logout-complete.png"
+      },
+      {
+        "caso": "T16",
+        "nombre": "Inspección semántica automatizada de las pantallas comprobadas",
+        "estado": "AP",
+        "fecha": "2026-11-17",
+        "ejecucion": "Automatizada en Edge con API y base aisladas",
+        "evidencia": "Ejecucion_Reproducible/Pruebas_Funcionales/resultados.json"
+      }
+    ],
+    "pageErrors": [],
+    "limitations": [
+      "Mobile resolutions are emulated, not a physical Android device.",
+      "Accessibility tree and axe do not replace a human NVDA or TalkBack reading session."
+    ],
+    "accessibilityScreenCount": 5,
+    "accessibilityViolations": [],
+    "incompleteAutomatedChecks": 8,
+    "incompleteNodeOccurrencesByRule": {
+      "aria-prohibited-attr": 3,
+      "color-contrast": 192
+    }
+  },
+  "audits": {
+    "audit-runtime-before.json": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "audit-runtime-after.json": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "audit-all-before.json": {
+      "info": 0,
+      "low": 0,
+      "moderate": 10,
+      "high": 0,
+      "critical": 0,
+      "total": 10
+    },
+    "audit-all-after.json": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "humanScreenReader": {
+    "status": "NE",
+    "checklist": "docs/screen-reader-checklist.md"
+  },
+  "scope": "Local validation. No new deployment and no official database change.",
+  "participation": {
+    "membershipConfirmedOn": "2026-11-17",
+    "membershipConfirmedBy": "user",
+    "currentFeedbackContext": "practica_laboral",
+    "teams": {
+      "capstone_final": ["Oscar", "Hilary", "Danae"],
+      "practica_laboral": ["Oscar", "Esteban", "Danae"]
+    },
+    "individualContributionsVerified": false
+  }
+}

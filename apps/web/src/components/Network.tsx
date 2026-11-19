@@ -12,6 +12,7 @@ import {
 } from '../api/network'
 import type { Post } from '../api/portal'
 import { absoluteUploadUrl } from '../api/uploads'
+import { portalScrollBehavior } from '../config/navigation-accessibility'
 import { SafeExternalLink } from './SafeExternalLink'
 import './Network.css'
 
@@ -648,7 +649,7 @@ export function Network({
     setProfileError('')
     setNotice('')
     onProfileChange?.(userId)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: portalScrollBehavior() })
   }
 
   const closeProfile = () => {

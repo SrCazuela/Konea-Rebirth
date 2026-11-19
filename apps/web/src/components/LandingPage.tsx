@@ -533,7 +533,10 @@ export default function LandingPage({
           <CampusPreview motionEnabled={motionEnabled} />
           <div className="landing-hero__bottom">
             <span>EL CAMPUS NO TERMINA EN LA SALA.</span>
-            <a href="#tu-espacio" aria-label="Explorar las funciones de Konea">
+            <a
+              href="#tu-espacio"
+              aria-label="Hay mucho por descubrir: explora las funciones de Konea"
+            >
               <span>Hay mucho por descubrir</span>
               <Icon name="arrow" />
             </a>

@@ -127,6 +127,30 @@ export async function proxyBackend(request, environment, fetcher = fetch) {
     )
   }
 
+  const contentType = (upstream.headers.get('content-type') ?? '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase()
+  const isJson =
+    contentType === 'application/json' || contentType.endsWith('+json')
+  if ([429, 502, 503, 504].includes(upstream.status) && !isJson) {
+    // Render can return an HTML loading or protection page before Express
+    // starts. Release that stream without forwarding HTML or retrying a write.
+    await upstream.body?.cancel().catch(() => {})
+    const response = jsonError(
+      503,
+      'BACKEND_STARTING',
+      'El servidor de Konea está iniciando. Puede tardar hasta un minuto; espera un momento e inténtalo nuevamente.',
+    )
+    response.headers.set('Retry-After', '5')
+    return request.method === 'HEAD'
+      ? new Response(null, {
+          status: response.status,
+          headers: response.headers,
+        })
+      : response
+  }
+
   // An API redirect must not forward the session to another origin.
   if (
     upstream.status >= 300 &&

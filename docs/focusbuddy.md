@@ -367,20 +367,41 @@ el equipo configure un certificado de firma de código.
 
 ## Estado de validación y publicación
 
-La separación de canales y el protocolo interno de 0.1.2 tienen 107 pruebas de
-escritorio aprobadas, incluidas regresiones para captura del icono, aislamiento
-de cuentas, configuración verificada y acceso restringido a recursos. La web
-tiene 52 pruebas aprobadas. La portada pública y el portal pueden presentar la
-descarga oficial verificada; el entorno local solo abre su propio cliente.
-El destino oficial actual es
-`https://konea-campus-connect.danaealvarez0917.chatgpt.site/api/v1`.
+El corte publicado del 11 de noviembre de 2026 corresponde a FocusBuddy
+**0.1.3** y Sites **v5**. El instalador oficial Windows x64 se generó desde
+`375592d74924f0652a00f71af783e42caccfb1c7` mediante
+[GitHub Actions](https://github.com/SrCazuela/Konea-Rebirth/actions/runs/43053856107).
+La descarga completa de 155490535 bytes coincidió con SHA-256
+`bb4cea85678f4acce5d147cb7e0b5e77f359913a1dd45b6f252f77b79e348421`.
+El [release 0.1.3](https://github.com/SrCazuela/Konea-Rebirth/releases/tag/focusbuddy-v0.1.3)
+conserva el instalador y sus checksums.
 
-El [release oficial 0.1.2](https://github.com/SrCazuela/Konea-Rebirth/releases/tag/focusbuddy-v0.1.2)
-incluye el instalador de Windows x64 y sus checksums. La descarga completa
-coincidió con el SHA-256 publicado. Los ejecutables reales de ambos canales
-cargaron sus 35 sprites; el oficial aprobó login, reinicio conservando sesión,
-logout y sincronización de sesiones y tareas con la API alojada. Las pruebas
-de escritura usaron una cuenta temporal que después se eliminó.
+Ese corte acreditó 114 pruebas de escritorio, 76 de web y 19 de hosting. Son
+resultados de sus suites y fechas; no equivalen a una ejecución nueva y global
+de `npm run check`. El ASAR descargado se probó en Electron 44.11.1 real, con
+recursos y preloads originales y sin llamadas a APIs. La web publicada se
+comprobó en 1440 y 390 píxeles, con login real, consulta y logout.
+
+En Ajustes, Animaciones ofrece **Según Windows**, **Activadas** y **Reducidas**.
+Según Windows respeta la preferencia del sistema; Activadas permite animar
+aunque Windows reduzca movimiento; Reducidas detiene las animaciones. La
+elección persiste y se comparte con la mascota. El chibi flota 8 píxeles en
+un ciclo de 3,2 segundos; en reposo parpadea con sus tres sprites cada
+3,2–6,4 segundos. Las escenas sin fotogramas de cierre no añaden parpadeo
+artificial. El usuario informó una prueba satisfactoria en otro PC Windows 11
+con Intel; no se registraron especificaciones ni un guion de esa ejecución.
+
+La API oficial sigue siendo
+`https://konea-campus-connect.danaealvarez0917.chatgpt.site/api/v1`.
+El instalador incluye su runtime, requiere red y cuenta Konea para
+sincronizar y permanece sin firma digital. No se ha acreditado una prueba
+directa en Windows 10. La modificación local del icono de las ventanas se
+verificó por separado y no forma parte del instalador 0.1.3.
+
+La evidencia histórica está en
+`.local/focusbuddy-release-013-20261111/final-report.json`,
+`electron-motion-report.json` y `web/report.json`. La revisión del
+17 de noviembre se documenta en [Validación y calidad](./validation-quality-20261117.md).
 
 Antes de separar los canales, en la revisión local del 11 de noviembre de 2026
 se generó y verificó
@@ -391,7 +412,7 @@ compilaciones usan las subcarpetas y protocolos de la tabla anterior. Ni el
 build ni la configuración de un enlace confirman por sí solos su publicación,
 instalación o conectividad remota.
 
-El registro reúne **420 pruebas automatizadas aprobadas**: 197 de API,
+El corte anterior del 11 de noviembre reunió **420 pruebas aprobadas por suites**: 197 de API,
 18 del conector AVA, 107 de escritorio, 52 del cliente web, 32 de sincronización
 y 14 de alojamiento. `npm audit --omit=dev` no informó avisos; permanecen
 10 avisos moderados de desarrollo. Al cierre, Docker local quedó bloqueado
@@ -409,10 +430,11 @@ El PNG del avatar móvil se decodificó a 2136 × 3000. La evidencia quedó en
 los procesos verificada. Este recorrido no cubre cierre abrupto y recuperación,
 caída de la API, instalación limpia ni ejecución contra la demo remota.
 
-El cliente oficial 0.1.2 usa la URL pública de Sites seguida de `/api/v1`:
-el proxy añade su secreto únicamente en el servidor. El acceso, el login y la
-sincronización de sesiones y tareas se comprobaron contra la API publicada.
-Cada nueva versión debe repetir esas verificaciones, sin incorporar el secreto
+El cliente oficial 0.1.3 usa la URL pública de Sites seguida de `/api/v1`:
+el proxy añade su secreto únicamente en el servidor. Las pruebas remotas de
+sincronización de sesiones y tareas corresponden al corte 0.1.2; el corte 0.1.3
+acredita los controles de movimiento del paquete y el acceso de la web v5.
+Cada nueva versión debe repetir la sincronización, sin incorporar el secreto
 del proxy al programa. Véase [hosting-sites.md](./hosting-sites.md).
 
 ## Limitaciones y siguiente fase

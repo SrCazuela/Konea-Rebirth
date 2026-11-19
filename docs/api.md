@@ -46,8 +46,12 @@ Estados habituales: `400` validación/regla, `401` sin sesión, `403` permiso,
 `415` archivo, `422` contenido rechazado y `429` límite temporal. Los
 consumidores deben usar
 `error.code`, no comparar el texto traducido. El contrato JSON corresponde a
-errores de aplicación; durante el arranque remoto se observaron respuestas
-HTML 503/429 de infraestructura, antes de que `/health` devolviera 200 JSON.
+errores de aplicación. El proxy publicado transforma respuestas de
+infraestructura no JSON con estado 429/502/503/504 en `503 BACKEND_STARTING`
+y `Retry-After: 5`, sin reenviar HTML ni repetir escrituras. Los errores JSON
+de la API conservan su estado y código. El acceso web espera un `/health`
+JSON válido antes de enviar el POST de login o registro; la espera es
+cancelable y se limita a 90 segundos en hosting o 20 en loopback.
 
 Las escrituras de navegador deben provenir de un origen configurado en
 `CORS_ORIGIN` y comparten un límite general por IP; las rutas sensibles aplican

@@ -11,6 +11,7 @@ import type { KoneaUser } from '../api/auth'
 import { absoluteUploadUrl } from '../api/uploads'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { canonicalizeAssistantHash } from '../config/assistant-navigation'
+import { portalScrollBehavior } from '../config/navigation-accessibility'
 import {
   cancelKucoDraft,
   clearKucoMessages,
@@ -672,7 +673,10 @@ export function Kuco({
   useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport || historyLoading || activePanel !== 'conversation') return
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior: portalScrollBehavior(),
+    })
   }, [activePanel, historyLoading, messages, sending, taskDrafts])
 
   const sendPrompt = async (rawContent: string) => {

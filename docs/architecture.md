@@ -50,7 +50,12 @@ El cliente web limita las lecturas a 20 segundos y las escrituras a 30;
 `POST /kuco/messages` admite 150 segundos para cubrir la generación y su
 fallback. Estos límites también cubren la lectura del cuerpo de la respuesta.
 Los errores se muestran para recuperar el estado; una escritura no se repite
-automáticamente cuando se desconoce si el servidor ya la aplicó.
+automáticamente cuando se desconoce si el servidor ya la aplicó. Antes del
+login o registro web se comprueba `GET /health`, con un presupuesto de 90
+segundos en hosting y 20 en loopback, consultas separadas por 5 segundos y
+cancelación al cerrar. El POST de autenticación se envía una sola vez.
+El proxy transforma respuestas de infraestructura no JSON 429/502/503/504 en
+`503 BACKEND_STARTING`, con `Retry-After: 5`; preserva los errores JSON reales.
 
 La interfaz se organiza alrededor de portal, conexiones, notificaciones, chat,
 KUCO, espacio académico y FocusBuddy. Estado de carga, vacío y error se resuelve
@@ -66,7 +71,7 @@ progreso, ajustes y cuenta con la identidad visual morada de Konea.
 El botón web **Abrir FocusBuddy** usa `konea-focusbuddy://open` en la web
 alojada y `konea-focusbuddy-local://open` en localhost, según el canal instalado.
 Solo abre o enfoca el programa; no envía credenciales, no configura la API ni
-inicia sesión automáticamente. El instalador oficial 0.1.2 se descarga desde
+inicia sesión automáticamente. El instalador oficial 0.1.3 se descarga desde
 GitHub Releases y los canales conservan cuentas y perfiles separados.
 
 El renderer local no tiene acceso general a red ni a Node.js. Su preload solo
@@ -515,7 +520,9 @@ Electron  ─────────────────────HTTPS�
 El esquema anterior es conceptual: en el alojamiento actual ambos clientes
 acceden a la API a través del proxy de Sites; Express se ejecuta en Render y
 PostgreSQL y los archivos privados en Neon. FocusBuddy oficial 0.1.2 aprobó
-login, persistencia, logout y sincronización con ese entorno. La siguiente
+login, persistencia, logout y sincronización con ese entorno. La versión
+0.1.3 añadió controles de movimiento y fue verificada desde su instalador
+descargado; Sites v5 incorporó la espera cancelable de disponibilidad al acceder. La siguiente
 secuencia orienta nuevas instalaciones y cambios, sin recrear la base existente:
 
 1. crear la base administrada y configurar `DATABASE_URL` con SSL;

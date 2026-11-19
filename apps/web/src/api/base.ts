@@ -75,18 +75,53 @@ export async function apiRequest<T>(path: string, init?: RequestInit) {
 
     if (response.status === 204) return undefined as T
 
-    const body = (await response.json().catch(() => ({}))) as T & ErrorEnvelope
+    let parsedJson = false
+    const body = (await response.json().then(
+      (value: unknown) => {
+        parsedJson = true
+        return value
+      },
+      () => undefined,
+    )) as (T & ErrorEnvelope) | undefined
 
     if (!response.ok) {
+      const fallback =
+        response.status === 429
+          ? {
+              code: 'BACKEND_BUSY',
+              message:
+                'El servidor está ocupado temporalmente. Espera un minuto e inténtalo de nuevo.',
+            }
+          : [502, 503, 504].includes(response.status)
+            ? {
+                code: 'BACKEND_UNAVAILABLE',
+                message:
+                  'El servidor de Konea está iniciando o no está disponible. Espera un minuto e inténtalo de nuevo.',
+              }
+            : {
+                code: 'REQUEST_FAILED',
+                message: 'No pudimos completar la solicitud.',
+              }
       throw new ApiClientError(
         response.status,
-        body.error?.code ?? 'REQUEST_FAILED',
-        body.error?.message ?? 'No pudimos completar la solicitud.',
-        body.error?.details?.fields,
+        body?.error?.code ?? fallback.code,
+        body?.error?.message ?? fallback.message,
+        body?.error?.details?.fields,
       )
     }
 
-    return body
+    if (
+      !parsedJson ||
+      response.headers?.get('content-type')?.includes('text/html')
+    ) {
+      throw new ApiClientError(
+        502,
+        'INVALID_BACKEND_RESPONSE',
+        'El servidor de Konea respondió de forma inesperada. Espera un momento e inténtalo de nuevo.',
+      )
+    }
+
+    return body as T
   }
   try {
     return await Promise.race([request(), deadline])

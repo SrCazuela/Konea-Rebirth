@@ -257,7 +257,7 @@
 }
 
 .account-settings__notice--success {
-  color: var(--portal-success);
+  color: #116542;
   background: var(--portal-success-soft);
 }
 

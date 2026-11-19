@@ -28,9 +28,10 @@
   font-weight: 750;
 }
 .academic-loading,
-.academic-empty {
+.academic-empty,
+.academic-course-list .academic-empty {
   padding: 35px;
-  color: #81778a;
+  color: #6d627b;
   text-align: center;
 }
 .academic-load-failure {

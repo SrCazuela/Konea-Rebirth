@@ -178,7 +178,28 @@ it(
     )
     await f.run('--stop')
     await until(async () => exited, 8000)
-    assert.equal(JSON.parse(await f.run('--status', '--json')).watching, false)
-    assert.equal(errors, '')
+    const finalStatus = JSON.parse(await f.run('--status', '--json'))
+    assert.equal(finalStatus.watching, false)
+    assert.equal(finalStatus.lastRun.success, true)
+    // A destination appears before the watcher's final snapshot verification.
+    // Editing the other file at that moment legitimately defers that cycle.
+    // Require structured retry notices only, and a successful final run above.
+    const notices = errors.trim()
+      ? errors
+          .trim()
+          .split(/\r?\n/)
+          .map((line) => JSON.parse(line))
+      : []
+    for (const notice of notices) {
+      assert.equal(notice.success, false)
+      assert.equal(notice.code, 'EUNSTABLE')
+      assert.equal(notice.status, 'Se reintentará; los archivos se conservan')
+      assert.equal(typeof notice.message, 'string')
+      assert.ok(notice.message.length > 0)
+      assert.ok(Number.isFinite(Date.parse(notice.finishedAt)))
+    }
+    context.diagnostic(
+      `Watch recovered from ${notices.length} concurrent-change notice(s).`,
+    )
   },
 )

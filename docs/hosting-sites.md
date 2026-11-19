@@ -1,22 +1,33 @@
 # Alojamiento de demostración: Sites, Render y Neon
 
-Estado verificado el 11 de noviembre de 2026: backend oficial actualizado en
-Render al commit `14399452de89fd2aef1f0c059d3384f92fcf46f3`, con las 14
-migraciones aplicadas en Neon. El frontend publicado en Sites es la versión 3.
+Último despliegue verificado el 11 de noviembre de 2026: Sites **v5**,
+FocusBuddy oficial **0.1.3** y API Render al commit
+`14399452de89fd2aef1f0c059d3384f92fcf46f3`, con 14 migraciones en Neon.
 El dominio canónico es
-`https://konea-campus-connect.danaealvarez0917.chatgpt.site`; el dominio anterior
-redirige a este. Ambos orígenes conocidos están autorizados en Render.
+`https://konea-campus-connect.danaealvarez0917.chatgpt.site`; el anterior
+redirige a este. La revisión local del 17 de noviembre no implica una nueva
+publicación ni una modificación de la base oficial.
 
-Se comprobó salud HTTP 200 y autenticación, y se conservó un respaldo sin
-compute en Neon: `before-focusbuddy-official-20261111`. La migración se probó
-primero en una rama temporal y conservó usuarios, sesiones y relaciones. No se
-restauró la base local sobre la oficial. FocusBuddy 0.1.2 se publicó mediante
-GitHub Actions desde `8ec46a87d52095c62f06419e381c53478a512b27`, con un enlace
-de descarga en la portada pública y en el portal autenticado.
+Sites v5 se publicó desde `91dc067bdc3baa684985855e3420ea7cf57bf440`.
+La corrección de disponibilidad de login y del proxy corresponde a
+`690fc0f1b0599e0df7e5977042162bab7550f6fa` en la rama
+`hosting/konea-official-20261111`. La web se compiló con
+`NODE_ENV=production`, conservando únicamente los assets generados vigentes.
+La comprobación en PC y móvil acreditó descarga, un único POST de login,
+consulta de estudio y logout. El backend estaba activo durante ese recorrido;
+la espera en frío y la cancelación se comprobaron por separado con fixtures.
 
-El instalador publicado se descargó completo (155489433 bytes) y su SHA-256
-coincide con el checksum del release:
-`077cbb26dc1b27034fd3864493bbd274c722efce753751cd02f97a80d2d596a8`.
+FocusBuddy 0.1.3 se generó desde
+`375592d74924f0652a00f71af783e42caccfb1c7` mediante
+[GitHub Actions](https://github.com/SrCazuela/Konea-Rebirth/actions/runs/43053856107).
+El instalador descargado tiene 155490535 bytes y SHA-256
+`bb4cea85678f4acce5d147cb7e0b5e77f359913a1dd45b6f252f77b79e348421`.
+Su API incorporada es el dominio canónico seguido de `/api/v1`. La evidencia
+está en `.local/focusbuddy-release-013-20261111/final-report.json`.
+
+El respaldo Neon `before-focusbuddy-official-20261111` precede al despliegue
+del backend. Se conservó la separación de bases; no se restauró la base local
+sobre la oficial durante estas actualizaciones.
 
 Antes de una demostración remota debe registrarse el commit o versión alojada,
 la configuración de API y los flujos comprobados. El hecho de que abra la
@@ -102,7 +113,7 @@ del proxy en variables `VITE_*`, instaladores, repositorios, capturas ni documen
    cambios del frontend con:
 
    ```powershell
-   node scripts/hosting/prepare-sites.mjs --directory 'D:\konea-rebirth\Konea-Sites-Demo' --focusbuddy-download-url 'https://github.com/SrCazuela/Konea-Rebirth/releases/download/focusbuddy-v0.1.2/Konea-FocusBuddy-Windows-x64.exe'
+   node scripts/hosting/prepare-sites.mjs --directory 'D:\konea-rebirth\Konea-Sites-Demo' --focusbuddy-download-url 'https://github.com/SrCazuela/Konea-Rebirth/releases/download/focusbuddy-v0.1.3/Konea-FocusBuddy-Windows-x64.exe'
    ```
 
    Publicar con el flujo de Sites conservando el mismo `project_id` y la audiencia
@@ -139,9 +150,13 @@ local y viceversa. Una actualización de código no vuelve a importar el respald
 No intentar sincronizar bases mediante restauraciones repetidas sobre datos
 existentes. Las nuevas migraciones se aplican por separado en cada entorno.
 
-El plan gratuito de Render puede detener su instancia por inactividad y tardar
-en reactivarla. La verificación observó respuestas HTML 503/429 durante ese
-arranque, seguidas de salud 200 JSON. Usar los límites y cuotas vigentes de cada
+El plan gratuito de Render puede detener su instancia por inactividad. La
+verificación histórica observó respuestas HTML 503/429 previas a la aplicación.
+El acceso web comprueba `GET /health` con un presupuesto de 90 segundos y
+espacia los reintentos de esa lectura 5 segundos; al cerrar se cancela. Solo
+cuando la salud es válida se envían las credenciales una vez. El proxy normaliza
+429/502/503/504 no JSON como `503 BACKEND_STARTING` y `Retry-After: 5`; preserva
+los errores JSON y nunca reintenta escrituras. Usar los límites y cuotas vigentes de cada
 proveedor; no contratar planes de pago automáticamente. El consumo de KUCO
 sigue usando los créditos de API configurados.
 

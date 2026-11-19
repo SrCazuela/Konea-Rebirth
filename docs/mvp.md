@@ -100,7 +100,7 @@ La pregunta que responde el MVP es:
 ### 5. FocusBuddy
 
 - Disponible como pestaña web de Konea (`#focusbuddy`) y como aplicación
-  Electron para Windows 0.1.2 con interfaz propia, login y canales local/oficial.
+  Electron para Windows 0.1.3 con interfaz propia, login y canales local/oficial.
 - Métodos Pomodoro 25/5, Pomodoro extendido 50/10, trabajo profundo 90/20,
   Flowtime libre y tiempos personalizados.
 - Asociación opcional de una sesión con materia y pendiente propios.
@@ -213,7 +213,7 @@ B y moderador; opcionalmente un profesor.
 7. Preguntar a KUCO “organiza mis tareas” y comprobar que usa la tarea creada.
 8. Abrir FocusBuddy, elegir materia/pendiente, iniciar un Pomodoro, pausar,
    reanudar y completar; comprobar que el dashboard y el historial cambian.
-9. Descargar el instalador oficial 0.1.2 desde la web publicada e iniciar sesión
+9. Descargar el instalador oficial 0.1.3 desde la web publicada e iniciar sesión
    con una cuenta de ese entorno; mostrar la sesión y sus métricas sincronizadas.
    Para la demo local, usar `iniciar-focusbuddy.bat` y una cuenta local.
 10. Reportar una publicación y, con la cuenta moderadora, revisar el reporte.
